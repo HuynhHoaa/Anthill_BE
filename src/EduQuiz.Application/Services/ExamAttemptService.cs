@@ -427,13 +427,70 @@ public sealed class ExamAttemptService : IExamAttemptService
             return graded;
         }
 
+        // Đọc số bài đã nộp TRONG transaction, trước khi commit. Đọc sau commit thì đó là một
+        // lượt đi database nằm ngoài mọi lớp bảo vệ: một trục trặc thoáng qua ở đó sẽ biến một bài
+        // vừa chấm xong thành lỗi 500 gửi về cho học sinh — bài đã lưu, điểm đã có, mà màn hình
+        // báo hỏng. Sau commit chỉ còn đúng một việc là bắn sự kiện, mà việc đó tự nuốt lỗi.
+        var submittedCount = await _unitOfWork.ExamAssignments.CountSubmittedByExamAsync(
+            attempt.Assignment.ExamId, cancellationToken);
+
         await transaction.CommitAsync(cancellationToken);
 
-        // SAU commit. Giáo viên nhận thông báo về một bài đã thực sự nằm trong database, không
-        // phải về một transaction có thể cuộn lại ngay sau đó (§7).
-        await PublishSubmittedAsync(attempt, graded.ValueOrThrow, cancellationToken);
+        // SAU commit, không sớm hơn một dòng nào: giáo viên nhận thông báo về một bài đã thực sự
+        // nằm trong database, không phải về một transaction có thể cuộn lại ngay sau đó (§7).
+        await PublishSubmittedAsync(attempt, submittedCount, cancellationToken);
 
         return graded;
+    }
+
+    /// <summary>Báo cho cả học sinh lẫn giáo viên về một bài vừa được hệ thống tự nộp.</summary>
+    /// <remarks>
+    /// Đọc lại bản ghi kèm quan hệ vì <c>GetExpiredInProgressAsync</c> chỉ nạp những gì cần cho
+    /// việc chấm. Lượt đọc này nằm ngoài mọi transaction, nhưng nó chỉ phục vụ thông báo và
+    /// <see cref="IRealtimeNotificationService"/> tự nuốt lỗi, nên hỏng ở đây không kéo theo gì —
+    /// bài đã được chấm và ghi xong từ trước.
+    /// </remarks>
+    private async Task PublishAutoSubmittedAsync(ExamAttempt attempt, CancellationToken cancellationToken)
+    {
+        var detail = await _unitOfWork.ExamAttempts.GetSessionAsync(attempt.Id, cancellationToken);
+        if (detail is null)
+        {
+            return;
+        }
+
+        var exam = detail.Assignment.Exam;
+        var student = detail.Assignment.Student;
+        var submittedAt = (detail.SubmittedAt ?? DateTime.UtcNow).ToUtc();
+
+        var submittedCount = await _unitOfWork.ExamAssignments.CountSubmittedByExamAsync(
+            exam.Id, cancellationToken);
+
+        await _realtime.AutoSubmittedAsync(
+            detail.Assignment.StudentId,
+            new AutoSubmittedStudentEvent
+            {
+                ExamId = exam.Id,
+                AttemptId = detail.Id,
+                ExamTitle = exam.Title,
+                SubmittedAt = submittedAt,
+
+                // Điểm chỉ đi kèm khi giáo viên cho xem ngay — cùng quy tắc §3 ⑥ áp ở mọi nơi khác.
+                Score = exam.ShowResultAfterSubmit ? detail.Score : null
+            },
+            exam.CreatedByUserId,
+            new AutoSubmittedTeacherEvent
+            {
+                ExamId = exam.Id,
+                AttemptId = detail.Id,
+                StudentId = detail.Assignment.StudentId,
+                StudentName = student?.FullName ?? string.Empty,
+                ExamTitle = exam.Title,
+                Score = detail.Score,
+                MaxScore = detail.MaxScore,
+                SubmittedAt = submittedAt,
+                SubmittedCount = submittedCount
+            },
+            cancellationToken);
     }
 
     /// <summary>Báo cho giáo viên biết có học sinh vừa nộp bài.</summary>
@@ -446,14 +503,11 @@ public sealed class ExamAttemptService : IExamAttemptService
     /// </remarks>
     private async Task PublishSubmittedAsync(
         ExamAttempt attempt,
-        SubmitAttemptResponse response,
+        int submittedCount,
         CancellationToken cancellationToken)
     {
         var exam = attempt.Assignment.Exam;
         var student = attempt.Assignment.Student;
-
-        var submittedCount = await _unitOfWork.ExamAssignments.CountSubmittedByExamAsync(
-            exam.Id, cancellationToken);
 
         await _realtime.ExamSubmittedAsync(
             exam.CreatedByUserId,
@@ -497,6 +551,14 @@ public sealed class ExamAttemptService : IExamAttemptService
             if (outcome.IsSuccess && outcome.ValueOrThrow)
             {
                 finalised++;
+
+                // Sự kiện AutoSubmitted của §7: hai payload cho hai vai trò. Học sinh biết bài
+                // mình đã được nộp hộ, giáo viên biết thêm em nào và số bài đã nộp.
+                //
+                // Không có nó thì tiến trình nền chấm bài trong im lặng: em mở máy lên và thấy
+                // một kết quả xuất hiện từ đâu không rõ, còn màn hình theo dõi của giáo viên vẫn
+                // đứng nguyên cho tới lần tải trang kế tiếp.
+                await PublishAutoSubmittedAsync(attempt, cancellationToken);
             }
         }
 

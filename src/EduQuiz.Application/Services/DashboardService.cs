@@ -26,9 +26,6 @@ namespace EduQuiz.Application.Services;
 /// </remarks>
 public sealed class DashboardService : IDashboardService
 {
-    private const string NoSubjectMessage =
-        "Tài khoản giáo viên chưa được gán môn nên chưa có ngân hàng câu hỏi nào để thống kê.";
-
     /// <summary>Số đề gần đây hiện trên trang tổng quan của giáo viên.</summary>
     private const int RecentExamCount = 5;
 
@@ -50,10 +47,11 @@ public sealed class DashboardService : IDashboardService
     public async Task<Result<TeacherDashboardDto>> GetTeacherDashboardAsync(
         CancellationToken cancellationToken = default)
     {
-        if (_currentUser.SubjectId is not { } subjectId)
-        {
-            return Result.Forbidden<TeacherDashboardDto>(NoSubjectMessage);
-        }
+        // Chưa được gán môn thì CHỈ ô "tổng số câu hỏi" không tính được — sáu con số còn lại,
+        // danh sách lớp và danh sách đề đều không liên quan gì tới môn. Chặn cả trang vì một ô là
+        // dựng một bức tường trắng trước mặt một giáo viên mới, người còn chưa biết mình thiếu gì.
+        // Ô đó trả 0, phần còn lại chạy bình thường.
+        var subjectId = _currentUser.SubjectId;
 
         var now = DateTime.UtcNow;
 
@@ -64,7 +62,9 @@ public sealed class DashboardService : IDashboardService
             groups.Select(group => group.Id),
             cancellationToken);
 
-        var totalQuestions = await _unitOfWork.Questions.CountInSubjectAsync(subjectId, cancellationToken);
+        var totalQuestions = subjectId is { } subject
+            ? await _unitOfWork.Questions.CountInSubjectAsync(subject, cancellationToken)
+            : 0;
         var totalExams = await _unitOfWork.Exams.CountByCreatorAsync(CurrentUserId, cancellationToken);
 
         // Đề đang mở: lọc ngay trong SQL theo cùng mốc thời gian, không đọc hết rồi lọc trong bộ nhớ.
@@ -184,7 +184,11 @@ public sealed class DashboardService : IDashboardService
                     ? Math.Round(visibleScores.Average(), 1, MidpointRounding.AwayFromZero)
                     : null,
 
-                HighestScore = visibleScores.Count > 0 ? visibleScores.Max() : null
+                // Làm tròn giống AverageScore ngay bên trên. Không làm thì hai ô cạnh nhau hiện
+                // "3,1" và "9,00" — cùng một thang điểm mà hai định dạng.
+                HighestScore = visibleScores.Count > 0
+                    ? Math.Round(visibleScores.Max(), 1, MidpointRounding.AwayFromZero)
+                    : null
             },
 
             // Sắp theo hạn nộp gần nhất: bài sắp đóng là bài cần làm trước.

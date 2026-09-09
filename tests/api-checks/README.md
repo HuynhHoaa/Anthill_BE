@@ -42,7 +42,13 @@ sẵn những gì.
 
 | Script | Phủ |
 |---|---|
+| `step2-students.sh` | §4.2, §4.3 — học sinh, nhóm lớp, xoay SecurityStamp. 37 phép |
+| `step3-questions.sh` | §4.5 — ngân hàng câu hỏi, bốn hàng rào upload. 38 phép |
 | `step4-exams.sh` | §4.6 — bài kiểm tra và blueprint. 51 phép |
+| `step5-assignments.sh` | §4.6 — giao bài, sinh đề, randomizePerStudent. 49 phép |
+| `step6-attempts.sh` | §4.7 — làm bài, chấm ở server, chống rò đáp án. 101 phép |
+| `step7-results.sh` | §4.8 — kết quả và dashboard, chống rò điểm. 83 phép |
+| `step8-notifications.sh` | §4.2, §7 — thông báo và hộp thư riêng. 35 phép |
 | `step5-assignments.sh` | §4.6 phần giao bài — phạm vi, idempotent, thu hồi. 42 phép |
 | `step6-attempts.sh` | §4.7 — làm bài, lưu nháp, chấm ở server. 85 phép |
 
@@ -51,3 +57,18 @@ sẵn những gì.
 `step6-attempts.sh` chạy lâu hơn hai bộ kia khoảng **30 giây**: nó tạo một đề có cửa sổ mở chỉ 25
 giây rồi chờ hết giờ thật. Không có quãng chờ đó thì không phép nào chứng minh được rằng hạn nộp
 tính bằng đồng hồ server — mà đó lại là quy tắc dễ cài sai nhất của cả §4.7.
+
+## Một điều cần biết trước khi chạy
+
+Từ bước 8, API có một **tiến trình nền tự nộp bài** chạy mỗi 30 giây. Nó có thể chạm vào lượt làm
+bài mà script vừa tạo và làm một phép kiểm hỏng — điều này đã xảy ra đúng một lần trong quá trình
+phát triển và không tái hiện lại được sau đó.
+
+Muốn chạy hoàn toàn tất định thì tắt nó đi khi khởi động API:
+
+```bash
+AutoSubmit__Enabled=false dotnet run --project src/EduQuiz.Api
+```
+
+Không tắt cũng chạy được — nhưng nếu gặp một phép hỏng lẻ không giải thích nổi ở `step6-attempts.sh`,
+đây là chỗ đáng nghi đầu tiên, chứ không phải backend vừa hỏng.

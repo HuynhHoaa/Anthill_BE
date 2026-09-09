@@ -141,7 +141,19 @@ print(str(int(sys.stdin.read()) == int('$UNREAD_BEFORE') - 1).lower())")"
 # Hai tab cung mo la chuyen thuong: danh dau lai mot muc da doc khong phai loi.
 expect_status "danh dau lai chinh muc do → 200" 200 "$(call PATCH "/api/notifications/$NOTIF_ID/read" "$STUDENT_A")"
 
+# Phai co NHIEU HON MOT muc chua doc thi nhanh nay moi that su chay. Lan viet dau chi co dung mot
+# thong bao, ma no da duoc danh dau o phep kiem ngay tren — nen mark-all-read khong co gi de lam va
+# loi "quen SaveChanges" di lot qua.
+for i in 1 2 3; do
+  c=$(call POST /api/exams "$TEACHER" "$(exam_body " bao $i")")
+  [[ "$c" != "200" ]] && fail_fast "tao de bao $i: HTTP $c"
+  extra_exam=$(json_field id); EXAMS+=("$extra_exam")
+  call POST "/api/exams/$extra_exam/assignments" "$TEACHER" "{\"studentIds\":[$S_A],\"groupIds\":[],\"notify\":true}" > /dev/null
+done
+expect_status "A dang co nhieu hon 1 thong bao chua doc" true   "$(call GET "/api/notifications/unread-count" "$STUDENT_A" > /dev/null; body | python -c 'import sys;print(str(int(sys.stdin.read())>1).lower())')"
+
 expect_status "danh dau tat ca da doc → 200" 200 "$(call POST "/api/notifications/mark-all-read" "$STUDENT_A")"
+expect_status "  tra ve so muc vua danh dau, lon hon 1" true   "$(body | python -c 'import sys;print(str(int(sys.stdin.read())>1).lower())')"
 expect_status "  so chua doc ve 0" 0 "$(call GET "/api/notifications/unread-count" "$STUDENT_A" > /dev/null; body)"
 expect_status "danh dau tat ca lan hai → 200" 200 "$(call POST "/api/notifications/mark-all-read" "$STUDENT_A")"
 expect_status "  lan nay khong con gi de danh dau" 0 "$(body)"

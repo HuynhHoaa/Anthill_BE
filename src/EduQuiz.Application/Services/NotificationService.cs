@@ -95,10 +95,18 @@ public sealed class NotificationService : INotificationService
     {
         var affected = await _unitOfWork.Notifications.MarkAllReadAsync(CurrentUserId, cancellationToken);
 
-        if (affected > 0)
+        if (affected == 0)
         {
-            await PublishUnreadCountAsync(cancellationToken);
+            return Result.Success(0);
         }
+
+        // Repository cố ý chỉ đánh dấu trên các thực thể đang được theo dõi và để việc ghi cho
+        // UnitOfWork — ranh giới ghi của cả hệ thống nằm ở đây. Quên dòng này thì endpoint trả về
+        // "đã đánh dấu N mục", số chưa đọc đọc lại từ SQL vẫn nguyên, và người dùng bấm mãi không
+        // thấy chấm đỏ tắt.
+        await _unitOfWork.SaveChangesAsync(cancellationToken);
+
+        await PublishUnreadCountAsync(cancellationToken);
 
         return Result.Success(affected);
     }
