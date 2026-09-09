@@ -47,6 +47,7 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IStudentService, StudentService>();
         services.AddScoped<IStudentGroupService, StudentGroupService>();
         services.AddScoped<IQuestionService, QuestionService>();
+        services.AddScoped<IExamService, ExamService>();
 
         // Quét cả assembly Application: thêm validator mới chỉ cần tạo file, không phải sửa chỗ này.
         services.AddValidatorsFromAssemblyContaining<LoginRequestValidator>();

@@ -1,0 +1,116 @@
+using EduQuiz.Application.DTOs.Exams;
+using EduQuiz.Application.Mappings;
+using FluentValidation;
+
+namespace EduQuiz.Application.Validators;
+
+/// <summary>
+/// Quy tắc lấy từ <c>examService.validatePayload</c> của frontend, cộng hai điều frontend chưa
+/// thực sự chặn.
+/// </summary>
+/// <remarks>
+/// <para>
+/// Ở đây chỉ có những kiểm tra <b>tự nó đứng được</b> — nhìn vào request là kết luận được. Hai
+/// điều kiện nặng còn lại (tổng ba tỷ lệ bằng 100, ngân hàng đủ câu) nằm ở
+/// <c>ExamService</c>, vì chúng chỉ áp dụng cho đề <i>không phải nháp</i> và điều kiện thứ hai
+/// còn phải đếm database.
+/// </para>
+/// <para>Hai điều frontend chưa chặn thật:</para>
+/// <list type="bullet">
+/// <item><b><c>durationMinutes</c> không được dài hơn cửa sổ <c>openAt..closeAt</c></b> (§5).
+/// Giao diện mới chỉ hiện một dòng cảnh báo rồi vẫn cho lưu. Cho làm bài 90 phút trong cửa sổ mở
+/// 30 phút nghĩa là mọi học sinh đều bị cắt giữa chừng.</item>
+/// <item><b><c>lifecycle</c> chỉ nhận <c>"draft"</c>.</b> Ba giá trị còn lại là dữ liệu dẫn xuất
+/// từ mốc thời gian; nhận chúng là cho phép ép đề sang trạng thái mâu thuẫn với chính lịch của nó.</item>
+/// </list>
+/// </remarks>
+public sealed class SaveExamRequestValidator : AbstractValidator<SaveExamRequest>
+{
+    public const int MaxTitleLength = 256;
+    public const int MaxDescriptionLength = 2000;
+    public const int MaxTopicLength = 128;
+
+    /// <summary>Cùng trần với frontend: quá 5 tiếng thì không còn là một buổi kiểm tra.</summary>
+    public const int MaxDurationMinutes = 300;
+
+    /// <summary>Trần thực dụng cho một đề trắc nghiệm; cũng chặn một request đòi sinh 100000 câu.</summary>
+    public const int MaxTotalQuestions = 500;
+
+    /// <summary>Cột <c>PointPerQuestion</c> khai <c>precision(6, 2)</c>.</summary>
+    public const decimal MaxPointPerQuestion = 9999.99m;
+
+    public SaveExamRequestValidator()
+    {
+        RuleFor(request => request.Title)
+            .NotEmpty().WithMessage("Tên bài kiểm tra không được để trống.")
+            .MaximumLength(MaxTitleLength)
+            .WithMessage($"Tên bài kiểm tra không được dài quá {MaxTitleLength} ký tự.");
+
+        RuleFor(request => request.Description)
+            .MaximumLength(MaxDescriptionLength)
+            .WithMessage($"Mô tả không được dài quá {MaxDescriptionLength} ký tự.");
+
+        RuleFor(request => request.Topic)
+            .MaximumLength(MaxTopicLength)
+            .WithMessage($"Tên chủ đề không được dài quá {MaxTopicLength} ký tự.");
+
+        RuleFor(request => request.DurationMinutes)
+            .InclusiveBetween(1, MaxDurationMinutes)
+            .WithMessage($"Thời gian làm bài phải từ 1 đến {MaxDurationMinutes} phút.");
+
+        RuleFor(request => request.TotalQuestions)
+            .InclusiveBetween(1, MaxTotalQuestions)
+            .WithMessage($"Số câu hỏi của đề phải từ 1 đến {MaxTotalQuestions}.");
+
+        RuleFor(request => request.PointPerQuestion)
+            .GreaterThan(0m).WithMessage("Điểm mỗi câu phải lớn hơn 0.")
+            .LessThanOrEqualTo(MaxPointPerQuestion)
+            .WithMessage($"Điểm mỗi câu không được vượt quá {MaxPointPerQuestion}.");
+
+        // Ba tỷ lệ kiểm riêng từng cái ở đây; tổng của chúng chỉ bắt buộc bằng 100 khi đề không
+        // phải bản nháp, nên phép kiểm đó thuộc về service.
+        RuleFor(request => request.EasyPercentage)
+            .InclusiveBetween(0, 100).WithMessage("Tỷ lệ câu Dễ phải nằm trong khoảng 0 đến 100.");
+
+        RuleFor(request => request.MediumPercentage)
+            .InclusiveBetween(0, 100).WithMessage("Tỷ lệ câu Trung bình phải nằm trong khoảng 0 đến 100.");
+
+        RuleFor(request => request.HardPercentage)
+            .InclusiveBetween(0, 100).WithMessage("Tỷ lệ câu Khó phải nằm trong khoảng 0 đến 100.");
+
+        RuleFor(request => request.CloseAt)
+            .GreaterThan(request => request.OpenAt)
+            .WithMessage("Thời gian đóng bài phải sau thời gian mở bài.");
+
+        // Phép kiểm frontend mới chỉ cảnh báo. Đặt sau quy tắc CloseAt > OpenAt nhưng FluentValidation
+        // chạy độc lập từng rule, nên khi hai mốc ngược nhau người dùng nhận cả hai câu — vẫn đúng,
+        // vì một cửa sổ âm thì đương nhiên không chứa nổi thời lượng nào.
+        RuleFor(request => request)
+            .Must(FitsInsideWindow)
+            .WithName(nameof(SaveExamRequest.DurationMinutes))
+            .WithMessage("Thời gian làm bài dài hơn khoảng thời gian mở đề, nên không học sinh nào làm hết bài được.");
+
+        RuleFor(request => request.Lifecycle)
+            .Must(BeDraftOrEmpty)
+            .WithMessage("Trường 'lifecycle' chỉ nhận giá trị 'draft', hoặc bỏ trống để đề có hiệu lực theo lịch.");
+    }
+
+    private static bool FitsInsideWindow(SaveExamRequest request)
+    {
+        // Cửa sổ ngược đã có quy tắc riêng báo lỗi; ở đây bỏ qua để người dùng không nhận hai câu
+        // nói cùng một chuyện.
+        if (request.CloseAt <= request.OpenAt)
+        {
+            return true;
+        }
+
+        return request.DurationMinutes <= (request.CloseAt - request.OpenAt).TotalMinutes;
+    }
+
+    private static bool BeDraftOrEmpty(string? lifecycle) =>
+        string.IsNullOrWhiteSpace(lifecycle)
+        || string.Equals(
+            lifecycle.Trim(),
+            ExamMappingExtensions.DraftLifecycleValue,
+            StringComparison.OrdinalIgnoreCase);
+}
