@@ -1,5 +1,6 @@
 using EduQuiz.Application.Common;
 using EduQuiz.Application.DTOs.ExamAssignments;
+using EduQuiz.Application.Interfaces.Realtime;
 using EduQuiz.Application.Interfaces.Security;
 using EduQuiz.Application.Interfaces.Services;
 using EduQuiz.Application.Interfaces.UnitOfWork;
@@ -41,15 +42,18 @@ public sealed class ExamAssignmentService : IExamAssignmentService
     private readonly IUnitOfWork _unitOfWork;
     private readonly ICurrentUser _currentUser;
     private readonly IExamGeneratorService _generator;
+    private readonly IRealtimeNotificationService _realtime;
 
     public ExamAssignmentService(
         IUnitOfWork unitOfWork,
         ICurrentUser currentUser,
-        IExamGeneratorService generator)
+        IExamGeneratorService generator,
+        IRealtimeNotificationService realtime)
     {
         _unitOfWork = unitOfWork;
         _currentUser = currentUser;
         _generator = generator;
+        _realtime = realtime;
     }
 
     private int CurrentUserId => _currentUser.RequireUserId();
@@ -220,6 +224,32 @@ public sealed class ExamAssignmentService : IExamAssignmentService
 
         await _unitOfWork.SaveChangesAsync(cancellationToken);
         await transaction.CommitAsync(cancellationToken);
+
+        // SAU khi commit, không sớm hơn một dòng nào. Bắn trước commit thì có lúc học sinh nhận
+        // thông báo về một bài mà transaction ngay sau đó cuộn lại — em mở ứng dụng ra và không
+        // thấy gì (§7).
+        if (request.Notify)
+        {
+            var teacher = await _unitOfWork.Users.GetByIdAsync(exam.CreatedByUserId, cancellationToken);
+
+            await _realtime.ExamAssignedAsync(
+                assignments.Select(assignment => assignment.StudentId),
+                new ExamAssignedEvent
+                {
+                    ExamId = exam.Id,
+
+                    // Một sự kiện cho cả lô nên assignmentId không đại diện cho ai cụ thể. Client
+                    // dùng examId để điều hướng; trường này giữ lại cho đúng hợp đồng §7.
+                    AssignmentId = assignments[0].Id,
+
+                    ExamTitle = exam.Title,
+                    TeacherName = teacher?.FullName ?? string.Empty,
+                    DurationMinutes = exam.DurationMinutes,
+                    OpenAt = exam.OpenAt.ToUtc(),
+                    CloseAt = exam.CloseAt.ToUtc()
+                },
+                cancellationToken);
+        }
 
         return Result.Success(response);
     }
