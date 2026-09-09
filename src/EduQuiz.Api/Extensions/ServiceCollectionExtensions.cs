@@ -41,7 +41,8 @@ public static class ServiceCollectionExtensions
         services.AddScoped<ICurrentUser, CurrentUser>();
 
         // Thêm theo đúng thứ tự của §9. Đã xong bước 1 (Auth + User), bước 2 (Student +
-        // StudentGroup) và bước 3 (Question); các service còn lại nối tiếp vào đây.
+        // StudentGroup), bước 3 (Question), bước 4-5 (Exam + Assignment) và bước 6 (Attempt);
+        // các service còn lại nối tiếp vào đây.
         // IFileService của bước 3 đăng ký ở AddInfrastructure, vì nó chạm tới đĩa.
         services.AddScoped<IAuthService, AuthService>();
         services.AddScoped<IStudentService, StudentService>();
@@ -50,6 +51,7 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IExamService, ExamService>();
         services.AddScoped<IExamGeneratorService, ExamGeneratorService>();
         services.AddScoped<IExamAssignmentService, ExamAssignmentService>();
+        services.AddScoped<IExamAttemptService, ExamAttemptService>();
 
         // Quét cả assembly Application: thêm validator mới chỉ cần tạo file, không phải sửa chỗ này.
         services.AddValidatorsFromAssemblyContaining<LoginRequestValidator>();

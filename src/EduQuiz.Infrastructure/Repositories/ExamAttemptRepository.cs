@@ -56,11 +56,55 @@ public class ExamAttemptRepository : GenericRepository<ExamAttempt>, IExamAttemp
             .Select(a => (int?)a.Assignment.StudentId)
             .FirstOrDefaultAsync(cancellationToken);
 
+    /// <inheritdoc />
+    /// <remarks>
+    /// <c>FOR UPDATE</c> của PostgreSQL: request thứ hai chạm vào cùng một lượt phải chờ tới khi
+    /// request đầu commit rồi mới đọc, và lúc đó nó đọc được bản vừa ghi chứ không phải bản cũ. Đó
+    /// là thứ biến chuỗi đọc–quyết định–ghi ở tầng service thành một thao tác nguyên tử mà không
+    /// phải thêm cột phiên bản nào vào lược đồ.
+    /// </remarks>
+    public async Task<ExamAttempt?> LockForUpdateAsync(int attemptId, CancellationToken cancellationToken = default)
+    {
+        // Phải hỏi trước khi truy vấn, vì ngay sau nó thì dòng nào cũng đã nằm trong change tracker.
+        var trackedBefore = Context.ChangeTracker
+            .Entries<ExamAttempt>()
+            .Any(entry => entry.Entity.Id == attemptId);
+
+        // Không nối thêm toán tử LINQ nào phía sau, để EF gửi thẳng câu lệnh này xuống thay vì bọc
+        // nó vào một truy vấn con.
+        var rows = await DbSet
+            .FromSql($"""SELECT * FROM "ExamAttempts" WHERE "Id" = {attemptId} FOR UPDATE""")
+            .ToListAsync(cancellationToken);
+
+        if (rows.Count == 0)
+        {
+            return null;
+        }
+
+        var attempt = rows[0];
+
+        if (trackedBefore)
+        {
+            // Với thực thể đã theo dõi từ trước, EF trả lại chính đối tượng cũ và giữ nguyên giá trị
+            // của lần đọc trước — tức là ảnh chụp từ trước lúc phải xếp hàng chờ khoá, đúng thứ
+            // không được phép đem ra quyết định. Đọc lại ở đây an toàn vì dòng đã bị khoá: không ai
+            // chen vào giữa hai câu lệnh được nữa.
+            await Context.Entry(attempt).ReloadAsync(cancellationToken);
+        }
+
+        return attempt;
+    }
+
     /// <summary>
     /// Bài đang làm dở đã quá hạn. Học sinh tắt trình duyệt thì không ai gọi submit, nên
     /// background job phải tự đi tìm (§3 quy tắc ③). Lấy theo lô để một lần quét không kéo
     /// cả nghìn bản ghi về bộ nhớ.
     /// </summary>
+    /// <remarks>
+    /// Nạp kèm hồ sơ học sinh vì việc tự nộp còn sinh thông báo cho giáo viên, mà thông báo đó phải
+    /// gọi tên em nào hết giờ. Thiếu <c>Student</c> ở đây thì thông báo vẫn gửi được nhưng nội dung
+    /// rỗng nghĩa — và đó là kiểu hỏng chỉ lộ ra trên môi trường thật, nơi background job mới chạy.
+    /// </remarks>
     public async Task<IReadOnlyList<ExamAttempt>> GetExpiredInProgressAsync(
         DateTime utcNow,
         int batchSize,
@@ -74,6 +118,8 @@ public class ExamAttemptRepository : GenericRepository<ExamAttempt>, IExamAttemp
         return await DbSet
             .Include(a => a.Assignment)
                 .ThenInclude(assignment => assignment.Exam)
+            .Include(a => a.Assignment)
+                .ThenInclude(assignment => assignment.Student)
             .Where(a => a.Status == AssignmentStatus.InProgress && a.ExpiresAt <= utcNow)
             .OrderBy(a => a.ExpiresAt)
             .Take(batchSize)

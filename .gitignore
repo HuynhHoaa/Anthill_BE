@@ -25,7 +25,11 @@ secrets.json
 
 # ---------- Dữ liệu người dùng tải lên ----------
 # Ảnh câu hỏi giáo viên upload lúc chạy, không thuộc về mã nguồn.
-wwwroot/uploads/
+#
+# Phải có ** ở đầu. Mẫu chứa dấu / ở giữa được git neo vào thư mục chứa .gitignore, nên
+# "wwwroot/uploads/" chỉ khớp <gốc repo>/wwwroot/uploads/ — trong khi thư mục thật nằm ở
+# src/EduQuiz.Api/wwwroot/uploads/. Sai một ký tự là ảnh người dùng tải lên đi thẳng vào repo.
+**/wwwroot/uploads/
 
 # ---------- Trình soạn thảo ----------
 .idea/
