@@ -100,7 +100,7 @@ public sealed class ExamAttemptsController : ApiControllerBase
     /// </para>
     /// </remarks>
     [HttpPut("{attemptId:int}/answers")]
-    [ProducesResponseType<ApiMessageResponse>(StatusCodes.Status200OK)]
+    [ProducesResponseType<SaveAnswersResponse>(StatusCodes.Status200OK)]
     [ProducesResponseType<ApiErrorResponse>(StatusCodes.Status400BadRequest)]
     [ProducesResponseType<ApiErrorResponse>(StatusCodes.Status403Forbidden)]
     [ProducesResponseType<ApiErrorResponse>(StatusCodes.Status404NotFound)]
@@ -111,9 +111,10 @@ public sealed class ExamAttemptsController : ApiControllerBase
         int attemptId,
         [FromBody] SaveAnswersRequest request,
         CancellationToken cancellationToken)
-        => FromResult(
-            await _attemptService.SaveAnswersAsync(attemptId, request, cancellationToken),
-            "Đã lưu bài làm.");
+        // FromResult(result) chu khong phai overload kem thong diep: overload do nhan Result (lop
+        // cha) nen Result<SaveAnswersResponse> van khop, va client chi nhan ve mot cau chu trong
+        // khi no can biet goi vua gui co duoc ghi hay khong.
+        => FromResult(await _attemptService.SaveAnswersAsync(attemptId, request, cancellationToken));
 
     /// <summary>Nộp bài và <b>chấm ngay ở server</b>. Idempotent.</summary>
     /// <remarks>

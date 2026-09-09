@@ -20,7 +20,16 @@ public sealed record AssignExamRequest
     /// dùng chung đề còn nửa kia mỗi em một đề thì không so sánh kết quả với nhau được nữa.
     /// Đổi cờ sau khi đã giao <b>không</b> sinh lại những bản đề đã phát.
     /// </remarks>
-    public bool RandomizePerStudent { get; init; }
+    /// <remarks>
+    /// Nullable co chu dich: <c>null</c> nghia la "giu nguyen cai de dang co", con <c>false</c>
+    /// nghia la "toi muon de chung".
+    ///
+    /// Kieu bool thuong thi hai y do khong phan biet duoc — bo trong truong nay va gui thang
+    /// <c>false</c> deu toi server thanh <c>false</c>. Voi mot de da giao theo kieu de rieng, moi
+    /// lan giao them du chi mot em cung bi tu choi 409, va cach duy nhat de them nguoi la thu hoi
+    /// ca lop roi giao lai tu dau.
+    /// </remarks>
+    public bool? RandomizePerStudent { get; init; }
 
     /// <summary>Gửi thông báo cho những em vừa được giao. Chỉ áp dụng cho em <b>mới</b>, không nhắc lại.</summary>
     public bool Notify { get; init; } = true;

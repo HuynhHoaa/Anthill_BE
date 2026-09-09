@@ -57,4 +57,18 @@ public sealed record AttemptSessionDto
     /// viết thêm nhánh kiểm tra cho đúng cái tình huống đó.
     /// </remarks>
     public required IReadOnlyDictionary<int, int> SavedAnswers { get; init; }
+
+    /// <summary>
+    /// Số thứ tự gói lưu nháp cuối cùng đã được áp dụng.
+    /// </summary>
+    /// <remarks>
+    /// Client phải nối tiếp bộ đếm của mình từ giá trị này, không được bắt đầu lại từ 0.
+    ///
+    /// Bộ đếm sinh ra để một gói đi chậm không ghi đè gói mới hơn — server bỏ qua mọi gói có số
+    /// nhỏ hơn hoặc bằng số đã áp dụng. Nhưng tải lại trang hay đổi thiết bị thì bộ đếm phía client
+    /// khởi động lại từ đầu, và kể từ đó <b>mọi</b> lần lưu nháp đều rơi vào nhánh "gói cũ" rồi bị
+    /// bỏ qua trong im lặng — vẫn trả 200, vẫn báo "đã lưu", mà không ghi gì cả. Chính hai tình
+    /// huống đó lại là thứ màn hình làm bài quảng cáo là chịu được.
+    /// </remarks>
+    public required long LastAppliedSeq { get; init; }
 }

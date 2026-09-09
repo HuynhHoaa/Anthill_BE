@@ -212,4 +212,22 @@ expect_json   "  assignedCount = 3" assignedCount 3
 expect_status "cờ được ghi lên đề" 200 "$(call GET "/api/exams/$PER_STUDENT_ID" "$TEACHER")"
 expect_json   "  randomizePerStudent = true" randomizePerStudent true
 
+section "Bo trong randomizePerStudent = giu nguyen, khong phai false"
+
+# Kieu bool thuong thi "bo trong" va "gui false" den server deu thanh false. Voi de da giao theo
+# kieu de rieng, moi lan giao them du chi mot em cung bi tu choi 409, va cach duy nhat de them
+# nguoi la thu hoi ca lop roi giao lai tu dau.
+expect_status "giao them ma KHONG gui randomizePerStudent → 200" 200   "$(call POST "/api/exams/$PER_STUDENT_ID/assignments" "$TEACHER" "{\"studentIds\":[],\"groupIds\":[$GROUP_ID],\"notify\":false}")"
+expect_status "co gang doi co tren de da giao → 409" 409   "$(call POST "/api/exams/$PER_STUDENT_ID/assignments" "$TEACHER" "{\"studentIds\":[],\"groupIds\":[$GROUP_ID],\"randomizePerStudent\":false,\"notify\":false}")"
+expect_status "co van giu nguyen sau lan bi tu choi" 200 "$(call GET "/api/exams/$PER_STUDENT_ID" "$TEACHER")"
+expect_json   "  randomizePerStudent van = true" randomizePerStudent true
+
+section "Dem nhom ngoai pham vi tach khoi dem hoc sinh"
+
+# Gop chung hai con so khac don vi thi mot lop 40 em bi tu choi hien ra la "bo qua 1", va giao vien
+# doc con so do se tuong chi mot em gap van de.
+expect_status "chon mot id nhom khong thuoc minh → 200" 200   "$(call POST "/api/exams/$EXAM_ID/assignments" "$TEACHER" '{"studentIds":[],"groupIds":[999999],"notify":false}')"
+expect_json   "  skippedOutOfScopeGroups = 1" skippedOutOfScopeGroups 1
+expect_json   "  skippedOutOfScope = 0 (khong co hoc sinh nao bi loai)" skippedOutOfScope 0
+
 summary

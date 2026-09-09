@@ -238,7 +238,7 @@ public sealed class ExamAttemptService : IExamAttemptService
     }
 
     /// <inheritdoc />
-    public async Task<Result> SaveAnswersAsync(
+    public async Task<Result<SaveAnswersResponse>> SaveAnswersAsync(
         int attemptId,
         SaveAnswersRequest request,
         CancellationToken cancellationToken = default)
@@ -255,7 +255,7 @@ public sealed class ExamAttemptService : IExamAttemptService
         var found = await LockOwnedAttemptAsync(attemptId, cancellationToken);
         if (found.IsFailure)
         {
-            return Result.Failure(found.Error!, found.ErrorCode);
+            return Result.Failure<SaveAnswersResponse>(found.Error!, found.ErrorCode);
         }
 
         var attempt = found.ValueOrThrow;
@@ -265,7 +265,7 @@ public sealed class ExamAttemptService : IExamAttemptService
         // đã xong hẳn và nhìn thấy được ở đây, hoặc còn đang chờ chính khoá này.
         if (attempt.Status != AssignmentStatus.InProgress)
         {
-            return Result.Conflict(NotInProgressMessage);
+            return Result.Conflict<SaveAnswersResponse>(NotInProgressMessage);
         }
 
         // §5: hết giờ thì không nhận nháp mới, trả 410. Chốt sổ luôn tại đây để lần gọi sau nhận
@@ -276,25 +276,34 @@ public sealed class ExamAttemptService : IExamAttemptService
             var finalised = await FinaliseExpiredAsync(attempt, now, cancellationToken);
             if (finalised.IsFailure)
             {
-                return finalised;
+                return Result.Failure<SaveAnswersResponse>(finalised.Error!, finalised.ErrorCode);
             }
 
             await transaction.CommitAsync(cancellationToken);
 
-            return Result.Gone(ExpiredMessage);
+            return Result.Gone<SaveAnswersResponse>(ExpiredMessage);
         }
 
-        // Gói tới sai thứ tự: bỏ qua và vẫn trả 200. Đây không phải lỗi của người dùng mà là hệ quả
-        // của độ trễ mạng, còn trả lỗi thì chỉ khiến client thử lại đúng cái gói cũ đó.
+        // Gói tới sai thứ tự: bỏ qua, nhưng NÓI RÕ là đã bỏ. Vẫn trả 200 vì đây không phải lỗi của
+        // người dùng mà là hệ quả của độ trễ mạng, và trả lỗi chỉ khiến client thử lại đúng gói cũ.
+        //
+        // Trước đây nhánh này trả về đúng câu "Đã lưu bài làm." như nhánh ghi thật, nên một client
+        // có bộ đếm lệch — sau F5 chẳng hạn — sẽ thấy "đã lưu" ở mọi lần gọi trong khi database
+        // không nhận gì cả. Trả lại số thứ tự server đang giữ để client tự chỉnh bộ đếm.
         if (request.ClientSeq <= attempt.LastAppliedSeq)
         {
-            return Result.Success();
+            return Result.Success(new SaveAnswersResponse
+            {
+                Applied = false,
+                LastAppliedSeq = attempt.LastAppliedSeq,
+                SavedCount = 0
+            });
         }
 
         var paper = await ResolvePaperAsync(attempt.Assignment, cancellationToken);
         if (paper.IsFailure)
         {
-            return Result.Failure(paper.Error!, paper.ErrorCode);
+            return Result.Failure<SaveAnswersResponse>(paper.Error!, paper.ErrorCode);
         }
 
         var questionsById = paper.ValueOrThrow.Questions.ToDictionary(question => question.Id);
@@ -302,7 +311,7 @@ public sealed class ExamAttemptService : IExamAttemptService
         var merged = await MergeAnswersAsync(attempt, request.Answers, questionsById, now, cancellationToken);
         if (merged.IsFailure)
         {
-            return merged;
+            return Result.Failure<SaveAnswersResponse>(merged.Error!, merged.ErrorCode);
         }
 
         // Gán thẳng lên thực thể đang được change tracker theo dõi chứ không gọi Update(): Update()
@@ -316,7 +325,12 @@ public sealed class ExamAttemptService : IExamAttemptService
         await _unitOfWork.SaveChangesAsync(cancellationToken);
         await transaction.CommitAsync(cancellationToken);
 
-        return Result.Success();
+        return Result.Success(new SaveAnswersResponse
+        {
+            Applied = true,
+            LastAppliedSeq = request.ClientSeq,
+            SavedCount = request.Answers.Count
+        });
     }
 
     /// <inheritdoc />
@@ -374,9 +388,12 @@ public sealed class ExamAttemptService : IExamAttemptService
         // kèm thì cửa sổ ghi dài thêm đúng bằng độ trễ mạng, mà độ trễ đó client tự tạo ra được.
         var lateSubmit = AttemptDeadline.IsExpired(attempt.ExpiresAt, now);
 
-        var newerThanLastSave = request.ClientSeq is null || request.ClientSeq > attempt.LastAppliedSeq;
-
-        if (!lateSubmit && newerThanLastSave && request.Answers is { Count: > 0 })
+        // KHONG chan theo ClientSeq o day. Bo dem chi de xu ly hai goi luu nhap den sai thu tu;
+        // con nop bai la loi tuyen bo cuoi cung cua hoc sinh, khong co goi nao "moi hon" dang tren
+        // duong toi. Neu client vua tai lai trang thi bo dem cua no bat dau lai tu dau, va chan o
+        // day nghia la cham diem tren dap an CU roi tra ve 200 kem mot con diem — hoc sinh mat bai
+        // vinh vien ma khong ai bao gi.
+        if (!lateSubmit && request.Answers is { Count: > 0 })
         {
             var questionsById = questions.ToDictionary(question => question.Id);
 
@@ -557,7 +574,8 @@ public sealed class ExamAttemptService : IExamAttemptService
                 .OrderBy(question => question.Ordinal)
                 .Select(question => question.ToAttemptQuestionDto())
                 .ToList(),
-            SavedAnswers = savedAnswers
+            SavedAnswers = savedAnswers,
+            LastAppliedSeq = attempt.LastAppliedSeq
         };
     }
 

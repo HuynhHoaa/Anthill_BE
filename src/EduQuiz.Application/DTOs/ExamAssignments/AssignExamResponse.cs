@@ -38,4 +38,14 @@ public sealed record AssignExamResponse
     /// gì đã xảy ra.
     /// </remarks>
     public required int SkippedOutOfScope { get; init; }
+
+    /// <summary>
+    /// Số <b>nhóm lớp</b> bị bỏ qua vì không do giáo viên này quản lý.
+    /// </summary>
+    /// <remarks>
+    /// Đếm riêng khỏi <see cref="SkippedOutOfScope"/> vì hai con số khác đơn vị. Gộp chung thì một
+    /// lớp 40 em bị từ chối lại hiện ra là "bỏ qua 1", và giáo viên đọc con số đó sẽ tưởng chỉ có
+    /// một em gặp vấn đề.
+    /// </remarks>
+    public required int SkippedOutOfScopeGroups { get; init; }
 }

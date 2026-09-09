@@ -112,7 +112,10 @@ public sealed class ExamAssignmentService : IExamAssignmentService
         // đường tới bản đề nào. Chốt lại: khi đã có người được giao thì cờ không đổi được nữa.
         var existingCount = await _unitOfWork.ExamAssignments.CountByExamAsync(exam.Id, cancellationToken);
 
-        if (existingCount > 0 && exam.RandomizePerStudent != request.RandomizePerStudent)
+        // null nghia la "giu nguyen", nen chi so sanh khi client thuc su gui mot gia tri.
+        var requestedRandomize = request.RandomizePerStudent;
+
+        if (existingCount > 0 && requestedRandomize is not null && exam.RandomizePerStudent != requestedRandomize)
         {
             return Result.Conflict<AssignExamResponse>(
                 exam.RandomizePerStudent
@@ -149,30 +152,42 @@ public sealed class ExamAssignmentService : IExamAssignmentService
             SkippedAlreadyAssigned = alreadyAssigned.Count,
             SkippedLocked = targets.LockedCount,
             SkippedNotFound = targets.NotFoundCount,
-            SkippedOutOfScope = targets.OutOfScopeCount
+            SkippedOutOfScope = targets.OutOfScopeCount,
+            SkippedOutOfScopeGroups = targets.OutOfScopeGroupCount
         };
 
         var now = DateTime.UtcNow;
+        var flagChanged = requestedRandomize is not null && exam.RandomizePerStudent != requestedRandomize;
 
-        // Ghi cờ trước nhánh thoát sớm. Đặt sau thì lần giao đầu tiên mà mọi em đều đã có bài —
-        // hoặc mọi em đều bị bỏ qua — sẽ âm thầm đánh rơi lựa chọn của giáo viên, và vì cờ chỉ
-        // đặt được ở đây nên nó không còn đường nào để đúng nữa.
-        if (exam.RandomizePerStudent != request.RandomizePerStudent)
+        if (newcomers.Count == 0 && !flagChanged)
         {
-            exam.RandomizePerStudent = request.RandomizePerStudent;
-            exam.UpdatedAt = now;
-            _unitOfWork.Exams.Update(exam);
-            await _unitOfWork.SaveChangesAsync(cancellationToken);
-        }
-
-        if (newcomers.Count == 0)
-        {
-            // Không có gì để ghi thêm. Vẫn trả 200 kèm các con số: người dùng cần biết vì sao không
-            // ai được giao, và "đã giao hết rồi" là câu trả lời hợp lệ chứ không phải lỗi.
+            // Không có gì để ghi. Vẫn trả 200 kèm các con số: người dùng cần biết vì sao không ai
+            // được giao, và "đã giao hết rồi" là câu trả lời hợp lệ chứ không phải lỗi.
             return Result.Success(response);
         }
 
         await using var transaction = await _unitOfWork.BeginTransactionAsync(cancellationToken);
+
+        // Ghi cờ BÊN TRONG transaction. Đặt ngoài — kèm SaveChanges riêng — thì nó đã nằm trong
+        // database trước khi transaction mở, nên lần rollback phía dưới không cuốn nó theo: sinh
+        // đề hỏng, không ai được giao bài, mà cờ vẫn đổi. Lần giao sau đó sẽ bị chính phép kiểm ở
+        // đầu hàm từ chối vì "đề đã giao theo kiểu kia rồi", trong khi thực tế chưa giao cho ai.
+        //
+        // Vẫn phải đặt trước nhánh thoát sớm ở trên: cờ chỉ đặt được ở endpoint này, nên bỏ qua nó
+        // khi mọi em đều đã có bài là đánh rơi lựa chọn của giáo viên mà không báo gì.
+        if (flagChanged)
+        {
+            exam.RandomizePerStudent = requestedRandomize!.Value;
+            exam.UpdatedAt = now;
+            _unitOfWork.Exams.Update(exam);
+        }
+
+        if (newcomers.Count == 0)
+        {
+            await _unitOfWork.SaveChangesAsync(cancellationToken);
+            await transaction.CommitAsync(cancellationToken);
+            return Result.Success(response);
+        }
 
         var assignments = newcomers
             .Select(student => new ExamAssignment
@@ -258,7 +273,11 @@ public sealed class ExamAssignmentService : IExamAssignmentService
 
         public required int LockedCount { get; init; }
 
+        /// <summary>Số <b>học sinh</b> không thuộc nhóm nào của giáo viên này.</summary>
         public required int OutOfScopeCount { get; init; }
+
+        /// <summary>Số <b>nhóm lớp</b> bị loại vì không do giáo viên này quản lý.</summary>
+        public required int OutOfScopeGroupCount { get; init; }
     }
 
     /// <summary>
@@ -306,7 +325,8 @@ public sealed class ExamAssignmentService : IExamAssignmentService
                 InScope = [],
                 NotFoundCount = 0,
                 LockedCount = 0,
-                OutOfScopeCount = outOfScopeGroups
+                OutOfScopeCount = 0,
+                OutOfScopeGroupCount = outOfScopeGroups
             };
         }
 
@@ -321,7 +341,7 @@ public sealed class ExamAssignmentService : IExamAssignmentService
             .ToHashSet();
 
         var inScope = new List<User>(students.Count);
-        var outOfScope = outOfScopeGroups;
+        var outOfScope = 0;
         var locked = 0;
 
         foreach (var student in students)
@@ -348,7 +368,8 @@ public sealed class ExamAssignmentService : IExamAssignmentService
             InScope = inScope,
             NotFoundCount = notFound,
             LockedCount = locked,
-            OutOfScopeCount = outOfScope
+            OutOfScopeCount = outOfScope,
+            OutOfScopeGroupCount = outOfScopeGroups
         };
     }
 

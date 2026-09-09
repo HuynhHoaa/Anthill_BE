@@ -87,6 +87,14 @@ public static class ExamAttemptMappingExtensions
         // service), đã chấm, và giáo viên bật cờ cho xem ngay.
         var canSeeScore = exam.ShowResultAfterSubmit && attempt is { Status: AssignmentStatus.Graded };
 
+        // Bản đề đã sinh mới là số câu THẬT của em này. Đọc exam.TotalQuestions là đọc cấu hình
+        // hiện tại của đề, mà cấu hình đó giáo viên sửa được sau khi đã giao — lúc đó màn hình
+        // giới thiệu hứa 40 câu trong khi bản đề trong tay em chỉ có 30. Màn làm bài và phản hồi
+        // lúc nộp đều lấy từ bản đề, nên để nguyên thì ba chỗ nói ba con số khác nhau.
+        var totalQuestions = assignment.Paper?.Questions.Count is > 0
+            ? assignment.Paper.Questions.Count
+            : exam.TotalQuestions;
+
         return new StudentExamItemDto
         {
             AssignmentId = assignment.Id,
@@ -98,7 +106,7 @@ public static class ExamAttemptMappingExtensions
             Topic = exam.Topic ?? string.Empty,
 
             DurationMinutes = exam.DurationMinutes,
-            TotalQuestions = exam.TotalQuestions,
+            TotalQuestions = totalQuestions,
             OpenAt = exam.OpenAt.ToUtc(),
             CloseAt = exam.CloseAt.ToUtc(),
             TeacherName = exam.CreatedBy?.FullName ?? string.Empty,

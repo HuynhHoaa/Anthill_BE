@@ -15,7 +15,7 @@ namespace EduQuiz.Application.Interfaces.Services;
 /// POST /api/exam-attempts                     → Task&lt;Result&lt;AttemptSessionDto&gt;&gt; StartAsync(StartAttemptRequest request, CancellationToken ct)
 /// GET  /api/exam-attempts/{attemptId}         → Task&lt;Result&lt;AttemptSessionDto&gt;&gt; GetSessionAsync(int attemptId, CancellationToken ct)
 /// GET  /api/exam-attempts/{attemptId}/time    → Task&lt;Result&lt;AttemptTimeDto&gt;&gt; GetTimeAsync(int attemptId, CancellationToken ct)
-/// PUT  /api/exam-attempts/{attemptId}/answers → Task&lt;Result&gt; SaveAnswersAsync(int attemptId, SaveAnswersRequest request, CancellationToken ct)
+/// PUT  /api/exam-attempts/{attemptId}/answers → Task&lt;Result&lt;SaveAnswersResponse&gt;&gt; SaveAnswersAsync(int attemptId, SaveAnswersRequest request, CancellationToken ct)
 /// POST /api/exam-attempts/{attemptId}/submit  → Task&lt;Result&lt;SubmitAttemptResponse&gt;&gt; SubmitAsync(int attemptId, SubmitAttemptRequest request, CancellationToken ct)
 /// (background job)                            → Task&lt;Result&lt;int&gt;&gt; AutoSubmitExpiredAsync(int batchSize, CancellationToken ct)
 /// </code>
@@ -84,7 +84,7 @@ public interface IExamAttemptService
     /// <see cref="ErrorCode.Unprocessable"/> (422) khi <c>questionId</c> không thuộc lượt này hoặc
     /// <c>answerId</c> không thuộc <c>questionId</c> đó.
     /// </remarks>
-    Task<Result> SaveAnswersAsync(
+    Task<Result<SaveAnswersResponse>> SaveAnswersAsync(
         int attemptId,
         SaveAnswersRequest request,
         CancellationToken cancellationToken = default);

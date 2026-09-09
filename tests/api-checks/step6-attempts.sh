@@ -467,4 +467,46 @@ expect_status "màn giới thiệu của chính bài đó → 200" 200 "$(call G
 expect_json   "  status = graded" status graded
 expect_status "  vẫn không kèm score" absent "$(has_field score)"
 
+# ── Bộ đếm gói lưu nháp: chốt chặn cho lỗi mất bài sau khi tải lại trang ────────
+
+section "ClientSeq — client sau F5 không được mất bài trong im lặng"
+
+new_exam "2020-01-01T00:00:00Z" "2035-01-01T00:00:00Z" 45 " seq" true; SEQ_EXAM=$NEW_EXAM_ID
+ASSIGN_SEQ=$(assignment_for "$STUDENT_A" "$SEQ_EXAM")
+
+expect_status "bắt đầu lượt → 200" 200 "$(call POST /api/exam-attempts "$STUDENT_A" "{\"assignmentId\":$ASSIGN_SEQ}")"
+SEQ_ATTEMPT=$(json_field attemptId)
+cp "$BODY_FILE" "$SESSION_FILE"
+SEQ_Q0=$(question_id "$SESSION_FILE" 0)
+SEQ_A0=$(answer_id "$SESSION_FILE" 0 dung)
+SEQ_A1=$(answer_id "$SESSION_FILE" 0 sai)
+
+# Session phải nói cho client biết server đang giữ số nào. Không có nó thì client sau F5 bắt đầu
+# lại từ 0 và mọi gói lưu sau đó đều bị coi là cũ.
+expect_status "  session có lastAppliedSeq" present "$(has_field lastAppliedSeq)"
+expect_json   "  lượt mới thì lastAppliedSeq = 0" lastAppliedSeq 0
+
+expect_status "lưu nháp seq=5 → 200" 200   "$(call PUT "/api/exam-attempts/$SEQ_ATTEMPT/answers" "$STUDENT_A" "{\"clientSeq\":5,\"answers\":[{\"questionId\":$SEQ_Q0,\"answerId\":$SEQ_A0}]}")"
+expect_json   "  applied = true"       applied true
+expect_json   "  lastAppliedSeq = 5"   lastAppliedSeq 5
+
+# Gói cũ hơn: vẫn 200 nhưng PHẢI nói rõ là không ghi. Trước đây nó trả đúng câu "Đã lưu bài làm."
+# như nhánh ghi thật, nên client có bộ đếm lệch thấy "đã lưu" ở mọi lần gọi mà database trống trơn.
+expect_status "gói cũ seq=3 → 200 nhưng applied=false" 200   "$(call PUT "/api/exam-attempts/$SEQ_ATTEMPT/answers" "$STUDENT_A" "{\"clientSeq\":3,\"answers\":[{\"questionId\":$SEQ_Q0,\"answerId\":$SEQ_A1}]}")"
+expect_json   "  applied = false"                    applied false
+expect_json   "  tra lai so server dang giu = 5"     lastAppliedSeq 5
+
+expect_status "nạp lại phiên → 200" 200 "$(call GET "/api/exam-attempts/$SEQ_ATTEMPT" "$STUDENT_A")"
+expect_json   "  lastAppliedSeq = 5 de client noi tiep" lastAppliedSeq 5
+expect_status "  dap an cu van la cai da ghi luc seq=5" "$SEQ_A0"   "$(body | python -c "import json,sys;print(json.load(sys.stdin)['savedAnswers'].get('$SEQ_Q0',''))")"
+
+# Nộp bài KHÔNG được chặn theo seq: đây là lời tuyên bố cuối cùng của học sinh, không có gói nào
+# mới hơn đang trên đường tới. Chặn ở đây nghĩa là chấm trên đáp án CŨ rồi trả về 200 kèm điểm.
+#
+# Cách kiểm: đã lưu đáp án ĐÚNG ở seq=5, giờ nộp kèm đáp án SAI với seq=1 (bộ đếm vừa khởi động
+# lại như sau một lần F5). Chấm đúng thì correctCount = 0. Nếu nó ra 1 nghĩa là server đã bỏ qua
+# phần gửi kèm và chấm trên bản cũ — học sinh mất bài mà vẫn nhận về 200 kèm một con điểm.
+expect_status "nộp với seq thấp vẫn phải ăn đáp án gửi kèm → 200" 200   "$(call POST "/api/exam-attempts/$SEQ_ATTEMPT/submit" "$STUDENT_A" "{\"clientSeq\":1,\"answers\":[{\"questionId\":$SEQ_Q0,\"answerId\":$SEQ_A1}]}")"
+expect_json   "  chấm trên đáp án vừa gửi (sai) nên correctCount = 0" correctCount 0
+
 summary
