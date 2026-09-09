@@ -1,0 +1,47 @@
+namespace EduQuiz.Application.DTOs.ExamAssignments;
+
+/// <summary>
+/// Một học sinh đã được giao bài, kèm tiến trình làm bài của em đó — màn hình theo dõi của giáo viên.
+/// </summary>
+public sealed record ExamAssignmentDto
+{
+    public required int Id { get; init; }
+
+    public required int ExamId { get; init; }
+
+    public required int StudentId { get; init; }
+
+    public required string StudentName { get; init; }
+
+    /// <summary>Mã học sinh. Chuỗi rỗng nếu tài khoản chưa được cấp mã.</summary>
+    public required string StudentCode { get; init; }
+
+    /// <summary>Tên nhóm lớp, hoặc chuỗi rỗng khi em chưa được phân nhóm.</summary>
+    public required string Group { get; init; }
+
+    /// <summary>
+    /// <c>"assigned"</c> · <c>"inprogress"</c> · <c>"submitted"</c> · <c>"graded"</c> · <c>"expired"</c>.
+    /// </summary>
+    /// <remarks>
+    /// Dữ liệu <b>dẫn xuất</b>, không có cột nào lưu nó. Chưa có lượt làm bài thì là <c>assigned</c>;
+    /// có rồi thì lấy trạng thái của lượt đó.
+    ///
+    /// Một trường hợp được suy thêm: đề đã đóng mà em chưa từng bắt đầu thì trả <c>expired</c> chứ
+    /// không phải <c>assigned</c>. Để nguyên <c>assigned</c> sau khi hết hạn khiến bảng theo dõi
+    /// đọc như thể em vẫn còn cơ hội làm bài, trong khi cửa đã đóng — và giáo viên không phân biệt
+    /// được "chưa làm nhưng còn kịp" với "hết giờ mà không vào thi".
+    /// </remarks>
+    public required string Status { get; init; }
+
+    /// <summary>NULL khi em chưa bắt đầu làm bài.</summary>
+    public int? AttemptId { get; init; }
+
+    /// <summary>Chỉ có nghĩa khi bài đã chấm. NULL ở mọi trạng thái khác.</summary>
+    public decimal? Score { get; init; }
+
+    public DateTime? StartedAt { get; init; }
+
+    public DateTime? SubmittedAt { get; init; }
+
+    public required DateTime AssignedAt { get; init; }
+}

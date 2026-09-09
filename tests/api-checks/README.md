@@ -43,5 +43,11 @@ sẵn những gì.
 | Script | Phủ |
 |---|---|
 | `step4-exams.sh` | §4.6 — bài kiểm tra và blueprint. 51 phép |
+| `step5-assignments.sh` | §4.6 phần giao bài — phạm vi, idempotent, thu hồi. 42 phép |
+| `step6-attempts.sh` | §4.7 — làm bài, lưu nháp, chấm ở server. 85 phép |
 
 `lib.sh` là khung dùng chung: `call`, `expect_status`, `expect_json`, `login`, `summary`.
+
+`step6-attempts.sh` chạy lâu hơn hai bộ kia khoảng **30 giây**: nó tạo một đề có cửa sổ mở chỉ 25
+giây rồi chờ hết giờ thật. Không có quãng chờ đó thì không phép nào chứng minh được rằng hạn nộp
+tính bằng đồng hồ server — mà đó lại là quy tắc dễ cài sai nhất của cả §4.7.

@@ -25,6 +25,17 @@ public interface IExamAttemptRepository : IGenericRepository<ExamAttempt>
     Task<int?> GetOwnerStudentIdAsync(int attemptId, CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Nạp một lượt làm bài kèm <b>khoá ghi ở mức dòng</b>, giữ tới khi transaction kết thúc.
+    /// </summary>
+    /// <remarks>
+    /// Chỉ có nghĩa khi gọi bên trong một transaction. Lưu nháp, nộp bài và chốt sổ hết giờ đều là
+    /// chuỗi "đọc trạng thái — quyết định — ghi", và cả ba có thể chồng lên nhau: autosave 800ms một
+    /// nhịp, retry sau timeout mạng, hai tab cùng mở. Không khoá thì hai request cùng đọc được
+    /// trạng thái cũ, cùng đi qua phép kiểm rồi cùng ghi — §5 nói thẳng là chỉ khoá ở database mới chắc.
+    /// </remarks>
+    Task<ExamAttempt?> LockForUpdateAsync(int attemptId, CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Bài <c>InProgress</c> đã quá <c>ExpiresAt</c>. Background job dùng để tự chấm, vì học sinh
     /// tắt trình duyệt thì không ai gọi submit cả (§3 quy tắc ③).
     /// </summary>
