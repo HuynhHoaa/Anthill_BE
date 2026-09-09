@@ -1,0 +1,39 @@
+# ---------- .NET ----------
+[Bb]in/
+[Oo]bj/
+[Dd]ebug/
+[Rr]elease/
+[Tt]est[Rr]esults/
+*.user
+*.suo
+*.userprefs
+*.svclog
+.vs/
+
+# ---------- Bí mật ----------
+# appsettings.json và appsettings.Development.json ĐƯỢC commit và cố ý không chứa bí mật thật;
+# production đọc mọi giá trị nhạy cảm từ biến môi trường.
+appsettings.Production.json
+appsettings.Local.json
+secrets.json
+.env
+.env.*
+*.pfx
+*.p12
+*.key
+*.pem
+
+# ---------- Dữ liệu người dùng tải lên ----------
+# Ảnh câu hỏi giáo viên upload lúc chạy, không thuộc về mã nguồn.
+wwwroot/uploads/
+
+# ---------- Trình soạn thảo ----------
+.idea/
+.vscode/*
+!.vscode/extensions.json
+*.sw?
+
+# ---------- Hệ điều hành ----------
+Thumbs.db
+Desktop.ini
+.DS_Store

@@ -1,0 +1,15 @@
+# Chuẩn hoá line ending: lập trình trên Windows, build và chạy trên Linux khi deploy.
+* text=auto
+
+*.cs     text diff=csharp
+*.csproj text
+*.sln    text eol=crlf
+*.json   text
+*.md     text
+*.http   text
+*.sh     text eol=lf
+
+*.png binary
+*.jpg binary
+*.gif binary
+*.ico binary
