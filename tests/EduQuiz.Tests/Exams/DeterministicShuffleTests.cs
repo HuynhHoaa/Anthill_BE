@@ -64,13 +64,29 @@ public class DeterministicShuffleTests
         seeds.Should().NotContain(0u);
     }
 
-    [Fact]
-    public void Cung_chuoi_cho_cung_hat_giong_qua_moi_lan_chay()
+    /// <summary>
+    /// Ghim <b>giá trị cụ thể</b> của hàm băm, không chỉ ghim tính nhất quán trong một lần chạy.
+    /// </summary>
+    /// <remarks>
+    /// So một lời gọi với chính nó thì <c>string.GetHashCode()</c> cũng qua được, vì trong cùng một
+    /// tiến trình nó vẫn ổn định — mà đó chính là thứ phải chặn: hàm băm ấy được ngẫu nhiên hoá
+    /// theo <i>từng lần khởi động</i>, nên nó hỏng ở đúng chỗ test không nhìn thấy.
+    ///
+    /// Ba số dưới đây được tính bằng một bản cài đặt FNV-1a 32-bit độc lập, không lấy từ kết quả
+    /// chạy của chính hàm đang kiểm. Đổi cách băm là ba dòng này hỏng ngay.
+    /// </remarks>
+    [Theory]
+    [InlineData("12:34", 1879403703u)]
+    [InlineData("7", 839689206u)]
+    [InlineData("exam:1:answers:5", 1804204935u)]
+    public void Ham_bam_cho_dung_gia_tri_da_ghim(string input, uint expected)
     {
-        // Giá trị dưới đây được ghi cứng có chủ đích. string.GetHashCode() của .NET bị ngẫu nhiên
-        // hoá theo tiến trình, nên nếu ai đó thay FNV-1a bằng nó thì test này hỏng ngay — đúng
-        // điều cần, vì một hạt giống đổi theo mỗi lần khởi động thì không còn tái lập được gì.
-        DeterministicShuffle.Seed("12:34").Should().Be(DeterministicShuffle.Seed("12:34"));
+        DeterministicShuffle.Seed(input).Should().Be(expected);
+    }
+
+    [Fact]
+    public void Chuoi_khac_nhau_cho_hat_giong_khac_nhau()
+    {
         DeterministicShuffle.Seed("12:34").Should().NotBe(DeterministicShuffle.Seed("12:35"));
     }
 

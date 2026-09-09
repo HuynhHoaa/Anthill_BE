@@ -131,6 +131,12 @@ EXAM_ID=$(json_field id); EXAMS+=("$EXAM_ID")
 expect_status "không chọn ai → 400" 400 \
   "$(call POST "/api/exams/$EXAM_ID/assignments" "$TEACHER" '{"studentIds":[],"groupIds":[],"randomizePerStudent":false,"notify":false}')"
 
+
+# Từng trả 500: DTO khai mặc định mảng rỗng nhưng System.Text.Json ghi đè bằng null khi client gửi
+# thẳng null, và quy tắc đọc .Count trên đó ném NullReferenceException.
+expect_status "studentIds/groupIds = null → 400, không phải 500" 400   "$(call POST "/api/exams/$EXAM_ID/assignments" "$TEACHER" '{"studentIds":null,"groupIds":null,"randomizePerStudent":false,"notify":false}')"
+
+expect_status "id âm trong danh sách → 400" 400   "$(call POST "/api/exams/$EXAM_ID/assignments" "$TEACHER" '{"studentIds":[-1],"groupIds":[],"randomizePerStudent":false,"notify":false}')"
 # Giao cả nhóm: 5 em trong nhóm, nhưng 1 em đang khoá → chỉ 4 em nhận bài.
 expect_status "giao cả nhóm → 200" 200 \
   "$(call POST "/api/exams/$EXAM_ID/assignments" "$TEACHER" "{\"studentIds\":[],\"groupIds\":[$GROUP_ID],\"randomizePerStudent\":false,\"notify\":true}")"

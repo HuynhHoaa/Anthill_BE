@@ -1,4 +1,6 @@
 using System.Net;
+using Microsoft.EntityFrameworkCore;
+using Npgsql;
 using System.Text.Encodings.Web;
 using System.Text.Json;
 using System.Text.Json.Serialization;
@@ -82,6 +84,29 @@ public sealed class ExceptionMiddleware
                 "Dữ liệu gửi lên không hợp lệ.",
                 exception);
         }
+        catch (DbUpdateException exception) when (IsUniqueViolation(exception))
+        {
+            // Hai thao tác ghi cùng lúc trên cùng một tài nguyên. Ví dụ rõ nhất: hai giáo viên
+            // cùng bấm giao bài cho một lớp — cả hai đọc thấy "em này chưa có bài", cả hai cùng
+            // ghi, và unique index IX_ExamAssignments_Exam_Student chặn người đến sau.
+            //
+            // Đây không phải sự cố hệ thống mà là kết quả đúng của một hàng rào đang làm việc, nên
+            // trả 409 kèm lời chỉ dẫn thay vì 500 kèm "đã có lỗi xảy ra". Bắt ở đây thay vì trong
+            // từng service vì mọi endpoint ghi đều có thể gặp, và tầng Application cố ý không biết
+            // gì về EF Core.
+            _logger.LogWarning(
+                exception,
+                "Va chạm ràng buộc duy nhất ở {Method} {Path}.",
+                context.Request.Method,
+                context.Request.Path.Value);
+
+            await WriteAsync(
+                context,
+                (int)HttpStatusCode.Conflict,
+                "Dữ liệu vừa được người khác thay đổi nên thao tác này không hoàn tất. "
+                + "Hãy tải lại trang rồi thử lại.",
+                exception);
+        }
         catch (Exception exception)
         {
             _logger.LogError(
@@ -93,6 +118,17 @@ public sealed class ExceptionMiddleware
             await WriteAsync(context, (int)HttpStatusCode.InternalServerError, GenericMessage, exception);
         }
     }
+
+    /// <summary>
+    /// Vi phạm ràng buộc duy nhất, nhận qua mã SQLSTATE <c>23505</c> của PostgreSQL.
+    /// </summary>
+    /// <remarks>
+    /// Đọc mã lỗi thay vì so chuỗi thông điệp: thông điệp đổi theo ngôn ngữ và theo phiên bản
+    /// máy chủ, còn SQLSTATE thì nằm trong chuẩn. Mọi <see cref="DbUpdateException"/> khác vẫn
+    /// rơi xuống nhánh 500, vì chúng thật sự là sự cố chưa lường trước.
+    /// </remarks>
+    private static bool IsUniqueViolation(DbUpdateException exception) =>
+        exception.InnerException is PostgresException { SqlState: PostgresErrorCodes.UniqueViolation };
 
     private async Task WriteAsync(HttpContext context, int statusCode, string message, Exception exception)
     {

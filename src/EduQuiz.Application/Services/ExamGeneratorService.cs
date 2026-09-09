@@ -31,6 +31,22 @@ public sealed class ExamGeneratorService : IExamGeneratorService
 {
     private readonly IUnitOfWork _unitOfWork;
 
+    /// <summary>
+    /// Tập ứng viên đã đọc, dùng lại trong cùng một request.
+    /// </summary>
+    /// <remarks>
+    /// Giao bài cho một lớp 40 em khi bật <c>randomizePerStudent</c> gọi hàm sinh đề 40 lần, mỗi
+    /// lần ba mức độ — 120 lượt đọc trọn ngân hàng câu hỏi <b>kèm toàn bộ đáp án</b>, bên trong một
+    /// transaction đang mở. Cùng một đề thì cả 40 lần đều hỏi đúng một câu hỏi, nên chỉ cần đọc
+    /// một lần.
+    ///
+    /// Service đăng ký Scoped nên bộ đệm này sống đúng một request rồi biến mất — không có nguy cơ
+    /// phục vụ dữ liệu cũ cho request sau, mà đó mới là điều đáng sợ ở một ngân hàng câu hỏi đang
+    /// được đồng nghiệp sửa song song.
+    /// </remarks>
+    private readonly Dictionary<(int SubjectId, string? Topic, QuestionDifficulty Difficulty), IReadOnlyList<Question>>
+        _candidateCache = [];
+
     public ExamGeneratorService(IUnitOfWork unitOfWork)
     {
         _unitOfWork = unitOfWork;
@@ -133,12 +149,19 @@ public sealed class ExamGeneratorService : IExamGeneratorService
                 continue;
             }
 
-            var candidates = await _unitOfWork.Questions.GetBlueprintCandidatesAsync(
-                subjectId,
-                ownerUserId,
-                topic,
-                difficulty,
-                cancellationToken);
+            var cacheKey = (subjectId, topic, difficulty);
+
+            if (!_candidateCache.TryGetValue(cacheKey, out var candidates))
+            {
+                candidates = await _unitOfWork.Questions.GetBlueprintCandidatesAsync(
+                    subjectId,
+                    ownerUserId,
+                    topic,
+                    difficulty,
+                    cancellationToken);
+
+                _candidateCache[cacheKey] = candidates;
+            }
 
             if (candidates.Count < need)
             {

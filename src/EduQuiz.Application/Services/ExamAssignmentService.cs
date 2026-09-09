@@ -106,7 +106,33 @@ public sealed class ExamAssignmentService : IExamAssignmentService
             return Result.Conflict<AssignExamResponse>(DraftCannotAssignMessage);
         }
 
+        // Cờ này thuộc về đề chứ không thuộc về từng assignment. Đổi nó khi đề đã giao một phần
+        // thì mọi assignment cũ đổi luôn cách tra bản đề — bản chung sang bản riêng hoặc ngược lại
+        // — trong khi chỉ những em mới được sinh đề. Kết quả là một lớp mà nửa số em không còn
+        // đường tới bản đề nào. Chốt lại: khi đã có người được giao thì cờ không đổi được nữa.
+        var existingCount = await _unitOfWork.ExamAssignments.CountByExamAsync(exam.Id, cancellationToken);
+
+        if (existingCount > 0 && exam.RandomizePerStudent != request.RandomizePerStudent)
+        {
+            return Result.Conflict<AssignExamResponse>(
+                exam.RandomizePerStudent
+                    ? "Đề này đã giao theo kiểu mỗi học sinh một đề riêng nên không đổi sang đề chung được nữa. "
+                      + "Hãy thu hồi hết rồi giao lại, hoặc tạo một đề mới."
+                    : "Đề này đã giao theo kiểu cả lớp chung một đề nên không đổi sang đề riêng được nữa. "
+                      + "Hãy thu hồi hết rồi giao lại, hoặc tạo một đề mới.");
+        }
+
         var targets = await ResolveTargetsAsync(request, cancellationToken);
+
+        // Trần thật, tính sau khi đã bung các nhóm ra. Validator chỉ chặn được phần thô vì nó
+        // không biết mỗi nhóm có bao nhiêu em.
+        if (targets.InScope.Count > Validators.AssignExamRequestValidator.MaxTargetsPerRequest)
+        {
+            return Result.Failure<AssignExamResponse>(
+                $"Lựa chọn này gồm {targets.InScope.Count} học sinh, vượt trần "
+                + $"{Validators.AssignExamRequestValidator.MaxTargetsPerRequest} cho một lần giao. "
+                + "Hãy chia thành nhiều lần.");
+        }
 
         var alreadyAssigned = (await _unitOfWork.ExamAssignments.GetAssignedStudentIdsAsync(
             examId,
@@ -126,25 +152,27 @@ public sealed class ExamAssignmentService : IExamAssignmentService
             SkippedOutOfScope = targets.OutOfScopeCount
         };
 
-        if (newcomers.Count == 0)
-        {
-            // Không có gì để ghi. Vẫn trả về 200 kèm các con số: người dùng cần biết vì sao không
-            // ai được giao thêm, và "đã giao hết rồi" là một câu trả lời hợp lệ chứ không phải lỗi.
-            return Result.Success(response);
-        }
-
         var now = DateTime.UtcNow;
 
-        await using var transaction = await _unitOfWork.BeginTransactionAsync(cancellationToken);
-
-        // Cờ này thuộc về đề chứ không thuộc về từng assignment: một đề mà nửa lớp dùng chung đề
-        // còn nửa kia mỗi em một đề thì kết quả không so sánh với nhau được nữa.
+        // Ghi cờ trước nhánh thoát sớm. Đặt sau thì lần giao đầu tiên mà mọi em đều đã có bài —
+        // hoặc mọi em đều bị bỏ qua — sẽ âm thầm đánh rơi lựa chọn của giáo viên, và vì cờ chỉ
+        // đặt được ở đây nên nó không còn đường nào để đúng nữa.
         if (exam.RandomizePerStudent != request.RandomizePerStudent)
         {
             exam.RandomizePerStudent = request.RandomizePerStudent;
             exam.UpdatedAt = now;
             _unitOfWork.Exams.Update(exam);
+            await _unitOfWork.SaveChangesAsync(cancellationToken);
         }
+
+        if (newcomers.Count == 0)
+        {
+            // Không có gì để ghi thêm. Vẫn trả 200 kèm các con số: người dùng cần biết vì sao không
+            // ai được giao, và "đã giao hết rồi" là câu trả lời hợp lệ chứ không phải lỗi.
+            return Result.Success(response);
+        }
+
+        await using var transaction = await _unitOfWork.BeginTransactionAsync(cancellationToken);
 
         var assignments = newcomers
             .Select(student => new ExamAssignment
@@ -247,14 +275,20 @@ public sealed class ExamAssignmentService : IExamAssignmentService
     {
         // HashSet ngay từ đầu: màn hình giao bài cho chọn một em rồi chọn luôn cả nhóm chứa em đó,
         // nên trùng lặp là tình huống thường gặp chứ không phải ngoại lệ.
-        var requestedIds = new HashSet<int>(request.StudentIds);
+        var requestedIds = new HashSet<int>(request.StudentIds ?? []);
+        var requestedGroupIds = (request.GroupIds ?? []).Distinct().ToList();
 
         // Nhóm của giáo viên khác bị loại ngay tại đây: repository chỉ trả về nhóm do người này sở
         // hữu, nên một id nhóm đoán bừa không kéo theo học sinh nào.
         var ownedGroups = await _unitOfWork.StudentGroups.GetOwnedByIdsAsync(
-            request.GroupIds,
+            requestedGroupIds,
             CurrentUserId,
             cancellationToken);
+
+        // Nhóm bị loại phải được đếm. Bỏ qua trong im lặng nghĩa là giáo viên chọn nhầm id nhóm
+        // rồi nhận về một bảng kết quả toàn số không, không có dòng nào giải thích vì sao — đúng
+        // sự im lặng mà AssignExamResponse nói là nó sinh ra để tránh.
+        var outOfScopeGroups = requestedGroupIds.Count - ownedGroups.Count;
 
         foreach (var group in ownedGroups)
         {
@@ -267,7 +301,13 @@ public sealed class ExamAssignmentService : IExamAssignmentService
 
         if (requestedIds.Count == 0)
         {
-            return new Targets { InScope = [], NotFoundCount = 0, LockedCount = 0, OutOfScopeCount = 0 };
+            return new Targets
+            {
+                InScope = [],
+                NotFoundCount = 0,
+                LockedCount = 0,
+                OutOfScopeCount = outOfScopeGroups
+            };
         }
 
         // Chỉ trả về id có thật và đúng vai trò Student. Chênh lệch số lượng chính là số id lạ.
@@ -281,7 +321,7 @@ public sealed class ExamAssignmentService : IExamAssignmentService
             .ToHashSet();
 
         var inScope = new List<User>(students.Count);
-        var outOfScope = 0;
+        var outOfScope = outOfScopeGroups;
         var locked = 0;
 
         foreach (var student in students)
