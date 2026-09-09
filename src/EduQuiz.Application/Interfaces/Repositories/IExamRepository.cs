@@ -41,5 +41,13 @@ public interface IExamRepository : IGenericRepository<Exam>
     /// <summary>Xoá đề kéo theo mọi bản đề đã sinh — nằm trong cùng transaction với xoá assignment (§5).</summary>
     Task RemovePapersAsync(int examId, CancellationToken cancellationToken = default);
 
+    /// <summary>Số đề đã giao cho ít nhất một học sinh — khác với tổng số đề đã tạo.</summary>
+    /// <remarks>
+    /// Hai con số này tách nhau vì chúng trả lời hai câu khác nhau: "tôi đã soạn bao nhiêu đề" và
+    /// "bao nhiêu đề trong số đó thực sự đến tay học sinh". Một giáo viên có mười đề nháp và một
+    /// đề đã giao thì hai ô số liệu phải nói được điều đó.
+    /// </remarks>
+    Task<int> CountAssignedByCreatorAsync(int createdByUserId, CancellationToken cancellationToken = default);
+
     Task<int> CountByCreatorAsync(int createdByUserId, CancellationToken cancellationToken = default);
 }

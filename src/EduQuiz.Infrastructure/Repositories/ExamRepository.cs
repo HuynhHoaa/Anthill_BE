@@ -104,6 +104,15 @@ public class ExamRepository : GenericRepository<Exam>, IExamRepository
         Context.ExamPapers.RemoveRange(papers);
     }
 
+    public async Task<int> CountAssignedByCreatorAsync(
+        int createdByUserId,
+        CancellationToken cancellationToken = default) =>
+        await DbSet
+            .AsNoTracking()
+            .CountAsync(
+                exam => exam.CreatedByUserId == createdByUserId && exam.Assignments.Any(),
+                cancellationToken);
+
     public async Task<int> CountByCreatorAsync(int createdByUserId, CancellationToken cancellationToken = default) =>
         await DbSet.CountAsync(e => e.CreatedByUserId == createdByUserId, cancellationToken);
 

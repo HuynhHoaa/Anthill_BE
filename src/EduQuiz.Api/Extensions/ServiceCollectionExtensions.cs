@@ -51,6 +51,8 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IExamService, ExamService>();
         services.AddScoped<IExamGeneratorService, ExamGeneratorService>();
         services.AddScoped<IExamAssignmentService, ExamAssignmentService>();
+        services.AddScoped<IResultService, ResultService>();
+        services.AddScoped<IDashboardService, DashboardService>();
         services.AddScoped<IExamAttemptService, ExamAttemptService>();
 
         // Quét cả assembly Application: thêm validator mới chỉ cần tạo file, không phải sửa chỗ này.

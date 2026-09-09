@@ -79,5 +79,60 @@ public interface IExamAttemptRepository : IGenericRepository<ExamAttempt>
         IEnumerable<int> studentIds,
         CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// Bốn ô số liệu đầu trang Kết quả, tính bằng <b>một</b> truy vấn gộp trên cùng bộ lọc với bảng.
+    /// </summary>
+    /// <remarks>
+    /// Gộp vào một lượt đi database thay vì đếm từng chỉ số: bốn con số này luôn hiện cùng nhau,
+    /// và tính rời thì chúng có thể đọc ở bốn thời điểm khác nhau — đủ để tổng không khớp với bảng
+    /// ngay bên dưới khi có người vừa nộp bài.
+    ///
+    /// <c>AssignedCount</c> đếm trên bảng assignment chứ không trên bảng attempt, vì tỷ lệ hoàn
+    /// thành phải lấy mẫu số là số bài đã giao — em chưa từng vào thi thì không có dòng attempt
+    /// nào, mà chính những em đó mới là phần còn thiếu của tỷ lệ.
+    /// </remarks>
+    Task<ResultStatsSnapshot> GetResultStatsAsync(
+        int teacherId,
+        string? search,
+        int? examId,
+        int? studentId,
+        int? groupId,
+        AssignmentStatus? status,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Số câu của bản đề ứng với từng lượt làm bài, lấy cho nhiều lượt cùng lúc.
+    /// </summary>
+    /// <remarks>
+    /// Đọc từ bản đề chứ không từ <c>Exam.TotalQuestions</c>: cấu hình của đề sửa được sau khi đã
+    /// giao, còn bản đề trong tay học sinh thì không đổi. Hai nguồn này lệch nhau là bảng kết quả
+    /// hiện "18/40 câu đúng" cho một bài vốn chỉ có 30 câu.
+    /// </remarks>
+    Task<IReadOnlyDictionary<int, int>> GetPaperQuestionCountsAsync(
+        IEnumerable<int> attemptIds,
+        CancellationToken cancellationToken = default);
     Task<int> CountSubmittedSinceAsync(int teacherId, DateTime sinceUtc, CancellationToken cancellationToken = default);
+}
+
+/// <summary>Số liệu thô của bảng kết quả, chưa qua bước quyết định NULL hay 0.</summary>
+/// <remarks>
+/// Repository trả về sự thật trần trụi — đã chấm bao nhiêu bài, trung bình bao nhiêu — còn việc
+/// "chưa chấm bài nào thì hiện gì" là quyết định của tầng Application, nơi biết màn hình cần gì.
+/// </remarks>
+public sealed record ResultStatsSnapshot
+{
+    public required int TotalAttempts { get; init; }
+
+    public required int GradedCount { get; init; }
+
+    public required int SubmittedCount { get; init; }
+
+    /// <summary>Tổng số bài đã giao khớp bộ lọc — mẫu số của tỷ lệ hoàn thành.</summary>
+    public required int AssignedCount { get; init; }
+
+    /// <summary>Chỉ có nghĩa khi <see cref="GradedCount"/> lớn hơn 0.</summary>
+    public required decimal AverageScore { get; init; }
+
+    /// <summary>Chỉ có nghĩa khi <see cref="GradedCount"/> lớn hơn 0.</summary>
+    public required decimal HighestScore { get; init; }
 }
