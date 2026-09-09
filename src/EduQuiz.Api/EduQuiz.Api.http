@@ -1,0 +1,98 @@
+@host = http://localhost:5002
+
+### Kiểm tra tiến trình còn sống + giờ server UTC
+GET {{host}}/health
+Accept: application/json
+
+### Đăng nhập — giáo viên. Chép accessToken trong response vào biến @token bên dưới.
+# @name login
+POST {{host}}/api/auth/login
+Content-Type: application/json
+
+{
+  "username": "an.nv@eduquiz.vn",
+  "password": "eduquiz123",
+  "role": "teacher"
+}
+
+### Đăng nhập — quản trị viên
+POST {{host}}/api/auth/login
+Content-Type: application/json
+
+{
+  "username": "huy.pq@eduquiz.vn",
+  "password": "eduquiz123"
+}
+
+### Đăng nhập — học sinh, bằng mã học sinh thay cho email
+POST {{host}}/api/auth/login
+Content-Type: application/json
+
+{
+  "username": "HS1001",
+  "password": "eduquiz123"
+}
+
+### Sai mật khẩu → 401, cùng thông điệp với "không có tài khoản" (không dò được tài khoản nào có thật)
+POST {{host}}/api/auth/login
+Content-Type: application/json
+
+{
+  "username": "an.nv@eduquiz.vn",
+  "password": "sai-mat-khau"
+}
+
+### Sai vai trò → 403. Gửi role: "admin" KHÔNG biến giáo viên thành quản trị viên (§3 quy tắc ⑤).
+POST {{host}}/api/auth/login
+Content-Type: application/json
+
+{
+  "username": "an.nv@eduquiz.vn",
+  "password": "eduquiz123",
+  "role": "admin"
+}
+
+@token = {{login.response.body.accessToken}}
+
+### Hồ sơ của chính mình, suy từ JWT
+GET {{host}}/api/auth/me
+Authorization: Bearer {{token}}
+
+### Không gửi token → 401 kèm { "message": ... }
+GET {{host}}/api/auth/me
+
+### Cập nhật thông tin liên hệ
+PUT {{host}}/api/auth/me
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "fullName": "Nguyễn Văn An",
+  "email": "an.nv@eduquiz.vn",
+  "phone": "0912 345 678",
+  "school": "Trường THPT Nguyễn Du"
+}
+
+### Đổi mật khẩu — thành công sẽ vô hiệu hoá mọi token cũ, phải đăng nhập lại
+POST {{host}}/api/auth/change-password
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "currentPassword": "eduquiz123",
+  "newPassword": "eduquiz1234"
+}
+
+### Đăng xuất
+POST {{host}}/api/auth/logout
+Authorization: Bearer {{token}}
+
+### Refresh — hiện trả 401 vì chưa có bảng lưu refresh token
+POST {{host}}/api/auth/refresh
+Content-Type: application/json
+
+{
+  "refreshToken": "chua-dung-duoc"
+}
+
+###

@@ -1,0 +1,32 @@
+﻿<Project Sdk="Microsoft.NET.Sdk.Web">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+
+    <!-- Sinh file XML để Swagger hiển thị được phần mô tả tiếng Việt viết trong controller. -->
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+
+    <!-- 1591: "thiếu XML comment cho thành viên public". Ở đây tài liệu chỉ phục vụ Swagger,
+         không cần ép mọi thành viên phải có comment. -->
+    <NoWarn>$(NoWarn);1591</NoWarn>
+    <UserSecretsId>90ea3bff-97cf-4187-94e1-e6320a7b786b</UserSecretsId>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <PackageReference Include="Microsoft.AspNetCore.Authentication.JwtBearer" Version="10.0.11" />
+    <PackageReference Include="Microsoft.AspNetCore.OpenApi" Version="10.0.9" />
+    <PackageReference Include="Microsoft.EntityFrameworkCore.Design" Version="10.0.11">
+      <IncludeAssets>runtime; build; native; contentfiles; analyzers; buildtransitive</IncludeAssets>
+      <PrivateAssets>all</PrivateAssets>
+    </PackageReference>
+    <PackageReference Include="Swashbuckle.AspNetCore" Version="10.2.3" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\EduQuiz.Application\EduQuiz.Application.csproj" />
+    <ProjectReference Include="..\EduQuiz.Infrastructure\EduQuiz.Infrastructure.csproj" />
+  </ItemGroup>
+
+</Project>
