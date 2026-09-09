@@ -78,6 +78,19 @@ except Exception:
 " < "$BODY_FILE"
 }
 
+# Doi duong dan sang dang ma curl hieu duoc.
+#
+# curl tren Git Bash la ban dung cho Windows (mingw64), nen tham so -F file=@... phai la duong dan
+# Windows that. Dua vao mot duong dan kieu /tmp/... thi no khong mo duoc file va tra ve HTTP 000 —
+# im lang, khong bao loi gi, rat de tuong la server hong.
+to_native_path() {
+  if command -v cygpath > /dev/null 2>&1; then
+    cygpath -w "$1"
+  else
+    printf '%s' "$1"
+  fi
+}
+
 login() {
   local code
   code=$(call POST /api/auth/login "" "{\"username\":\"$1\",\"password\":\"$2\"}")
