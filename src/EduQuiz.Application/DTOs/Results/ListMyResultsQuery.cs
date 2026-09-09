@@ -11,6 +11,6 @@ namespace EduQuiz.Application.DTOs.Results;
 /// </remarks>
 public sealed class ListMyResultsQuery : PaginationParams
 {
-    /// <summary>Tìm trên tên đề và chủ đề.</summary>
+    /// <summary>Tìm trên tên đề và chủ đề. Bỏ dấu, không phân biệt hoa thường.</summary>
     public string? Search { get; set; }
 }

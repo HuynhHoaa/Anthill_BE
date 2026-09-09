@@ -273,4 +273,31 @@ expect_status "giao vien goi dashboard hoc sinh → 403" 403 "$(call GET "/api/d
 expect_status "quan tri vien goi dashboard giao vien → 403" 403 "$(call GET "/api/dashboard/teacher" "$ADMIN")"
 expect_status "goi khong token → 401" 401 "$(call GET "/api/dashboard/teacher" "")"
 
+section "Chot chan cho cac loi review da tim ra"
+
+# 1) Mau so cua completionRate phai chiu cung bo loc voi tu so. Bo qua o tim kiem thi go ten mot
+#    hoc sinh vao se ra ty le vai phan tram — ba bai da nop chia cho toan bo bai da giao moi lop.
+expect_status "stats loc theo hoc sinh → 200" 200 "$(call GET "/api/results/stats?studentId=$S_A" "$TEACHER")"
+expect_status "  completionRate khong the vuot 100" true   "$(body | python -c 'import json,sys;print(str(json.load(sys.stdin)["completionRate"]<=100).lower())')"
+expect_status "  A da nop het bai duoc giao nen ty le = 100" 100.0   "$(body | python -c 'import json,sys;print(float(json.load(sys.stdin)["completionRate"]))')"
+
+expect_status "stats loc bang o tim kiem → 200" 200 "$(call GET "/api/results/stats?search=R${STAMP}a" "$TEACHER")"
+expect_status "  ty le tinh tren dung tap da loc, khong phai toan he thong" 100.0   "$(body | python -c 'import json,sys;print(float(json.load(sys.stdin)["completionRate"]))')"
+
+# 7) Hai o diem canh nhau phai cung dinh dang.
+expect_status "stats khong loc → 200" 200 "$(call GET "/api/results/stats" "$TEACHER")"
+expect_status "  highestScore lam tron 1 chu so nhu averageScore" true   "$(body | python -c "
+import json,sys
+d = json.load(sys.stdin)
+h = d.get('highestScore')
+print(str(h is None or round(float(h), 1) == float(h)).lower())")"
+
+# 2) Cot nhom lop trong ban tom tat khong duoc rong khi hoc sinh CO thuoc nhom.
+expect_status "tom tat co ten nhom lop" 200 "$(call GET "/api/results/$ATTEMPT_A_OPEN/summary" "$TEACHER")"
+expect_status "  group khong rong" true   "$(body | python -c 'import json,sys;print(str(len(json.load(sys.stdin)["group"])>0).lower())')"
+
+# 5) O tim kiem cua hoc sinh khop ca chu de, dung nhu tai lieu noi.
+expect_status "A tim theo chu de → 200" 200 "$(call GET "/api/my/results?search=KiemThu$STAMP" "$STUDENT_A")"
+expect_json   "  ra du 2 luot" total 2
+
 summary

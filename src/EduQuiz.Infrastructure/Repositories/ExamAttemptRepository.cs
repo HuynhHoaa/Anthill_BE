@@ -30,6 +30,10 @@ public class ExamAttemptRepository : GenericRepository<ExamAttempt>, IExamAttemp
                 .ThenInclude(assignment => assignment.Exam)
             .Include(a => a.Assignment)
                 .ThenInclude(assignment => assignment.Student)
+
+                    // Nhóm lớp: bản tóm tắt kết quả có cột nhóm, mà không nạp thì EF trả về null
+                    // lặng lẽ — dự án không bật lazy loading proxy — và cột đó luôn rỗng.
+                    .ThenInclude(student => student.Group)
             .Include(a => a.Assignment)
                 .ThenInclude(assignment => assignment.Paper)
             .FirstOrDefaultAsync(a => a.Id == attemptId, cancellationToken);
@@ -155,35 +159,13 @@ public class ExamAttemptRepository : GenericRepository<ExamAttempt>, IExamAttemp
         CancellationToken cancellationToken = default)
     {
         // Giáo viên chỉ thấy kết quả của đề do chính mình tạo.
-        var query = ResultsQuery().Where(a => a.Assignment.Exam.CreatedByUserId == teacherId);
-
-        if (examId.HasValue)
-        {
-            query = query.Where(a => a.Assignment.ExamId == examId.Value);
-        }
-
-        if (studentId.HasValue)
-        {
-            query = query.Where(a => a.Assignment.StudentId == studentId.Value);
-        }
-
-        if (groupId.HasValue)
-        {
-            query = query.Where(a => a.Assignment.Student.GroupId == groupId.Value);
-        }
-
-        if (status.HasValue)
-        {
-            query = query.Where(a => a.Status == status.Value);
-        }
-
-        if (SearchText.ToLikePattern(search) is { } pattern)
-        {
-            query = query.Where(a =>
-                EF.Functions.ILike(EF.Functions.Unaccent(a.Assignment.Student.FullName), pattern)
-                || EF.Functions.ILike(a.Assignment.Student.Code ?? string.Empty, pattern)
-                || EF.Functions.ILike(EF.Functions.Unaccent(a.Assignment.Exam.Title), pattern));
-        }
+        //
+        // Bộ lọc đi qua đúng một hàm dùng chung với phép đếm số liệu. Giữ hai bản sao thì bảng và
+        // bốn ô phía trên nó sẽ lệch nhau ngay lần đầu có ai sửa một bên mà quên bên kia — mà đó
+        // là hai phần nằm cạnh nhau trên cùng một màn hình.
+        var query = ApplyResultFilters(
+            ResultsQuery().Where(a => a.Assignment.Exam.CreatedByUserId == teacherId),
+            search, examId, studentId, groupId, status);
 
         return await OrderForDisplay(query).ToPagedResultAsync(pagination, cancellationToken);
     }
@@ -198,7 +180,9 @@ public class ExamAttemptRepository : GenericRepository<ExamAttempt>, IExamAttemp
 
         if (SearchText.ToLikePattern(search) is { } pattern)
         {
-            query = query.Where(a => EF.Functions.ILike(EF.Functions.Unaccent(a.Assignment.Exam.Title), pattern));
+            query = query.Where(a =>
+                EF.Functions.ILike(EF.Functions.Unaccent(a.Assignment.Exam.Title), pattern)
+                || EF.Functions.ILike(EF.Functions.Unaccent(a.Assignment.Exam.Topic ?? string.Empty), pattern));
         }
 
         return await OrderForDisplay(query).ToPagedResultAsync(pagination, cancellationToken);
@@ -304,6 +288,11 @@ public class ExamAttemptRepository : GenericRepository<ExamAttempt>, IExamAttemp
 
         // Mẫu số của tỷ lệ hoàn thành đếm trên assignment, không trên attempt: em chưa từng vào thi
         // không có dòng attempt nào, mà chính các em đó mới là phần còn thiếu của tỷ lệ.
+        //
+        // Nhưng nó phải chịu ĐÚNG bộ lọc mà tử số đang chịu. Bỏ qua ô tìm kiếm ở đây thì gõ tên
+        // một học sinh vào ra tỷ lệ 3,6% — ba bài đã nộp chia cho toàn bộ số bài đã giao của mọi
+        // lớp. Riêng bộ lọc trạng thái thì cố ý không áp: lọc "đã chấm" rồi lấy mẫu số cũng chỉ
+        // gồm bài đã chấm thì tỷ lệ luôn ra 100%, không nói lên điều gì.
         var assignedQuery = Context.Set<ExamAssignment>()
             .AsNoTracking()
             .Where(assignment => assignment.Exam.CreatedByUserId == teacherId);
@@ -311,6 +300,14 @@ public class ExamAttemptRepository : GenericRepository<ExamAttempt>, IExamAttemp
         if (examId.HasValue) assignedQuery = assignedQuery.Where(a => a.ExamId == examId.Value);
         if (studentId.HasValue) assignedQuery = assignedQuery.Where(a => a.StudentId == studentId.Value);
         if (groupId.HasValue) assignedQuery = assignedQuery.Where(a => a.Student.GroupId == groupId.Value);
+
+        if (SearchText.ToLikePattern(search) is { } assignedPattern)
+        {
+            assignedQuery = assignedQuery.Where(a =>
+                EF.Functions.ILike(EF.Functions.Unaccent(a.Student.FullName), assignedPattern)
+                || EF.Functions.ILike(a.Student.Code ?? string.Empty, assignedPattern)
+                || EF.Functions.ILike(EF.Functions.Unaccent(a.Exam.Title), assignedPattern));
+        }
 
         var assignedCount = await assignedQuery.CountAsync(cancellationToken);
 
@@ -321,7 +318,9 @@ public class ExamAttemptRepository : GenericRepository<ExamAttempt>, IExamAttemp
             SubmittedCount = aggregate?.Submitted ?? 0,
             AssignedCount = assignedCount,
             AverageScore = Round1(aggregate?.Average ?? 0m),
-            HighestScore = aggregate?.Highest ?? 0m
+            // Làm tròn giống AverageScore. Không làm thì hai ô cạnh nhau hiện "3,1" và "9,00" —
+            // cùng một thang điểm mà hai định dạng, đọc vào tưởng hai đơn vị khác nhau.
+            HighestScore = Round1(aggregate?.Highest ?? 0m)
         };
     }
 

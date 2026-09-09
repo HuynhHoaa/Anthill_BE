@@ -134,13 +134,24 @@ public sealed class DashboardService : IDashboardService
 
             // Chỉ gom điểm mà em được phép nhìn thấy. Xem chú thích ở đầu lớp: một con số trung
             // bình gộp cả điểm đang giấu là điểm bị lộ qua phép trừ.
-            if (attempt is { Status: AssignmentStatus.Graded } && assignment.Exam.ShowResultAfterSubmit)
+            //
+            // Gọi CanRevealScore chứ không chép lại quy tắc ba vế ra đây. Chép ra là tạo thêm một
+            // bản sao phải nhớ cập nhật, và bản quên cập nhật ở đây chính là bản làm lộ điểm.
+            // Phép kiểm cần Exam nằm sẵn trên Assignment — repository đã Include nó.
+            if (attempt is not null)
             {
-                visibleScores.Add(attempt.Score);
+                attempt.Assignment = assignment;
+
+                if (attempt.CanRevealScore(isOwningTeacher: false))
+                {
+                    visibleScores.Add(attempt.Score);
+                }
             }
 
-            // Bài đã làm rồi thì không còn nằm ở "đang mở" nữa — chỗ đó dành cho việc em cần làm.
-            if (attempt is not null)
+            // Bài đã NỘP thì không còn nằm ở "đang mở" nữa. Nhưng bài đang làm dở thì có: đó
+            // chính là việc em cần làm gấp nhất, và bỏ nó ra khỏi cả hai danh sách nghĩa là trang
+            // tổng quan không còn đường nào dẫn em quay lại bài đang chạy đồng hồ.
+            if (attempt is not null && attempt.Status != AssignmentStatus.InProgress)
             {
                 continue;
             }
