@@ -10,7 +10,7 @@ namespace EduQuiz.Application.Mappings;
 /// </summary>
 public static class ExamMappingExtensions
 {
-    public const string AllFilterValue = "all";
+    public const string AllFilterValue = FilterValueParser.AllFilterValue;
     public const string DraftLifecycleValue = "draft";
 
     /// <summary>
@@ -109,45 +109,11 @@ public static class ExamMappingExtensions
     };
 
     /// <summary>
-    /// Ô lọc vòng đời: <c>"all"</c> và chuỗi rỗng đều thành NULL. Giá trị lạ trả về false để
-    /// service từ chối, thay vì âm thầm bỏ lọc — trả nhiều hơn người dùng yêu cầu mà vẫn kèm mã
-    /// 200 là kiểu sai không ai phát hiện.
+    /// Ô lọc vòng đời. <c>"all"</c> và chuỗi rỗng nghĩa là không lọc; giá trị lạ bị từ chối.
     /// </summary>
-    public static bool TryParseLifecycleFilter(string? value, out ExamLifecycle? lifecycle)
-    {
-        lifecycle = null;
-
-        if (string.IsNullOrWhiteSpace(value))
-        {
-            return true;
-        }
-
-        var trimmed = value.Trim();
-
-        if (string.Equals(trimmed, AllFilterValue, StringComparison.OrdinalIgnoreCase))
-        {
-            return true;
-        }
-
-        if (!Enum.TryParse<ExamLifecycle>(trimmed, ignoreCase: true, out var parsed))
-        {
-            return false;
-        }
-
-        lifecycle = parsed;
-        return true;
-    }
+    public static bool TryParseLifecycleFilter(string? value, out ExamLifecycle? lifecycle) =>
+        FilterValueParser.TryParseFilter(value, out lifecycle);
 
     /// <summary>Chủ đề: <c>"all"</c> và chuỗi rỗng đều thành NULL, ngoài ra trả về chuỗi đã trim.</summary>
-    public static string? NormalizeTopic(string? value)
-    {
-        if (string.IsNullOrWhiteSpace(value))
-        {
-            return null;
-        }
-
-        var trimmed = value.Trim();
-
-        return string.Equals(trimmed, AllFilterValue, StringComparison.OrdinalIgnoreCase) ? null : trimmed;
-    }
+    public static string? NormalizeTopic(string? value) => FilterValueParser.NormalizeTextFilter(value);
 }

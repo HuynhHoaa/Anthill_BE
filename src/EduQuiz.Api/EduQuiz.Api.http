@@ -16,6 +16,7 @@ Content-Type: application/json
 }
 
 ### Đăng nhập — quản trị viên
+# @name loginAdmin
 POST {{host}}/api/auth/login
 Content-Type: application/json
 
@@ -25,6 +26,7 @@ Content-Type: application/json
 }
 
 ### Đăng nhập — học sinh, bằng mã học sinh thay cho email
+# @name loginStudent
 POST {{host}}/api/auth/login
 Content-Type: application/json
 
@@ -53,6 +55,8 @@ Content-Type: application/json
 }
 
 @token = {{login.response.body.accessToken}}
+@adminToken = {{loginAdmin.response.body.accessToken}}
+@studentToken = {{loginStudent.response.body.accessToken}}
 
 ### Hồ sơ của chính mình, suy từ JWT
 GET {{host}}/api/auth/me
@@ -94,5 +98,281 @@ Content-Type: application/json
 {
   "refreshToken": "chua-dung-duoc"
 }
+
+###
+
+# ============================================================================
+# §4.6 — Bài kiểm tra và blueprint (bước 4)
+#
+# Chạy theo thứ tự từ trên xuống: vài request phía dưới dùng lại id của đề tạo
+# ở request phía trên. Token lấy từ mục đăng nhập giáo viên ở đầu file.
+# ============================================================================
+
+### Xem trước blueprint — cấu hình hợp lệ.
+# Client chỉ gửi TỶ LỆ; số câu từng mức do server tính. Đối chiếu `required` trả về
+# với con số frontend hiển thị: hai bên phải khớp từng đơn vị.
+POST {{host}}/api/exams/blueprint-preview
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "totalQuestions": 20,
+  "easyPercentage": 40,
+  "mediumPercentage": 40,
+  "hardPercentage": 20,
+  "topic": "all"
+}
+
+### Mốc làm tròn .5 — ca mà .NET và JavaScript dễ lệch nhau nhất.
+# 5% của 50 là 2.5. Kỳ vọng required = { easy: 3, medium: 3, hard: 44 }.
+# Nếu thấy easy = 2 nghĩa là MidpointRounding.AwayFromZero đã bị bỏ quên.
+POST {{host}}/api/exams/blueprint-preview
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "totalQuestions": 50,
+  "easyPercentage": 5,
+  "mediumPercentage": 5,
+  "hardPercentage": 90
+}
+
+### Tổng tỷ lệ khác 100 → isValid = false, kèm câu giải thích. Vẫn là 200.
+# Đây là endpoint xem trước, không phải endpoint lưu: "chưa hợp lệ" là một câu
+# trả lời bình thường chứ không phải lỗi request.
+POST {{host}}/api/exams/blueprint-preview
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "totalQuestions": 20,
+  "easyPercentage": 30,
+  "mediumPercentage": 30,
+  "hardPercentage": 30
+}
+
+### Đòi nhiều câu hơn ngân hàng đang có → isValid = false, nêu rõ cần bao nhiêu / có bao nhiêu
+POST {{host}}/api/exams/blueprint-preview
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "totalQuestions": 500,
+  "easyPercentage": 100,
+  "mediumPercentage": 0,
+  "hardPercentage": 0
+}
+
+### Học sinh gọi blueprint-preview → 403
+POST {{host}}/api/exams/blueprint-preview
+Authorization: Bearer {{studentToken}}
+Content-Type: application/json
+
+{
+  "totalQuestions": 10,
+  "easyPercentage": 100,
+  "mediumPercentage": 0,
+  "hardPercentage": 0
+}
+
+### Lưu bản NHÁP với tỷ lệ chưa cộng đủ 100 → 200.
+# Nháp được miễn hai điều kiện nặng: tổng tỷ lệ bằng 100 và ngân hàng đủ câu.
+# Không miễn thì nút "Lưu nháp" không còn tác dụng gì.
+# @name createDraft
+POST {{host}}/api/exams
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "title": "Nháp — kiểm tra chương 1",
+  "description": "Chưa chốt tỷ lệ",
+  "topic": "all",
+  "durationMinutes": 45,
+  "totalQuestions": 20,
+  "easyPercentage": 30,
+  "mediumPercentage": 30,
+  "hardPercentage": 30,
+  "pointPerQuestion": 0.5,
+  "openAt": "2026-10-01T01:00:00Z",
+  "closeAt": "2026-10-01T04:00:00Z",
+  "shuffleQuestions": true,
+  "shuffleAnswers": true,
+  "showResultAfterSubmit": true,
+  "lifecycle": "draft"
+}
+
+@draftId = {{createDraft.response.body.id}}
+
+### Cùng cấu hình đó nhưng KHÔNG phải nháp → 400.
+# Bỏ trường lifecycle đi là đề có hiệu lực thật, và khi ấy cả hai điều kiện quay lại.
+POST {{host}}/api/exams
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "title": "Đề không hợp lệ",
+  "topic": "all",
+  "durationMinutes": 45,
+  "totalQuestions": 20,
+  "easyPercentage": 30,
+  "mediumPercentage": 30,
+  "hardPercentage": 30,
+  "pointPerQuestion": 0.5,
+  "openAt": "2026-10-01T01:00:00Z",
+  "closeAt": "2026-10-01T04:00:00Z"
+}
+
+### Thời lượng dài hơn cửa sổ mở đề → 400.
+# Làm bài 90 phút trong cửa sổ mở 30 phút thì mọi học sinh đều bị cắt giữa chừng.
+# Frontend hiện chỉ hiện cảnh báo rồi vẫn cho lưu.
+POST {{host}}/api/exams
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "title": "Cửa sổ ngắn hơn thời lượng",
+  "topic": "all",
+  "durationMinutes": 90,
+  "totalQuestions": 10,
+  "easyPercentage": 100,
+  "mediumPercentage": 0,
+  "hardPercentage": 0,
+  "pointPerQuestion": 1,
+  "openAt": "2026-10-01T01:00:00Z",
+  "closeAt": "2026-10-01T01:30:00Z"
+}
+
+### lifecycle dẫn xuất gửi lên → 400.
+# "scheduled"/"open"/"closed" tính từ mốc thời gian; nhận chúng là cho phép ép đề
+# sang trạng thái mâu thuẫn với chính lịch của nó.
+POST {{host}}/api/exams
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "title": "Ép trạng thái",
+  "topic": "all",
+  "durationMinutes": 30,
+  "totalQuestions": 10,
+  "easyPercentage": 100,
+  "mediumPercentage": 0,
+  "hardPercentage": 0,
+  "pointPerQuestion": 1,
+  "openAt": "2026-10-01T01:00:00Z",
+  "closeAt": "2026-10-01T04:00:00Z",
+  "lifecycle": "open"
+}
+
+### Danh sách đề — lọc theo vòng đời
+GET {{host}}/api/exams?lifecycle=draft&page=1&pageSize=10
+Authorization: Bearer {{token}}
+
+### Bộ lọc vòng đời nhận giá trị số → 400.
+# Enum.TryParse của .NET chấp nhận cả chuỗi số và trả về true cho một giá trị chưa
+# từng khai báo, nên "42" từng lọt xuống tận repository rồi trả danh sách rỗng kèm
+# mã 200. Enum.IsDefined chặn đúng chỗ đó.
+GET {{host}}/api/exams?lifecycle=42
+Authorization: Bearer {{token}}
+
+### pageSize vượt trần → bị kẹp về 200, không báo lỗi
+GET {{host}}/api/exams?pageSize=500
+Authorization: Bearer {{token}}
+
+### Blueprint của đề đã lưu, đối chiếu tồn kho HIỆN TẠI của ngân hàng
+GET {{host}}/api/exams/{{draftId}}/blueprint
+Authorization: Bearer {{token}}
+
+### Dời lịch sao cho cửa sổ ngắn hơn thời lượng đề → 400.
+# Thời lượng nằm trên đề chứ không nằm trong request, nên validator không kiểm hộ
+# được — phép này thuộc về service, nơi đọc được đề.
+PATCH {{host}}/api/exams/{{draftId}}/schedule
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "openAt": "2026-10-02T01:00:00Z",
+  "closeAt": "2026-10-02T01:20:00Z"
+}
+
+### Dời lịch hợp lệ → 200
+PATCH {{host}}/api/exams/{{draftId}}/schedule
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "openAt": "2026-10-02T01:00:00Z",
+  "closeAt": "2026-10-02T05:00:00Z"
+}
+
+### Xuất bản bản nháp có tỷ lệ chưa đủ 100 → 400.
+# Rời khỏi trạng thái nháp là lúc hai điều kiện được miễn phải trả lại đủ.
+POST {{host}}/api/exams/{{draftId}}/publish
+Authorization: Bearer {{token}}
+
+### Sửa đề cho hợp lệ rồi mới xuất bản được
+PUT {{host}}/api/exams/{{draftId}}
+Authorization: Bearer {{token}}
+Content-Type: application/json
+
+{
+  "title": "Kiểm tra chương 1",
+  "description": "Đã chốt tỷ lệ",
+  "topic": "all",
+  "durationMinutes": 45,
+  "totalQuestions": 6,
+  "easyPercentage": 50,
+  "mediumPercentage": 30,
+  "hardPercentage": 20,
+  "pointPerQuestion": 1,
+  "openAt": "2026-10-02T01:00:00Z",
+  "closeAt": "2026-10-02T05:00:00Z",
+  "lifecycle": "draft"
+}
+
+### Xuất bản → 200, lifecycle chuyển từ draft sang scheduled
+POST {{host}}/api/exams/{{draftId}}/publish
+Authorization: Bearer {{token}}
+
+### Xuất bản lần hai → 409
+POST {{host}}/api/exams/{{draftId}}/publish
+Authorization: Bearer {{token}}
+
+### Quản trị viên ĐỌC được mọi đề → 200
+GET {{host}}/api/exams/{{draftId}}
+Authorization: Bearer {{adminToken}}
+
+### Quản trị viên tạo đề → 403.
+# Họ không thuộc môn nào nên không có ngân hàng câu hỏi để rút; cho tạo là tạo ra
+# một đề không bao giờ sinh nổi câu hỏi.
+POST {{host}}/api/exams
+Authorization: Bearer {{adminToken}}
+Content-Type: application/json
+
+{
+  "title": "Quản trị viên ra đề",
+  "topic": "all",
+  "durationMinutes": 30,
+  "totalQuestions": 5,
+  "easyPercentage": 100,
+  "mediumPercentage": 0,
+  "hardPercentage": 0,
+  "pointPerQuestion": 2,
+  "openAt": "2026-10-01T01:00:00Z",
+  "closeAt": "2026-10-01T04:00:00Z"
+}
+
+### Học sinh xem danh sách đề của giáo viên → 403
+GET {{host}}/api/exams
+Authorization: Bearer {{studentToken}}
+
+### Đề không tồn tại → 404.
+# Đề của giáo viên KHÁC cũng phải trả đúng 404 này, không phải 403: 403 là xác
+# nhận id đó có thật, đủ để dò dần danh sách đề của đồng nghiệp.
+GET {{host}}/api/exams/999999
+Authorization: Bearer {{token}}
+
+### Xoá đề chưa ai nộp bài → 200
+DELETE {{host}}/api/exams/{{draftId}}
+Authorization: Bearer {{token}}
 
 ###
