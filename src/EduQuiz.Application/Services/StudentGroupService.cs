@@ -44,13 +44,42 @@ public sealed class StudentGroupService : IStudentGroupService
     /// <inheritdoc />
     public async Task<Result<IReadOnlyList<StudentGroupDto>>> ListAsync(
         string? search,
+        string? status,
         CancellationToken cancellationToken = default)
     {
-        // NULL nghĩa là "mọi nhóm" — chỉ quản trị viên nhận giá trị đó.
-        var groups = await _unitOfWork.StudentGroups.GetOwnedAsync(
-            OwnerScope(),
-            search,
-            cancellationToken);
+        // Từ chối giá trị lạ thay vì âm thầm bỏ lọc: gõ sai một chữ mà vẫn nhận về đủ danh sách
+        // thì người dùng tin là mình đã lọc, trong khi không có bộ lọc nào chạy cả.
+        var normalizedStatus = string.IsNullOrWhiteSpace(status) ? "all" : status.Trim().ToLowerInvariant();
+        if (normalizedStatus is not ("all" or "draft" or "published"))
+        {
+            return Result.Failure<IReadOnlyList<StudentGroupDto>>(
+                "Bộ lọc trạng thái chỉ nhận 'draft', 'published' hoặc 'all'.");
+        }
+
+        // Hai đường đi tách hẳn nhau thay vì một truy vấn có tham số "phạm vi". Quản trị viên và
+        // giáo viên nhìn hai tập dữ liệu khác nhau về bản chất — một bên là mọi lớp kể cả bản nháp,
+        // bên kia là những lớp mình được phân công và đã công bố. Gộp vào một hàm với một cờ điều
+        // kiện là cách để một ngày nào đó truyền nhầm cờ và làm lộ toàn bộ lớp đang dựng dở.
+        IReadOnlyList<StudentGroup> groups;
+
+        if (_currentUser.IsInRole(UserRole.Admin))
+        {
+            groups = await _unitOfWork.StudentGroups.GetAllAsync(
+                search,
+                includeDrafts: normalizedStatus != "published",
+                cancellationToken);
+
+            if (normalizedStatus == "draft")
+            {
+                groups = groups.Where(group => !group.IsPublished).ToList();
+            }
+        }
+        else
+        {
+            // Giáo viên không bao giờ nhận về bản nháp nên tham số status không đổi được gì —
+            // repository đã lọc sẵn ở tầng truy vấn.
+            groups = await _unitOfWork.StudentGroups.GetForTeacherAsync(CurrentUserId, search, cancellationToken);
+        }
 
         return Result.Success(await AttachCountsAsync(groups, cancellationToken));
     }
@@ -76,25 +105,31 @@ public sealed class StudentGroupService : IStudentGroupService
     {
         ArgumentNullException.ThrowIfNull(request);
 
-        if (!TryGetTeacherId(out var teacherId))
+        if (!_currentUser.IsInRole(UserRole.Admin))
         {
-            return Result.Forbidden<StudentGroupDto>(TeacherOnlyMessage);
+            return Result.Forbidden<StudentGroupDto>(AdminOnlyMessage);
         }
 
         var name = request.Name?.Trim() ?? string.Empty;
 
-        // Phạm vi so trùng là trong nhóm của cùng một giáo viên: hai giáo viên đều có "Lớp 8A" là
-        // chuyện bình thường, còn một giáo viên có hai "Lớp 8A" thì chính họ cũng không phân biệt được.
-        if (await _unitOfWork.StudentGroups.IsNameTakenAsync(name, teacherId, null, cancellationToken))
+        // So trùng trên TOÀN hệ thống, không còn trong phạm vi một giáo viên. Lớp giờ là đơn vị
+        // hành chính của cả trung tâm: hai lớp cùng tên "12A1" là hai thứ không ai phân biệt nổi
+        // lúc giao bài, mà học sinh thì chỉ thuộc được một trong hai.
+        if (await _unitOfWork.StudentGroups.IsNameTakenAsync(name, null, cancellationToken))
         {
-            return Result.Conflict<StudentGroupDto>("Tên nhóm lớp đã tồn tại.");
+            return Result.Conflict<StudentGroupDto>("Tên lớp đã tồn tại.");
         }
 
         var group = new StudentGroup
         {
             Name = name,
             Description = NormalizeOptional(request.Description),
-            OwnerTeacherId = teacherId
+            CreatedByUserId = CurrentUserId,
+
+            // Lớp mới luôn là bản nháp. Quản trị viên còn phải xếp học sinh và phân công giáo viên
+            // trước khi nó có nghĩa gì; hiện ngay lúc vừa tạo thì giáo viên thấy một lớp rỗng và
+            // giao bài cho nó cũng chẳng tới ai.
+            IsPublished = false
         };
 
         await _unitOfWork.StudentGroups.AddAsync(group, cancellationToken);
@@ -121,9 +156,9 @@ public sealed class StudentGroupService : IStudentGroupService
         var name = request.Name?.Trim() ?? string.Empty;
 
         // Loại trừ chính nhóm đang sửa, nếu không đổi mỗi mô tả cũng tự báo trùng tên với chính mình.
-        if (await _unitOfWork.StudentGroups.IsNameTakenAsync(name, group.OwnerTeacherId, group.Id, cancellationToken))
+        if (await _unitOfWork.StudentGroups.IsNameTakenAsync(name, group.Id, cancellationToken))
         {
-            return Result.Conflict<StudentGroupDto>("Tên nhóm lớp đã tồn tại.");
+            return Result.Conflict<StudentGroupDto>("Tên lớp đã tồn tại.");
         }
 
         group.Name = name;
@@ -294,17 +329,207 @@ public sealed class StudentGroupService : IStudentGroupService
         return Result.Success();
     }
 
-    private const string TeacherOnlyMessage = "Chỉ giáo viên mới quản lý được nhóm lớp.";
+    /// <inheritdoc />
+    public async Task<Result<StudentGroupDto>> PublishAsync(
+        int id,
+        CancellationToken cancellationToken = default)
+    {
+        var load = await LoadWritableAsync(id, cancellationToken);
+        if (load.IsFailure)
+        {
+            return Result.Failure<StudentGroupDto>(load.Error!, load.ErrorCode);
+        }
+
+        var group = load.ValueOrThrow;
+
+        if (group.IsPublished)
+        {
+            return Result.Conflict<StudentGroupDto>("Lớp này đã được công bố rồi.");
+        }
+
+        // Cố ý KHÔNG bắt buộc phải có học sinh hoặc giáo viên trước khi công bố. Một lớp mới lập
+        // đầu năm, đã có tên và đã phân công giáo viên nhưng chưa xếp em nào, vẫn là một lớp có
+        // thật. Chặn ở đây là bắt quản trị viên làm mọi việc theo đúng một thứ tự. Thay vào đó
+        // giao diện cảnh báo khi lớp rỗng hoặc chưa có ai dạy — nhắc chứ không cấm.
+        group.IsPublished = true;
+        group.PublishedAt = DateTime.UtcNow;
+        group.UpdatedAt = DateTime.UtcNow;
+
+        _unitOfWork.StudentGroups.Update(group);
+        await _unitOfWork.SaveChangesAsync(cancellationToken);
+
+        var withTeachers = await _unitOfWork.StudentGroups.GetWithTeachersAsync(group.Id, cancellationToken);
+        var count = await _unitOfWork.Users.CountStudentsInGroupAsync(group.Id, cancellationToken);
+
+        return Result.Success((withTeachers ?? group).ToDto(count));
+    }
+
+    /// <inheritdoc />
+    public async Task<Result<StudentGroupDto>> UnpublishAsync(
+        int id,
+        CancellationToken cancellationToken = default)
+    {
+        var load = await LoadWritableAsync(id, cancellationToken);
+        if (load.IsFailure)
+        {
+            return Result.Failure<StudentGroupDto>(load.Error!, load.ErrorCode);
+        }
+
+        var group = load.ValueOrThrow;
+
+        if (!group.IsPublished)
+        {
+            return Result.Conflict<StudentGroupDto>("Lớp này đang là bản nháp.");
+        }
+
+        // Giữ nguyên PublishedAt: nó ghi lại lần công bố đầu tiên, và xoá đi là mất một mốc thời
+        // gian có thật chỉ vì lớp tạm ẩn đi vài phút.
+        group.IsPublished = false;
+        group.UpdatedAt = DateTime.UtcNow;
+
+        _unitOfWork.StudentGroups.Update(group);
+        await _unitOfWork.SaveChangesAsync(cancellationToken);
+
+        var withTeachers = await _unitOfWork.StudentGroups.GetWithTeachersAsync(group.Id, cancellationToken);
+        var count = await _unitOfWork.Users.CountStudentsInGroupAsync(group.Id, cancellationToken);
+
+        return Result.Success((withTeachers ?? group).ToDto(count));
+    }
+
+    /// <inheritdoc />
+    public async Task<Result<IReadOnlyList<GroupTeacherDto>>> ListAssignableTeachersAsync(
+        int id,
+        CancellationToken cancellationToken = default)
+    {
+        var load = await LoadWritableAsync(id, cancellationToken);
+        if (load.IsFailure)
+        {
+            return Result.Failure<IReadOnlyList<GroupTeacherDto>>(load.Error!, load.ErrorCode);
+        }
+
+        var teachers = await _unitOfWork.Users.GetAssignableTeachersAsync(id, cancellationToken);
+
+        return Result.Success<IReadOnlyList<GroupTeacherDto>>(
+            teachers.Select(teacher => teacher.ToGroupTeacherDto()).ToList());
+    }
+
+    /// <inheritdoc />
+    public async Task<Result<AssignTeachersResponse>> AssignTeachersAsync(
+        int id,
+        AssignTeachersRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+
+        var load = await LoadWritableAsync(id, cancellationToken);
+        if (load.IsFailure)
+        {
+            return Result.Failure<AssignTeachersResponse>(load.Error!, load.ErrorCode);
+        }
+
+        var requestedIds = new HashSet<int>(request.TeacherIds ?? []);
+        if (requestedIds.Count == 0)
+        {
+            return Result.Failure<AssignTeachersResponse>("Vui lòng chọn ít nhất một giáo viên.");
+        }
+
+        // Chỉ trả về id có thật và đúng vai trò Teacher. Chênh lệch số lượng chính là số id lạ —
+        // không cần một vòng lặp riêng để đếm chúng.
+        var teachers = await _unitOfWork.Users.GetTeachersByIdsAsync(requestedIds, cancellationToken);
+        var notTeacher = requestedIds.Count - teachers.Count;
+
+        var group = await _unitOfWork.StudentGroups.GetWithTeachersAsync(id, cancellationToken);
+        var alreadyAssigned = group is null
+            ? new HashSet<int>()
+            : group.Teachers.Select(assignment => assignment.TeacherId).ToHashSet();
+
+        var now = DateTime.UtcNow;
+        var assigned = 0;
+        var skippedAlready = 0;
+        var skippedLocked = 0;
+
+        foreach (var teacher in teachers)
+        {
+            if (alreadyAssigned.Contains(teacher.Id))
+            {
+                skippedAlready++;
+                continue;
+            }
+
+            // Tài khoản bị khoá không phân công được: giao lớp cho một người không đăng nhập nổi
+            // là tạo ra một lớp trông như đã có người phụ trách trong khi thực tế thì không.
+            if (teacher.Status == UserStatus.Locked)
+            {
+                skippedLocked++;
+                continue;
+            }
+
+            _unitOfWork.StudentGroups.AddTeacher(new StudentGroupTeacher
+            {
+                StudentGroupId = id,
+                TeacherId = teacher.Id,
+                AssignedAt = now
+            });
+
+            assigned++;
+        }
+
+        if (assigned > 0)
+        {
+            await _unitOfWork.SaveChangesAsync(cancellationToken);
+        }
+
+        return Result.Success(new AssignTeachersResponse
+        {
+            Assigned = assigned,
+            SkippedAlreadyAssigned = skippedAlready,
+            SkippedNotTeacher = notTeacher,
+            SkippedLocked = skippedLocked,
+            TeacherCount = alreadyAssigned.Count + assigned
+        });
+    }
+
+    /// <inheritdoc />
+    public async Task<Result> UnassignTeacherAsync(
+        int id,
+        int teacherId,
+        CancellationToken cancellationToken = default)
+    {
+        var load = await LoadWritableAsync(id, cancellationToken);
+        if (load.IsFailure)
+        {
+            return Result.Failure(load.Error!, load.ErrorCode);
+        }
+
+        var assignment = await _unitOfWork.StudentGroups.FindAssignmentAsync(id, teacherId, cancellationToken);
+        if (assignment is null)
+        {
+            return Result.NotFound("Giáo viên này không phụ trách lớp đó.");
+        }
+
+        // Gỡ được cả khi lớp đã công bố và đang có bài kiểm tra chạy dở. Bài đã giao gắn với học
+        // sinh chứ không gắn với giáo viên, nên chúng vẫn nguyên vẹn; còn chặn việc gỡ sẽ khiến
+        // một giáo viên nghỉ việc mãi mãi nằm trong danh sách phụ trách.
+        _unitOfWork.StudentGroups.RemoveTeacher(assignment);
+        await _unitOfWork.SaveChangesAsync(cancellationToken);
+
+        return Result.Success();
+    }
+
+    private const string AdminOnlyMessage =
+        "Chỉ quản trị viên mới lập và sắp xếp lớp. Giáo viên được phân công vào lớp, không tự tạo.";
+
+    private int CurrentUserId => _currentUser.RequireUserId();
 
     /// <summary>
-    /// Phạm vi đọc: giáo viên chỉ thấy nhóm của mình, quản trị viên thấy tất cả (NULL).
+    /// Nạp lớp cho thao tác <b>đọc</b>. Trả NULL khi lớp không tồn tại <i>hoặc</i> nằm ngoài phạm
+    /// vi người gọi — chỗ gọi biến cả hai thành 404 (§4.2).
     /// </summary>
-    private int? OwnerScope() => _currentUser.IsInRole(UserRole.Admin) ? null : _currentUser.UserId;
-
-    /// <summary>
-    /// Nạp nhóm cho thao tác <b>đọc</b>. Trả NULL khi nhóm không tồn tại <i>hoặc</i> không thuộc
-    /// phạm vi người gọi — chỗ gọi biến cả hai thành 404 (§4.2).
-    /// </summary>
+    /// <remarks>
+    /// Với giáo viên, "trong phạm vi" gồm <b>hai</b> điều kiện: được phân công dạy lớp đó, và lớp
+    /// đã công bố. Một lớp quản trị viên đang dựng dở không được rò sang màn hình của ai khác, kể
+    /// cả người sẽ dạy nó.
+    /// </remarks>
     private async Task<StudentGroup?> LoadReadableAsync(int id, CancellationToken cancellationToken)
     {
         var group = await _unitOfWork.StudentGroups.GetByIdAsync(id, cancellationToken);
@@ -318,25 +543,33 @@ public sealed class StudentGroupService : IStudentGroupService
             return group;
         }
 
-        return _currentUser.UserId is { } userId && group.OwnerTeacherId == userId ? group : null;
+        return await _unitOfWork.StudentGroups.IsTeachingAsync(id, CurrentUserId, cancellationToken)
+            ? group
+            : null;
     }
 
     /// <summary>
-    /// Nạp nhóm cho thao tác <b>ghi</b>. Chỉ chính chủ mới qua được — kể cả quản trị viên, vì §4.4
-    /// xếp quản trị viên vào cột "đọc" ở khu vực nhóm lớp. Tầng Api đã chặn bằng
-    /// <c>[Authorize(Roles = Teacher)]</c>; lớp kiểm ở đây để service đứng vững cả khi được gọi từ
-    /// chỗ khác, ví dụ một background job sau này.
+    /// Nạp lớp cho thao tác <b>ghi</b>. Chỉ quản trị viên qua được.
     /// </summary>
+    /// <remarks>
+    /// Đảo ngược hẳn so với mô hình cũ, nơi giáo viên sở hữu lớp còn quản trị viên chỉ được đọc.
+    /// Lý do nằm ở lược đồ: <c>User.GroupId</c> là khoá ngoại đơn, nên một học sinh thuộc đúng một
+    /// lớp. Để giáo viên sở hữu lớp thì hai người cùng dạy một em sẽ giành nhau em đó — người thêm
+    /// sau kéo em ra khỏi lớp của người trước và làm hỏng mọi bài người trước đã giao.
+    ///
+    /// Tầng Api đã chặn bằng <c>[Authorize(Roles = Admin)]</c>; lớp kiểm ở đây để service đứng
+    /// vững cả khi được gọi từ chỗ khác.
+    /// </remarks>
     private async Task<Result<StudentGroup>> LoadWritableAsync(int id, CancellationToken cancellationToken)
     {
-        if (!TryGetTeacherId(out var teacherId))
+        if (!_currentUser.IsInRole(UserRole.Admin))
         {
-            return Result.Forbidden<StudentGroup>(TeacherOnlyMessage);
+            return Result.Forbidden<StudentGroup>(AdminOnlyMessage);
         }
 
         var group = await _unitOfWork.StudentGroups.GetByIdAsync(id, cancellationToken);
 
-        return group is not null && group.OwnerTeacherId == teacherId
+        return group is not null
             ? Result.Success(group)
             : Result.NotFound<StudentGroup>(NotFoundMessage);
     }

@@ -110,3 +110,46 @@ summary() {
   fi
   return $((FAILED > 0))
 }
+
+# Tao mot lop DUNG THEO MO HINH MOI va tra ve id.
+#
+#   $1 admin token, $2 teacher token, $3 ten lop, $4 (tuy chon) mo ta
+#
+# Ba buoc, vi lop khong con la thu giao vien tu tao:
+#   1. Quan tri vien lap lop  -> lop ra doi o dang NHAP
+#   2. Phan cong giao vien    -> nguoi day moi nhin thay va giao bai duoc
+#   3. Cong bo                -> truoc buoc nay giao vien khong thay gi ca
+#
+# Bo bat ky buoc nao thi giao vien nhan 403 hoac danh sach rong, va script goi no se hong o mot
+# cho khac han nguyen nhan that su.
+new_class() {
+  local admin="$1" teacher="$2" name="$3" description="${4:-}"
+
+  local code
+  code=$(call POST /api/student-groups "$admin" "{\"name\":\"$name\",\"description\":\"$description\"}")
+  if [[ "$code" != "200" ]]; then
+    echo "  new_class: tao lop that bai HTTP $code — $(body)" >&2
+    return 1
+  fi
+
+  local group_id teacher_id
+  group_id=$(json_field id)
+
+  # Danh tinh giao vien lay tu chinh token cua ho, khong hard-code.
+  call GET /api/auth/me "$teacher" > /dev/null
+  teacher_id=$(json_field id)
+
+  code=$(call POST "/api/student-groups/$group_id/teachers" "$admin" "{\"teacherIds\":[$teacher_id]}")
+  if [[ "$code" != "200" ]]; then
+    echo "  new_class: phan cong giao vien that bai HTTP $code — $(body)" >&2
+    return 1
+  fi
+
+  code=$(call POST "/api/student-groups/$group_id/publish" "$admin")
+  if [[ "$code" != "200" ]]; then
+    echo "  new_class: cong bo that bai HTTP $code — $(body)" >&2
+    return 1
+  fi
+
+  echo "$group_id"
+}

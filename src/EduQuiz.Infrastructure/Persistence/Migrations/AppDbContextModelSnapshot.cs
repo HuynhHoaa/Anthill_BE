@@ -543,27 +543,58 @@ namespace EduQuiz.Infrastructure.Persistence.Migrations
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
 
+                    b.Property<int>("CreatedByUserId")
+                        .HasColumnType("integer");
+
                     b.Property<string>("Description")
                         .HasMaxLength(512)
                         .HasColumnType("character varying(512)");
+
+                    b.Property<bool>("IsPublished")
+                        .HasColumnType("boolean");
 
                     b.Property<string>("Name")
                         .IsRequired()
                         .HasMaxLength(128)
                         .HasColumnType("character varying(128)");
 
-                    b.Property<int>("OwnerTeacherId")
-                        .HasColumnType("integer");
+                    b.Property<DateTime?>("PublishedAt")
+                        .HasColumnType("timestamp with time zone");
 
                     b.Property<DateTime?>("UpdatedAt")
                         .HasColumnType("timestamp with time zone");
 
                     b.HasKey("Id");
 
-                    b.HasIndex("OwnerTeacherId")
-                        .HasDatabaseName("IX_StudentGroups_OwnerTeacherId");
+                    b.HasIndex("CreatedByUserId");
+
+                    b.HasIndex("IsPublished")
+                        .HasDatabaseName("IX_StudentGroups_IsPublished");
+
+                    b.HasIndex("Name")
+                        .IsUnique()
+                        .HasDatabaseName("IX_StudentGroups_Name");
 
                     b.ToTable("StudentGroups", (string)null);
+                });
+
+            modelBuilder.Entity("EduQuiz.Domain.Entities.StudentGroupTeacher", b =>
+                {
+                    b.Property<int>("StudentGroupId")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("TeacherId")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTime>("AssignedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("StudentGroupId", "TeacherId");
+
+                    b.HasIndex("TeacherId")
+                        .HasDatabaseName("IX_StudentGroupTeachers_TeacherId");
+
+                    b.ToTable("StudentGroupTeachers", (string)null);
                 });
 
             modelBuilder.Entity("EduQuiz.Domain.Entities.Subject", b =>
@@ -858,13 +889,32 @@ namespace EduQuiz.Infrastructure.Persistence.Migrations
 
             modelBuilder.Entity("EduQuiz.Domain.Entities.StudentGroup", b =>
                 {
-                    b.HasOne("EduQuiz.Domain.Entities.User", "OwnerTeacher")
-                        .WithMany("OwnedGroups")
-                        .HasForeignKey("OwnerTeacherId")
+                    b.HasOne("EduQuiz.Domain.Entities.User", "CreatedBy")
+                        .WithMany("CreatedGroups")
+                        .HasForeignKey("CreatedByUserId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
 
-                    b.Navigation("OwnerTeacher");
+                    b.Navigation("CreatedBy");
+                });
+
+            modelBuilder.Entity("EduQuiz.Domain.Entities.StudentGroupTeacher", b =>
+                {
+                    b.HasOne("EduQuiz.Domain.Entities.StudentGroup", "StudentGroup")
+                        .WithMany("Teachers")
+                        .HasForeignKey("StudentGroupId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("EduQuiz.Domain.Entities.User", "Teacher")
+                        .WithMany("TeachingGroups")
+                        .HasForeignKey("TeacherId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("StudentGroup");
+
+                    b.Navigation("Teacher");
                 });
 
             modelBuilder.Entity("EduQuiz.Domain.Entities.User", b =>
@@ -925,6 +975,8 @@ namespace EduQuiz.Infrastructure.Persistence.Migrations
             modelBuilder.Entity("EduQuiz.Domain.Entities.StudentGroup", b =>
                 {
                     b.Navigation("Students");
+
+                    b.Navigation("Teachers");
                 });
 
             modelBuilder.Entity("EduQuiz.Domain.Entities.Subject", b =>
@@ -940,11 +992,13 @@ namespace EduQuiz.Infrastructure.Persistence.Migrations
 
                     b.Navigation("CreatedExams");
 
+                    b.Navigation("CreatedGroups");
+
                     b.Navigation("CreatedQuestions");
 
                     b.Navigation("Notifications");
 
-                    b.Navigation("OwnedGroups");
+                    b.Navigation("TeachingGroups");
                 });
 #pragma warning restore 612, 618
         }

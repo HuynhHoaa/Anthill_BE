@@ -56,5 +56,22 @@ public interface IUserRepository : IGenericRepository<User>
         IEnumerable<int> groupIds,
         CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// Giáo viên có thể phân công vào lớp — trừ những người đã được phân công vào chính lớp đó.
+    /// </summary>
+    /// <remarks>
+    /// Bao gồm cả tài khoản đang bị khoá, và đó là chủ đích: quản trị viên cần thấy người đó trong
+    /// danh sách để biết vì sao không phân công được, thay vì đi tìm một cái tên đã biến mất. Việc
+    /// từ chối nằm ở tầng service, kèm lý do.
+    /// </remarks>
+    Task<IReadOnlyList<User>> GetAssignableTeachersAsync(
+        int groupId,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>Chỉ trả về id thật sự tồn tại và đúng vai trò Teacher — dùng khi phân công theo lô.</summary>
+    Task<IReadOnlyList<User>> GetTeachersByIdsAsync(
+        IEnumerable<int> teacherIds,
+        CancellationToken cancellationToken = default);
+
     Task<int> CountByRoleAsync(UserRole role, CancellationToken cancellationToken = default);
 }

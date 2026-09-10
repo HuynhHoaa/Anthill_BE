@@ -329,9 +329,10 @@ public sealed class ExamAssignmentService : IExamAssignmentService
         var requestedIds = new HashSet<int>(request.StudentIds ?? []);
         var requestedGroupIds = (request.GroupIds ?? []).Distinct().ToList();
 
-        // Nhóm của giáo viên khác bị loại ngay tại đây: repository chỉ trả về nhóm do người này sở
-        // hữu, nên một id nhóm đoán bừa không kéo theo học sinh nào.
-        var ownedGroups = await _unitOfWork.StudentGroups.GetOwnedByIdsAsync(
+        // Lớp mà giáo viên này không được phân công bị loại ngay tại đây, và lớp còn ở dạng nháp
+        // cũng vậy: repository chỉ trả về lớp thoả cả hai điều kiện, nên một id đoán bừa không kéo
+        // theo học sinh nào.
+        var ownedGroups = await _unitOfWork.StudentGroups.GetTeachableByIdsAsync(
             requestedGroupIds,
             CurrentUserId,
             cancellationToken);
@@ -366,9 +367,9 @@ public sealed class ExamAssignmentService : IExamAssignmentService
         var students = await _unitOfWork.Users.GetStudentsByIdsAsync(requestedIds, cancellationToken);
         var notFound = requestedIds.Count - students.Count;
 
-        // Phạm vi: em phải thuộc một nhóm do chính giáo viên này quản lý. Không có hàng rào này
-        // thì đoán id là giao được bài cho lớp của đồng nghiệp.
-        var myGroupIds = (await _unitOfWork.StudentGroups.GetOwnedAsync(CurrentUserId, search: null, cancellationToken))
+        // Phạm vi: em phải thuộc một lớp mà giáo viên này được phân công dạy. Không có hàng rào
+        // này thì đoán id là giao được bài cho lớp của đồng nghiệp.
+        var myGroupIds = (await _unitOfWork.StudentGroups.GetForTeacherAsync(CurrentUserId, search: null, cancellationToken))
             .Select(group => group.Id)
             .ToHashSet();
 

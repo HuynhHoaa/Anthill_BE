@@ -49,8 +49,17 @@ public class User : BaseEntity
 
     public StudentGroup? Group { get; set; }
 
-    /// <summary>Nhóm lớp do chính giáo viên này quản lý.</summary>
-    public ICollection<StudentGroup> OwnedGroups { get; set; } = new List<StudentGroup>();
+    /// <summary>Lớp do quản trị viên này lập ra. Chỉ để ghi nhận, không mang ý nghĩa phân quyền.</summary>
+    public ICollection<StudentGroup> CreatedGroups { get; set; } = new List<StudentGroup>();
+
+    /// <summary>
+    /// Lớp mà giáo viên này được phân công phụ trách.
+    /// </summary>
+    /// <remarks>
+    /// Đây mới là thứ quyết định giáo viên thấy lớp nào và giao bài được cho lớp nào — trước đây
+    /// vai trò đó thuộc về <c>OwnedGroups</c>, tức là lớp do chính họ tạo ra.
+    /// </remarks>
+    public ICollection<StudentGroupTeacher> TeachingGroups { get; set; } = new List<StudentGroupTeacher>();
 
     public ICollection<Question> CreatedQuestions { get; set; } = new List<Question>();
 

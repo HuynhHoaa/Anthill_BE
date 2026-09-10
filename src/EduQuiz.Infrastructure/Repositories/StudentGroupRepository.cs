@@ -12,44 +12,69 @@ public class StudentGroupRepository : GenericRepository<StudentGroup>, IStudentG
     {
     }
 
-    public async Task<StudentGroup?> GetWithStudentsAsync(int groupId, CancellationToken cancellationToken = default) =>
+    public async Task<StudentGroup?> GetWithStudentsAsync(
+        int groupId,
+        CancellationToken cancellationToken = default) =>
         await DbSet
             .Include(g => g.Students.Where(s => s.Role == UserRole.Student).OrderBy(s => s.Code))
-            .Include(g => g.OwnerTeacher)
+            .Include(g => g.CreatedBy)
+            .Include(g => g.Teachers)
+                .ThenInclude(t => t.Teacher)
             .FirstOrDefaultAsync(g => g.Id == groupId, cancellationToken);
 
-    public async Task<IReadOnlyList<StudentGroup>> GetOwnedAsync(
-        int? ownerTeacherId,
+    public async Task<StudentGroup?> GetWithTeachersAsync(
+        int groupId,
+        CancellationToken cancellationToken = default) =>
+        await DbSet
+            .Include(g => g.Teachers)
+                .ThenInclude(t => t.Teacher)
+            .FirstOrDefaultAsync(g => g.Id == groupId, cancellationToken);
+
+    public async Task<IReadOnlyList<StudentGroup>> GetAllAsync(
+        string? search,
+        bool includeDrafts,
+        CancellationToken cancellationToken = default)
+    {
+        var query = DbSet
+            .AsNoTracking()
+            .Include(g => g.Teachers)
+                .ThenInclude(t => t.Teacher)
+            .AsQueryable();
+
+        if (!includeDrafts)
+        {
+            query = query.Where(g => g.IsPublished);
+        }
+
+        return await OrderForDisplay(ApplySearch(query, search)).ToListAsync(cancellationToken);
+    }
+
+    public async Task<IReadOnlyList<StudentGroup>> GetForTeacherAsync(
+        int teacherId,
         string? search,
         CancellationToken cancellationToken = default)
     {
-        var query = DbSet.AsNoTracking().AsQueryable();
+        // Hai điều kiện đi liền nhau ở mọi truy vấn phục vụ giáo viên: được phân công, VÀ đã công
+        // bố. Tách rời chúng ra là sớm muộn có chỗ chỉ kiểm một vế và làm lộ lớp đang dựng dở.
+        var query = DbSet
+            .AsNoTracking()
+            .Include(g => g.Teachers)
+                .ThenInclude(t => t.Teacher)
+            .Where(g => g.IsPublished && g.Teachers.Any(t => t.TeacherId == teacherId));
 
-        // Quản trị viên đọc toàn bộ nên truyền NULL; giáo viên chỉ thấy nhóm của mình.
-        if (ownerTeacherId.HasValue)
-        {
-            query = query.Where(g => g.OwnerTeacherId == ownerTeacherId.Value);
-        }
-
-        if (SearchText.ToLikePattern(search) is { } pattern)
-        {
-            query = query.Where(g =>
-                EF.Functions.ILike(EF.Functions.Unaccent(g.Name), pattern)
-                || EF.Functions.ILike(EF.Functions.Unaccent(g.Description ?? string.Empty), pattern));
-        }
-
-        return await query
-            .OrderBy(g => g.Name)
-            .ThenBy(g => g.Id)
-            .ToListAsync(cancellationToken);
+        return await OrderForDisplay(ApplySearch(query, search)).ToListAsync(cancellationToken);
     }
 
-    public async Task<bool> IsOwnedByAsync(int groupId, int teacherId, CancellationToken cancellationToken = default) =>
-        await DbSet.AnyAsync(g => g.Id == groupId && g.OwnerTeacherId == teacherId, cancellationToken);
+    public async Task<bool> IsTeachingAsync(
+        int groupId,
+        int teacherId,
+        CancellationToken cancellationToken = default) =>
+        await DbSet.AnyAsync(
+            g => g.Id == groupId && g.IsPublished && g.Teachers.Any(t => t.TeacherId == teacherId),
+            cancellationToken);
 
     public async Task<bool> IsNameTakenAsync(
         string name,
-        int ownerTeacherId,
         int? excludeGroupId = null,
         CancellationToken cancellationToken = default)
     {
@@ -61,19 +86,13 @@ public class StudentGroupRepository : GenericRepository<StudentGroup>, IStudentG
         var key = name.Trim().ToLowerInvariant();
 
         return await DbSet.AnyAsync(
-            g => g.OwnerTeacherId == ownerTeacherId
-                 && g.Name.ToLower() == key
-                 && (excludeGroupId == null || g.Id != excludeGroupId),
+            g => g.Name.ToLower() == key && (excludeGroupId == null || g.Id != excludeGroupId),
             cancellationToken);
     }
 
-    /// <summary>
-    /// Lọc ra đúng những nhóm thuộc giáo viên đang gọi. Giao bài theo nhóm đi qua đây, nên
-    /// giáo viên A đoán id nhóm của giáo viên B cũng chỉ nhận về danh sách rỗng (§5).
-    /// </summary>
-    public async Task<IReadOnlyList<StudentGroup>> GetOwnedByIdsAsync(
+    public async Task<IReadOnlyList<StudentGroup>> GetTeachableByIdsAsync(
         IEnumerable<int> groupIds,
-        int ownerTeacherId,
+        int teacherId,
         CancellationToken cancellationToken = default)
     {
         var ids = groupIds.Distinct().ToList();
@@ -84,7 +103,53 @@ public class StudentGroupRepository : GenericRepository<StudentGroup>, IStudentG
 
         return await DbSet
             .AsNoTracking()
-            .Where(g => ids.Contains(g.Id) && g.OwnerTeacherId == ownerTeacherId)
+            .Where(g => ids.Contains(g.Id)
+                        && g.IsPublished
+                        && g.Teachers.Any(t => t.TeacherId == teacherId))
             .ToListAsync(cancellationToken);
     }
+
+    public async Task<IReadOnlyList<User>> GetAssignedTeachersAsync(
+        int groupId,
+        CancellationToken cancellationToken = default) =>
+        await Context.Set<StudentGroupTeacher>()
+            .AsNoTracking()
+            .Where(t => t.StudentGroupId == groupId)
+            .Select(t => t.Teacher)
+            .OrderBy(u => u.FullName)
+            .ToListAsync(cancellationToken);
+
+    public void AddTeacher(StudentGroupTeacher assignment) =>
+        Context.Set<StudentGroupTeacher>().Add(assignment);
+
+    public void RemoveTeacher(StudentGroupTeacher assignment) =>
+        Context.Set<StudentGroupTeacher>().Remove(assignment);
+
+    public async Task<StudentGroupTeacher?> FindAssignmentAsync(
+        int groupId,
+        int teacherId,
+        CancellationToken cancellationToken = default) =>
+        await Context.Set<StudentGroupTeacher>()
+            .FirstOrDefaultAsync(
+                t => t.StudentGroupId == groupId && t.TeacherId == teacherId,
+                cancellationToken);
+
+    private static IQueryable<StudentGroup> ApplySearch(IQueryable<StudentGroup> query, string? search)
+    {
+        if (SearchText.ToLikePattern(search) is not { } pattern)
+        {
+            return query;
+        }
+
+        return query.Where(g =>
+            EF.Functions.ILike(EF.Functions.Unaccent(g.Name), pattern)
+            || EF.Functions.ILike(EF.Functions.Unaccent(g.Description ?? string.Empty), pattern));
+    }
+
+    /// <summary>Bản nháp lên trước: đó là những lớp còn dở dang, cần người làm nốt.</summary>
+    private static IQueryable<StudentGroup> OrderForDisplay(IQueryable<StudentGroup> query) =>
+        query
+            .OrderBy(g => g.IsPublished)
+            .ThenBy(g => g.Name)
+            .ThenBy(g => g.Id);
 }
