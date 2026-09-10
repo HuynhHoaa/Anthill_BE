@@ -1,32 +1,54 @@
 {
   "$schema": "https://json.schemastore.org/launchsettings.json",
+
+  // launchBrowser + launchUrl: bấm ▶ trong Visual Studio là mở thẳng Swagger UI.
+  // Swagger chỉ được gắn vào pipeline khi ASPNETCORE_ENVIRONMENT=Development, nên mọi profile ở
+  // đây đều đặt biến đó — thiếu nó thì /swagger trả 404 và trình duyệt mở ra một trang trống.
   "profiles": {
     "http": {
       "commandName": "Project",
       "dotnetRunMessages": true,
-      "launchBrowser": false,
+      "launchBrowser": true,
+      "launchUrl": "swagger",
       "applicationUrl": "http://localhost:5002",
       "environmentVariables": {
         "ASPNETCORE_ENVIRONMENT": "Development"
       }
     },
+
     "https": {
       "commandName": "Project",
       "dotnetRunMessages": true,
-      "launchBrowser": false,
+      "launchBrowser": true,
+      "launchUrl": "swagger",
       "applicationUrl": "https://localhost:7153;http://localhost:5002",
       "environmentVariables": {
         "ASPNETCORE_ENVIRONMENT": "Development"
       }
     },
+
+    // Dùng khi ngồi thử màn hình làm bài bằng tay: tiến trình nền quét mỗi 30 giây và sẽ tự nộp
+    // bài để quá hạn — đúng thiết kế, nhưng phiền khi đang cố tái hiện một tình huống cụ thể.
     "http-no-autosubmit": {
+      "commandName": "Project",
+      "dotnetRunMessages": true,
+      "launchBrowser": true,
+      "launchUrl": "swagger",
+      "applicationUrl": "http://localhost:5002",
+      "environmentVariables": {
+        "ASPNETCORE_ENVIRONMENT": "Development",
+        "AutoSubmit__Enabled": "false"
+      }
+    },
+
+    // Không mở trình duyệt: dùng khi chỉ cần API sống để frontend gọi sang, không cần Swagger.
+    "http-no-browser": {
       "commandName": "Project",
       "dotnetRunMessages": true,
       "launchBrowser": false,
       "applicationUrl": "http://localhost:5002",
       "environmentVariables": {
-        "ASPNETCORE_ENVIRONMENT": "Development",
-        "AutoSubmit__Enabled": "false"
+        "ASPNETCORE_ENVIRONMENT": "Development"
       }
     }
   }
