@@ -73,5 +73,15 @@ public interface IUserRepository : IGenericRepository<User>
         IEnumerable<int> teacherIds,
         CancellationToken cancellationToken = default);
 
+    /// <summary>Tài khoản đã hết thời gian chờ, đến lúc xoá dữ liệu cá nhân.</summary>
+    /// <remarks>
+    /// Lọc ngay trong SQL theo mốc thời gian truyền vào chứ không đọc hết rồi lọc trong bộ nhớ:
+    /// bảng người dùng lớn dần theo từng khoá học sinh, còn số tài khoản đến hạn thì luôn nhỏ.
+    /// </remarks>
+    Task<IReadOnlyList<User>> GetDueForDeletionAsync(
+        DateTime dueBeforeUtc,
+        int batchSize,
+        CancellationToken cancellationToken = default);
+
     Task<int> CountByRoleAsync(UserRole role, CancellationToken cancellationToken = default);
 }

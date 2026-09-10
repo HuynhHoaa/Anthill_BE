@@ -650,6 +650,19 @@ namespace EduQuiz.Infrastructure.Persistence.Migrations
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
 
+                    b.Property<DateTime?>("DeletedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<string>("DeletionReason")
+                        .HasMaxLength(512)
+                        .HasColumnType("character varying(512)");
+
+                    b.Property<DateTime?>("DeletionRequestedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int?>("DeletionRequestedByUserId")
+                        .HasColumnType("integer");
+
                     b.Property<string>("Email")
                         .IsRequired()
                         .HasMaxLength(256)
@@ -712,6 +725,8 @@ namespace EduQuiz.Infrastructure.Persistence.Migrations
                         .HasDatabaseName("IX_Users_Code")
                         .HasFilter("\"Code\" IS NOT NULL");
 
+                    b.HasIndex("DeletionRequestedByUserId");
+
                     b.HasIndex("Email")
                         .IsUnique()
                         .HasDatabaseName("IX_Users_Email");
@@ -727,6 +742,9 @@ namespace EduQuiz.Infrastructure.Persistence.Migrations
                     b.HasIndex("Username")
                         .IsUnique()
                         .HasDatabaseName("IX_Users_Username");
+
+                    b.HasIndex("Status", "DeletionRequestedAt")
+                        .HasDatabaseName("IX_Users_Status_DeletionRequestedAt");
 
                     b.ToTable("Users", (string)null);
                 });
@@ -919,6 +937,11 @@ namespace EduQuiz.Infrastructure.Persistence.Migrations
 
             modelBuilder.Entity("EduQuiz.Domain.Entities.User", b =>
                 {
+                    b.HasOne("EduQuiz.Domain.Entities.User", null)
+                        .WithMany()
+                        .HasForeignKey("DeletionRequestedByUserId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
                     b.HasOne("EduQuiz.Domain.Entities.StudentGroup", "Group")
                         .WithMany("Students")
                         .HasForeignKey("GroupId")

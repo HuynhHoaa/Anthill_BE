@@ -88,9 +88,12 @@ public sealed class AuthService : IAuthService
         // Từ dòng này trở xuống người gọi đã chứng minh biết mật khẩu, nên thông điệp cụ thể không
         // làm lộ tài khoản nào có thật nữa. Vì vậy hai kiểm tra dưới đây đứng SAU phần đối chiếu mật
         // khẩu: đặt trước sẽ biến "tài khoản bị khoá" thành một cách dò tài khoản tồn tại.
-        if (user.Status == UserStatus.Locked)
+        // Ba trạng thái chặn đăng nhập chứ không phải một. Chỉ kiểm Locked là để lọt hai trạng
+        // thái mới của quy trình xoá — một em vừa bị đưa vào diện xoá vẫn vào làm bài như thường,
+        // và một tài khoản đã bị xoá sạch dữ liệu vẫn đăng nhập được nếu ai đó đoán ra mật khẩu.
+        if (user.Status != UserStatus.Active)
         {
-            return Result.Forbidden<LoginResponse>(AccountLockedMessage);
+            return Result.Forbidden<LoginResponse>(MessageForBlockedStatus(user.Status));
         }
 
         // §3 quy tắc ⑤: request.Role chỉ để ĐỐI CHIẾU với vai trò thật. Không khớp thì từ chối,
@@ -305,9 +308,9 @@ public sealed class AuthService : IAuthService
             return Result.Unauthorized(SessionExpiredMessage);
         }
 
-        if (user.Status == UserStatus.Locked)
+        if (user.Status != UserStatus.Active)
         {
-            return Result.Forbidden(AccountLockedMessage);
+            return Result.Forbidden(MessageForBlockedStatus(user.Status));
         }
 
         // Claim vắng mặt thì không có gì để so — tầng Api chịu trách nhiệm luôn đặt claim
@@ -392,4 +395,20 @@ public sealed class AuthService : IAuthService
             // Không có tác dụng phụ nào cần cứu: đây thuần tuý là công đoạn tiêu thời gian.
         }
     }
+
+    /// <summary>Câu chữ tương ứng với từng trạng thái không cho đăng nhập.</summary>
+    /// <remarks>
+    /// Người gọi tới được đây đã chứng minh biết mật khẩu, nên nói cụ thể không làm lộ tài khoản
+    /// nào có thật nữa — và một câu chung chung sẽ khiến học sinh gọi lên hỏi mà tổng đài cũng
+    /// không đoán được chuyện gì.
+    /// </remarks>
+    private static string MessageForBlockedStatus(UserStatus status) => status switch
+    {
+        UserStatus.Locked => AccountLockedMessage,
+        UserStatus.PendingDeletion =>
+            "Tài khoản đang chờ xoá theo yêu cầu của quản trị viên. Liên hệ nhà trường nếu đây là nhầm lẫn.",
+        UserStatus.Deleted =>
+            "Tài khoản này không còn tồn tại.",
+        _ => AccountLockedMessage
+    };
 }

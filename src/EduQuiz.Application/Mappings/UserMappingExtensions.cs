@@ -82,6 +82,8 @@ public static class UserMappingExtensions
     {
         UserStatus.Active => "active",
         UserStatus.Locked => "locked",
+        UserStatus.PendingDeletion => "pendingDeletion",
+        UserStatus.Deleted => "deleted",
         _ => throw new ArgumentOutOfRangeException(nameof(status), status, "Trạng thái không hợp lệ.")
     };
 }

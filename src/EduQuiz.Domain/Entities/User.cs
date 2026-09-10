@@ -47,6 +47,25 @@ public class User : BaseEntity
 
     public Subject? Subject { get; set; }
 
+    /// <summary>
+    /// Vì sao tài khoản này được yêu cầu xoá. NULL khi chưa ai yêu cầu.
+    /// </summary>
+    /// <remarks>
+    /// Bắt buộc nhập khi yêu cầu xoá, và giữ lại cả sau khi dữ liệu cá nhân đã bị xoá sạch. Sáu
+    /// tháng sau có người hỏi "sao lớp 12A1 hụt một em" thì đây là chỗ duy nhất còn câu trả lời —
+    /// bản thân cái tên thì đã biến mất theo đúng yêu cầu.
+    /// </remarks>
+    public string? DeletionReason { get; set; }
+
+    /// <summary>Mốc bắt đầu đếm thời gian chờ. NULL khi tài khoản không nằm trong diện xoá.</summary>
+    public DateTime? DeletionRequestedAt { get; set; }
+
+    /// <summary>Ai đã yêu cầu xoá.</summary>
+    public int? DeletionRequestedByUserId { get; set; }
+
+    /// <summary>Mốc dữ liệu cá nhân thật sự bị xoá. NULL nghĩa là chưa xoá.</summary>
+    public DateTime? DeletedAt { get; set; }
+
     public StudentGroup? Group { get; set; }
 
     /// <summary>Lớp do quản trị viên này lập ra. Chỉ để ghi nhận, không mang ý nghĩa phân quyền.</summary>

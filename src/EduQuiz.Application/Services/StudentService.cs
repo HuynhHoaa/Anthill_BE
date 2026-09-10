@@ -33,10 +33,17 @@ public sealed class StudentService : IStudentService
     private readonly IUnitOfWork _unitOfWork;
     private readonly IPasswordHasher _passwordHasher;
 
-    public StudentService(IUnitOfWork unitOfWork, IPasswordHasher passwordHasher)
+    /// <summary>Chỉ dùng để ghi lại ai đã yêu cầu xoá — mọi kiểm tra quyền đã nằm ở tầng Api.</summary>
+    private readonly ICurrentUser _currentUser;
+
+    public StudentService(
+        IUnitOfWork unitOfWork,
+        IPasswordHasher passwordHasher,
+        ICurrentUser currentUser)
     {
         _unitOfWork = unitOfWork;
         _passwordHasher = passwordHasher;
+        _currentUser = currentUser;
     }
 
     /// <inheritdoc />
@@ -222,6 +229,139 @@ public sealed class StudentService : IStudentService
             account,
             await ReadGroupNameAsync(account.GroupId, cancellationToken),
             cancellationToken));
+    }
+
+    /// <inheritdoc />
+    public async Task<Result<StudentDto>> RequestDeletionAsync(
+        int id,
+        RequestDeletionRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+
+        var student = await _unitOfWork.Users.GetByIdAsync(id, cancellationToken);
+        if (!IsStudent(student))
+        {
+            return Result.NotFound<StudentDto>(NotFoundMessage);
+        }
+
+        var account = student!;
+
+        if (account.Status == UserStatus.Deleted)
+        {
+            return Result.Conflict<StudentDto>("Tài khoản này đã bị xoá dữ liệu, không thao tác được nữa.");
+        }
+
+        if (account.Status == UserStatus.PendingDeletion)
+        {
+            return Result.Conflict<StudentDto>("Tài khoản này đã nằm trong danh sách chờ xoá.");
+        }
+
+        var now = DateTime.UtcNow;
+
+        account.Status = UserStatus.PendingDeletion;
+        account.DeletionReason = request.Reason.Trim();
+        account.DeletionRequestedAt = now;
+        account.DeletionRequestedByUserId = _currentUser.UserId;
+        account.UpdatedAt = now;
+
+        // Xoay SecurityStamp để token đang cầm chết ngay, giống hệt nhánh khoá tài khoản. Không
+        // xoay thì một em vừa bị đưa vào diện xoá vẫn làm bài tiếp được cho tới khi token hết hạn.
+        account.SecurityStamp = Guid.NewGuid().ToString("N");
+
+        _unitOfWork.Users.Update(account);
+        await _unitOfWork.SaveChangesAsync(cancellationToken);
+
+        return Result.Success(await BuildDtoAsync(
+            account,
+            await ReadGroupNameAsync(account.GroupId, cancellationToken),
+            cancellationToken));
+    }
+
+    /// <inheritdoc />
+    public async Task<Result<StudentDto>> RestoreAsync(
+        int id,
+        CancellationToken cancellationToken = default)
+    {
+        var student = await _unitOfWork.Users.GetByIdAsync(id, cancellationToken);
+        if (!IsStudent(student))
+        {
+            return Result.NotFound<StudentDto>(NotFoundMessage);
+        }
+
+        var account = student!;
+
+        // Sau khi dữ liệu cá nhân đã bị xoá thì không khôi phục được nữa — không còn gì để khôi
+        // phục. Nói thẳng điều đó thay vì trả về thành công trên một tài khoản rỗng.
+        if (account.Status == UserStatus.Deleted)
+        {
+            return Result.Conflict<StudentDto>(
+                "Dữ liệu của tài khoản này đã bị xoá vĩnh viễn, không khôi phục được.");
+        }
+
+        if (account.Status != UserStatus.PendingDeletion)
+        {
+            return Result.Conflict<StudentDto>("Tài khoản này không nằm trong danh sách chờ xoá.");
+        }
+
+        var now = DateTime.UtcNow;
+
+        account.Status = UserStatus.Active;
+        account.UpdatedAt = now;
+
+        // Xoá dấu vết yêu cầu: giữ lại thì lần xoá sau sẽ mang theo lý do của lần trước, và tiến
+        // trình nền vẫn thấy một mốc thời gian đang đếm.
+        account.DeletionReason = null;
+        account.DeletionRequestedAt = null;
+        account.DeletionRequestedByUserId = null;
+
+        _unitOfWork.Users.Update(account);
+        await _unitOfWork.SaveChangesAsync(cancellationToken);
+
+        return Result.Success(await BuildDtoAsync(
+            account,
+            await ReadGroupNameAsync(account.GroupId, cancellationToken),
+            cancellationToken));
+    }
+
+    /// <inheritdoc />
+    public async Task<Result<int>> PurgeDueAccountsAsync(
+        int batchSize,
+        CancellationToken cancellationToken = default)
+    {
+        if (batchSize <= 0)
+        {
+            return Result.Success(0);
+        }
+
+        var now = DateTime.UtcNow;
+        var due = await _unitOfWork.Users.GetDueForDeletionAsync(
+            now.AddDays(-StudentAnonymizer.RetentionDays),
+            batchSize,
+            cancellationToken);
+
+        if (due.Count == 0)
+        {
+            return Result.Success(0);
+        }
+
+        foreach (var account in due)
+        {
+            // Kiểm lại lần nữa trên chính bản ghi vừa đọc. Truy vấn đã lọc theo mốc thời gian,
+            // nhưng giữa lúc đọc và lúc ghi có thể có người vừa bấm khôi phục — và ẩn danh hoá là
+            // thao tác không hoàn tác được, nên đáng để hỏi lại một câu.
+            if (!StudentAnonymizer.IsDue(account, now))
+            {
+                continue;
+            }
+
+            StudentAnonymizer.Anonymize(account, now);
+            _unitOfWork.Users.Update(account);
+        }
+
+        await _unitOfWork.SaveChangesAsync(cancellationToken);
+
+        return Result.Success(due.Count);
     }
 
     /// <inheritdoc />

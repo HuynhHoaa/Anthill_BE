@@ -181,6 +181,18 @@ public class UserRepository : GenericRepository<User>, IUserRepository
             .ThenBy(u => u.Id)
             .ToListAsync(cancellationToken);
 
+    public async Task<IReadOnlyList<User>> GetDueForDeletionAsync(
+        DateTime dueBeforeUtc,
+        int batchSize,
+        CancellationToken cancellationToken = default) =>
+        await DbSet
+            .Where(u => u.Status == UserStatus.PendingDeletion
+                        && u.DeletionRequestedAt != null
+                        && u.DeletionRequestedAt <= dueBeforeUtc)
+            .OrderBy(u => u.DeletionRequestedAt)
+            .Take(batchSize)
+            .ToListAsync(cancellationToken);
+
     public async Task<IReadOnlyList<User>> GetAssignableTeachersAsync(
         int groupId,
         CancellationToken cancellationToken = default) =>
