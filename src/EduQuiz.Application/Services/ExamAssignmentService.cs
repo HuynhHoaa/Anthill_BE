@@ -199,7 +199,18 @@ public sealed class ExamAssignmentService : IExamAssignmentService
                 ExamId = exam.Id,
                 StudentId = student.Id,
                 AssignedAt = now,
-                CreatedAt = now
+                CreatedAt = now,
+
+                // NULL khi giáo viên chọn đích danh em này thay vì chọn cả lớp.
+                AssignedViaGroupId = targets.ViaGroup.TryGetValue(student.Id, out var groupId)
+                    ? groupId
+                    : null,
+
+                // Lịch riêng của lượt giao này. NULL nghĩa là theo lịch chung của đề — không chép
+                // sẵn lịch đề vào đây, vì chép rồi thì sửa lịch đề sẽ không còn lan tới những lớp
+                // vốn không đặt giờ riêng.
+                OpenAt = request.OpenAt,
+                CloseAt = request.CloseAt
             })
             .ToList();
 
@@ -301,6 +312,9 @@ public sealed class ExamAssignmentService : IExamAssignmentService
         /// <summary>Những em thật sự giao được: có thật, đúng vai trò, đang hoạt động, thuộc lớp của giáo viên.</summary>
         public required IReadOnlyList<User> InScope { get; init; }
 
+        /// <summary>Em nào đến từ lớp nào. Vắng mặt nghĩa là giáo viên chọn đích danh em đó.</summary>
+        public required IReadOnlyDictionary<int, int> ViaGroup { get; init; }
+
         public required int NotFoundCount { get; init; }
 
         public required int LockedCount { get; init; }
@@ -342,12 +356,23 @@ public sealed class ExamAssignmentService : IExamAssignmentService
         // sự im lặng mà AssignExamResponse nói là nó sinh ra để tránh.
         var outOfScopeGroups = requestedGroupIds.Count - ownedGroups.Count;
 
+        // Ghi lại em nào đến từ lớp nào ngay tại đây. Tra ngược qua User.GroupId về sau là sai:
+        // học sinh chuyển lớp giữa kỳ thì GroupId đổi theo, và lúc đó không còn cách nào biết bài
+        // này vốn được giao cho em với tư cách thành viên lớp nào — mà đó là thứ quyết định em làm
+        // bài vào khung giờ nào.
+        var viaGroup = new Dictionary<int, int>();
+
         foreach (var group in ownedGroups)
         {
             var members = await _unitOfWork.Users.GetStudentsByGroupAsync(group.Id, cancellationToken);
             foreach (var member in members)
             {
                 requestedIds.Add(member.Id);
+
+                // Em thuộc nhiều lớp là chuyện không xảy ra (User.GroupId là khoá đơn), nhưng nếu
+                // cùng một em lọt vào hai lớp được chọn thì lấy lớp đầu tiên — nhất quán giữa các
+                // lần chạy vì ownedGroups đã sắp thứ tự.
+                viaGroup.TryAdd(member.Id, group.Id);
             }
         }
 
@@ -356,6 +381,7 @@ public sealed class ExamAssignmentService : IExamAssignmentService
             return new Targets
             {
                 InScope = [],
+                ViaGroup = viaGroup,
                 NotFoundCount = 0,
                 LockedCount = 0,
                 OutOfScopeCount = 0,
@@ -399,6 +425,7 @@ public sealed class ExamAssignmentService : IExamAssignmentService
         return new Targets
         {
             InScope = inScope,
+            ViaGroup = viaGroup,
             NotFoundCount = notFound,
             LockedCount = locked,
             OutOfScopeCount = outOfScope,

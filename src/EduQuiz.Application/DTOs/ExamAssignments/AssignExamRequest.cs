@@ -33,4 +33,23 @@ public sealed record AssignExamRequest
 
     /// <summary>Gửi thông báo cho những em vừa được giao. Chỉ áp dụng cho em <b>mới</b>, không nhắc lại.</summary>
     public bool Notify { get; init; } = true;
+
+    /// <summary>
+    /// Giờ mở bài riêng cho lượt giao này. Bỏ trống thì dùng lịch chung của đề.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Có mặt vì một đề thường được dùng cho nhiều lớp mà mỗi lớp học vào một tiết khác nhau: 12A1
+    /// làm tiết 2 sáng thứ Ba, 12A2 làm tiết 4 chiều thứ Năm, trên cùng một đề. Không có trường
+    /// này thì giáo viên phải nhân bản đề ra làm hai.
+    /// </para>
+    /// <para>
+    /// Đi <b>cùng cặp</b> với <see cref="CloseAt"/>: gửi một nửa là trạng thái vô nghĩa và bị từ
+    /// chối, thay vì ghép nửa gửi lên với nửa lấy từ đề.
+    /// </para>
+    /// </remarks>
+    public DateTime? OpenAt { get; init; }
+
+    /// <summary>Giờ đóng bài riêng. Đi cùng cặp với <see cref="OpenAt"/>.</summary>
+    public DateTime? CloseAt { get; init; }
 }

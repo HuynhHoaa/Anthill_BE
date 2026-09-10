@@ -146,8 +146,11 @@ public sealed class ExamAttemptService : IExamAttemptService
         var attempt = assignment.Attempt;
         var now = UtcNow();
 
+        // Vòng đời theo lịch của BẢN GHI GIAO BÀI. Đọc lịch chung của đề ở đây là chặn đúng những
+        // em đang trong giờ của lớp mình, hoặc mở cho những em chưa tới giờ — cả hai đều hỏng ngay
+        // giữa buổi kiểm tra.
         var decision = AttemptStartPolicy.Decide(
-            assignment.Exam.ResolveLifecycle(now),
+            assignment.ResolveLifecycle(now),
             attempt?.Status,
             attempt?.ExpiresAt,
             now);
@@ -603,7 +606,12 @@ public sealed class ExamAttemptService : IExamAttemptService
         {
             AssignmentId = assignment.Id,
             StartedAt = now,
-            ExpiresAt = AttemptDeadline.Resolve(now, exam.DurationMinutes, exam.CloseAt),
+            // Hạn giờ chặn theo mốc đóng bài THẬT của em này: lớp chiều làm bài lúc lớp sáng đã
+            // đóng từ lâu, và lấy mốc chung sẽ cắt bài của lớp chiều ngay khi vừa bắt đầu.
+            ExpiresAt = AttemptDeadline.Resolve(
+                now,
+                exam.DurationMinutes,
+                AssignmentSchedule.Resolve(assignment).CloseAt),
             Status = AssignmentStatus.InProgress,
 
             // Thang điểm chốt ngay lúc bắt đầu và đọc từ bản đề, không nhân TotalQuestions với

@@ -158,11 +158,20 @@ namespace EduQuiz.Infrastructure.Persistence.Migrations
                     b.Property<DateTime>("AssignedAt")
                         .HasColumnType("timestamp with time zone");
 
+                    b.Property<int?>("AssignedViaGroupId")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTime?>("CloseAt")
+                        .HasColumnType("timestamp with time zone");
+
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
 
                     b.Property<int>("ExamId")
                         .HasColumnType("integer");
+
+                    b.Property<DateTime?>("OpenAt")
+                        .HasColumnType("timestamp with time zone");
 
                     b.Property<int>("StudentId")
                         .HasColumnType("integer");

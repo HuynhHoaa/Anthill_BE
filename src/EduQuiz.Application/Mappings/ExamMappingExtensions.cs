@@ -48,6 +48,37 @@ public static class ExamMappingExtensions
         return now > exam.CloseAt.ToUtc() ? ExamLifecycle.Closed : ExamLifecycle.Open;
     }
 
+    /// <summary>
+    /// Vòng đời của đề <b>dưới mắt một học sinh cụ thể</b>.
+    /// </summary>
+    /// <remarks>
+    /// Khác bản trên ở đúng một điểm, và điểm đó quyết định tất cả: mốc thời gian lấy từ bản ghi
+    /// giao bài chứ không từ đề. Hai lớp cùng làm một đề vào hai tiết khác nhau thì với lớp sáng
+    /// đề đã đóng trong khi với lớp chiều nó còn chưa mở — cùng một đề, cùng một thời điểm.
+    ///
+    /// Trạng thái nháp vẫn đọc từ đề: một đề chưa xuất bản thì không lớp nào làm được, bất kể lịch
+    /// riêng đặt ra sao.
+    /// </remarks>
+    public static ExamLifecycle ResolveLifecycle(this ExamAssignment assignment, DateTime asOfUtc)
+    {
+        ArgumentNullException.ThrowIfNull(assignment);
+
+        if (assignment.Exam.IsDraft)
+        {
+            return ExamLifecycle.Draft;
+        }
+
+        var (openAt, closeAt) = AssignmentSchedule.Resolve(assignment);
+        var now = asOfUtc.ToUtc();
+
+        if (now < openAt.ToUtc())
+        {
+            return ExamLifecycle.Scheduled;
+        }
+
+        return now > closeAt.ToUtc() ? ExamLifecycle.Closed : ExamLifecycle.Open;
+    }
+
     public static ExamDto ToDto(this Exam exam, DateTime asOfUtc, int assignedCount, int submittedCount)
     {
         ArgumentNullException.ThrowIfNull(exam);
