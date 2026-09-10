@@ -23,12 +23,12 @@ cleanup() {
   local members=0 groups=0 locked=0
   for id in "${STUDENT_IDS[@]}"; do
     for gid in "${GROUP_IDS[@]}"; do
-      [[ "$(call DELETE "/api/student-groups/$gid/students/$id" "$TEACHER")" == "200" ]] && members=$((members + 1))
+      [[ "$(call DELETE "/api/student-groups/$gid/students/$id" "$ADMIN")" == "200" ]] && members=$((members + 1))
     done
     [[ "$(call PATCH "/api/students/$id/status" "$ADMIN" '{"status":"locked"}')" == "200" ]] && locked=$((locked + 1))
   done
   for id in "${GROUP_IDS[@]}"; do
-    [[ "$(call DELETE "/api/student-groups/$id" "$TEACHER")" == "200" ]] && groups=$((groups + 1))
+    [[ "$(call DELETE "/api/student-groups/$id" "$ADMIN")" == "200" ]] && groups=$((groups + 1))
   done
   printf '  go %d thanh vien · khoa %d/%d hoc sinh · xoa %d/%d nhom\n' \
     "$members" "$locked" "${#STUDENT_IDS[@]}" "$groups" "${#GROUP_IDS[@]}"
@@ -42,14 +42,18 @@ expect_status "hoc sinh goi /students → 403" 403 "$(call GET /api/students "$S
 expect_status "giao vien DOC duoc /students → 200" 200 "$(call GET /api/students "$TEACHER")"
 expect_status "giao vien TAO tai khoan → 403" 403 \
   "$(call POST /api/students "$TEACHER" '{"fullName":"X","email":"x@x.vn","username":"xx","code":"XX1","password":"eduquiz123"}')"
-expect_status "quan tri vien TAO nhom lop → 403" 403 \
-  "$(call POST /api/student-groups "$ADMIN" '{"name":"Nhom cua admin"}')"
+# DAO NGUOC so voi mo hinh cu: truoc day giao vien so huu lop con quan tri vien chi duoc doc.
+# Ly do doi nam o luoc do — User.GroupId la khoa ngoai don nen mot hoc sinh thuoc dung mot lop;
+# de giao vien so huu lop thi hai nguoi cung day mot em se gianh nhau em do.
+expect_status "quan tri vien TAO lop → 200" 200 \
+  "$(call POST /api/student-groups "$ADMIN" "{\"name\":\"Lop cua admin $STAMP\"}")"
+expect_status "giao vien TAO lop → 403" 403 \
+  "$(call POST /api/student-groups "$TEACHER" "{\"name\":\"Lop cua giao vien $STAMP\"}")"
 expect_status "goi khong token → 401" 401 "$(call GET /api/students "")"
 
 section "Dung du lieu nen"
-code=$(call POST /api/student-groups "$TEACHER" "{\"name\":\"KT2 $STAMP\",\"description\":\"Kiem thu buoc 2\"}")
-[[ "$code" != "200" ]] && fail_fast "tao nhom: HTTP $code — $(body)"
-GROUP_ID=$(json_field id); GROUP_IDS+=("$GROUP_ID")
+GROUP_ID=$(new_class "$ADMIN" "$TEACHER" "KT2 $STAMP" "Kiem thu buoc 2")   || fail_fast "khong dung duoc lop nen"
+GROUP_IDS+=("$GROUP_ID")
 
 NEW_ID=""
 new_student() {
@@ -83,9 +87,11 @@ expect_status "luu lai ma khong doi email → 200" 200 \
   "$(call PUT "/api/students/$S1" "$ADMIN" "{\"fullName\":\"Nguyen Thi Kiem Thu $STAMP\",\"email\":\"kt${STAMP}a@kiemthu.vn\",\"username\":\"kt${STAMP}a\",\"code\":\"KT${STAMP}a\",\"groupId\":$GROUP_ID}")"
 
 section "Nhom lop"
-expect_status "trung ten nhom trong pham vi mot giao vien → 409" 409 \
-  "$(call POST /api/student-groups "$TEACHER" "{\"name\":\"KT2 $STAMP\"}")"
-expect_status "xoa nhom con nguoi → 409" 409 "$(call DELETE "/api/student-groups/$GROUP_ID" "$TEACHER")"
+# Ten lop duy nhat tren TOAN he thong, khong con trong pham vi tung giao vien.
+expect_status "trung ten lop tren toan he thong → 409" 409 \
+  "$(call POST /api/student-groups "$ADMIN" "{\"name\":\"KT2 $STAMP\"}")"
+expect_status "xoa lop con nguoi → 409" 409 "$(call DELETE "/api/student-groups/$GROUP_ID" "$ADMIN")"
+expect_status "giao vien xoa lop → 403" 403 "$(call DELETE "/api/student-groups/$GROUP_ID" "$TEACHER")"
 # §4.2: nhom cua giao vien khac tra 404 chu khong 403 — 403 la xac nhan id do co that.
 expect_status "nhom khong ton tai → 404" 404 "$(call GET /api/student-groups/999999 "$TEACHER")"
 expect_status "danh sach thanh vien → 200" 200 "$(call GET "/api/student-groups/$GROUP_ID/students" "$TEACHER")"
@@ -93,13 +99,13 @@ expect_status "danh sach thanh vien → 200" 200 "$(call GET "/api/student-group
 section "Them thanh vien theo lo — hong mot phan van chay"
 # 1 them duoc + 1 id lap bi khu + 1 id la.
 expect_status "them lo → 200" 200 \
-  "$(call POST "/api/student-groups/$GROUP_ID/students" "$TEACHER" "{\"studentIds\":[$S2,$S2,999999]}")"
+  "$(call POST "/api/student-groups/$GROUP_ID/students" "$ADMIN" "{\"studentIds\":[$S2,$S2,999999]}")"
 expect_json   "  added = 1"           added 1
 expect_json   "  skippedNotFound = 1" skippedNotFound 1
 expect_status "danh sach rong → 400" 400 \
-  "$(call POST "/api/student-groups/$GROUP_ID/students" "$TEACHER" '{"studentIds":[]}')"
+  "$(call POST "/api/student-groups/$GROUP_ID/students" "$ADMIN" '{"studentIds":[]}')"
 expect_status "studentIds = null → 400, khong phai 500" 400 \
-  "$(call POST "/api/student-groups/$GROUP_ID/students" "$TEACHER" '{"studentIds":null}')"
+  "$(call POST "/api/student-groups/$GROUP_ID/students" "$ADMIN" '{"studentIds":null}')"
 
 section "Phan trang va tim kiem"
 expect_status "pageSize=500 bi kep, khong bao loi" 200 "$(call GET "/api/students?pageSize=500" "$ADMIN")"

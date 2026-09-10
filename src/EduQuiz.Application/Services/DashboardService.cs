@@ -55,9 +55,10 @@ public sealed class DashboardService : IDashboardService
 
         var now = DateTime.UtcNow;
 
-        // Học sinh của giáo viên là học sinh trong các nhóm lớp do chính họ quản lý, không phải
-        // toàn trường: con số "tổng học sinh" trên trang này phải là con số họ chịu trách nhiệm.
-        var groups = await _unitOfWork.StudentGroups.GetOwnedAsync(CurrentUserId, search: null, cancellationToken);
+        // Học sinh của giáo viên là học sinh trong những lớp họ được PHÂN CÔNG dạy, không phải
+        // toàn trung tâm: con số "tổng học sinh" trên trang này phải là con số họ chịu trách nhiệm.
+        // Lớp còn ở dạng nháp không được tính — quản trị viên vẫn đang xếp người vào đó.
+        var groups = await _unitOfWork.StudentGroups.GetForTeacherAsync(CurrentUserId, search: null, cancellationToken);
         var groupSizes = await _unitOfWork.Users.CountStudentsByGroupAsync(
             groups.Select(group => group.Id),
             cancellationToken);

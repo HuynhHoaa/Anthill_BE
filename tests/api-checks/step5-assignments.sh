@@ -58,9 +58,9 @@ fail_fast() { echo "  Dựng dữ liệu nền thất bại: $1" >&2; exit 1; }
 section "Dựng dữ liệu nền"
 
 # Nhóm lớp do chính giáo viên này quản lý — đó là ranh giới phạm vi mà bước 5 phải tôn trọng.
-code=$(call POST /api/student-groups "$TEACHER" "{\"name\":\"KiemThu $STAMP\",\"description\":\"Nhom kiem thu tu dong\"}")
-[[ "$code" != "200" ]] && fail_fast "tao nhom: HTTP $code — $(body)"
-GROUP_ID=$(json_field id); GROUP_IDS+=("$GROUP_ID")
+# Lop giờ do quan tri vien lap, roi phan cong giao vien, roi cong bo — xem new_class trong lib.sh.
+GROUP_ID=$(new_class "$ADMIN" "$TEACHER" "KiemThu $STAMP" "Nhom kiem thu tu dong")   || fail_fast "khong dung duoc lop nen"
+GROUP_IDS+=("$GROUP_ID")
 
 # Học sinh do quản trị viên tạo (§4.2: giáo viên không tạo được tài khoản).
 NEW_STUDENT_ID=""

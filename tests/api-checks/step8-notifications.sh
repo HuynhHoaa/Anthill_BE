@@ -35,9 +35,8 @@ print('present' if sys.argv[1] in json.load(sys.stdin) else 'absent')
 " "$1" < "$BODY_FILE"; }
 
 section "Dung du lieu nen"
-code=$(call POST /api/student-groups "$TEACHER" "{\"name\":\"KT8 $STAMP\"}")
-[[ "$code" != "200" ]] && fail_fast "tao nhom: HTTP $code — $(body)"
-GROUP_ID=$(json_field id); GROUP_IDS+=("$GROUP_ID")
+GROUP_ID=$(new_class "$ADMIN" "$TEACHER" "KT8 $STAMP" "Nhom kiem thu buoc 8")   || fail_fast "khong dung duoc lop nen"
+GROUP_IDS+=("$GROUP_ID")
 
 NEW_STUDENT_ID=""
 new_student() {

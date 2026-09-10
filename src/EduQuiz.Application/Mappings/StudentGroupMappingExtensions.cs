@@ -3,24 +3,14 @@ using EduQuiz.Domain.Entities;
 
 namespace EduQuiz.Application.Mappings;
 
-/// <summary>Ánh xạ <see cref="StudentGroup"/> sang DTO.</summary>
 public static class StudentGroupMappingExtensions
 {
     /// <summary>
-    /// Dựng DTO nhóm lớp.
+    /// Sĩ số truyền vào từ ngoài thay vì đọc <c>group.Students.Count</c>.
     /// </summary>
-    /// <param name="group">Nhóm đọc từ database.</param>
-    /// <param name="studentCount">
-    /// Sĩ số đã đếm sẵn. Tham số bắt buộc chứ không đọc từ <c>group.Students.Count</c>: navigation
-    /// đó rỗng ở mọi truy vấn không <c>Include</c>, và đọc nhầm nó thì màn hình danh sách hiện sĩ
-    /// số 0 cho mọi nhóm mà không có lỗi nào xảy ra. Bắt truyền vào buộc chỗ gọi phải quyết định
-    /// lấy con số ở đâu — với danh sách thì là một truy vấn <c>GROUP BY</c> duy nhất
-    /// (<c>CountStudentsByGroupAsync</c>), không phải N+1.
-    /// </param>
     /// <remarks>
-    /// <c>OwnerTeacherId</c> cố ý không xuất hiện trong DTO: giáo viên chỉ nhìn thấy nhóm của
-    /// chính mình nên trường đó không nói thêm điều gì, còn với quản trị viên thì màn hình đang
-    /// không có cột nào để hiển thị nó.
+    /// Bộ sưu tập <c>Students</c> chỉ được nạp ở vài truy vấn; đếm trên nó ở những chỗ khác sẽ ra
+    /// 0 một cách lặng lẽ. Bắt buộc truyền vào là cách khiến chỗ gọi phải nghĩ xem con số đó từ đâu.
     /// </remarks>
     public static StudentGroupDto ToDto(this StudentGroup group, int studentCount)
     {
@@ -35,7 +25,34 @@ public static class StudentGroupMappingExtensions
             Description = group.Description ?? string.Empty,
 
             StudentCount = studentCount,
+            IsPublished = group.IsPublished,
+            PublishedAt = group.PublishedAt?.ToUtc(),
+
+            // Mảng rỗng khi bảng phân công chưa được nạp trông hệt như "chưa có giáo viên nào" —
+            // mà đó lại là tín hiệu cảnh báo trên giao diện quản trị. Nên mọi truy vấn phục vụ
+            // danh sách lớp đều Include sẵn Teachers; xem StudentGroupRepository.
+            Teachers = group.Teachers
+                .Where(assignment => assignment.Teacher is not null)
+                .Select(assignment => assignment.Teacher.ToGroupTeacherDto())
+                .OrderBy(teacher => teacher.FullName, StringComparer.CurrentCulture)
+                .ToList(),
+
             CreatedAt = group.CreatedAt.ToUtc()
+        };
+    }
+
+    public static GroupTeacherDto ToGroupTeacherDto(this User teacher)
+    {
+        ArgumentNullException.ThrowIfNull(teacher);
+
+        return new GroupTeacherDto
+        {
+            Id = teacher.Id,
+            FullName = teacher.FullName,
+            Email = teacher.Email ?? string.Empty,
+            Subject = teacher.Subject?.Name ?? string.Empty,
+            AvatarColor = teacher.AvatarColor ?? string.Empty,
+            Status = teacher.Status.ToStatusString()
         };
     }
 }

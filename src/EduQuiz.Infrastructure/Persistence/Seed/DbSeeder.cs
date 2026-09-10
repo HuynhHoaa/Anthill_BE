@@ -60,13 +60,14 @@ public static class DbSeeder
 
         var subject = await EnsureSubjectAsync(context, cancellationToken);
 
-        await EnsureUserAsync(context, passwordHasher, BuildAdmin(), cancellationToken);
+        var admin = await EnsureUserAsync(context, passwordHasher, BuildAdmin(), cancellationToken);
         var teacher = await EnsureUserAsync(context, passwordHasher, BuildTeacher(subject.Id), cancellationToken);
 
-        // Ghi ngay để có Id thật trước khi nhóm lớp và học sinh trỏ vào giáo viên.
+        // Ghi ngay để có Id thật trước khi lớp và học sinh trỏ vào hai tài khoản này.
         await context.SaveChangesAsync(cancellationToken);
 
-        var group = await EnsureGroupAsync(context, teacher.Id, cancellationToken);
+        // Quản trị viên lập lớp, giáo viên được phân công dạy — đúng mô hình của trung tâm.
+        var group = await EnsureGroupAsync(context, admin.Id, teacher.Id, cancellationToken);
         await context.SaveChangesAsync(cancellationToken);
 
         await EnsureUserAsync(context, passwordHasher, BuildStudent(group.Id), cancellationToken);
@@ -88,17 +89,29 @@ public static class DbSeeder
         return subject;
     }
 
+    /// <summary>
+    /// Lớp mẫu: do quản trị viên lập, đã công bố, và giáo viên demo được phân công dạy.
+    /// </summary>
+    /// <remarks>
+    /// Dữ liệu demo phải thể hiện đúng mô hình thật, không phải một lối tắt cho nhanh. Nếu lớp mẫu
+    /// để dạng nháp hoặc không phân công ai thì người mở thử sẽ đăng nhập bằng tài khoản giáo viên
+    /// và thấy một màn hình trống rỗng — rồi kết luận là hệ thống hỏng.
+    ///
+    /// Tên lớp giờ duy nhất trên toàn hệ thống nên chỉ cần tìm theo tên.
+    /// </remarks>
     private static async Task<StudentGroup> EnsureGroupAsync(
         AppDbContext context,
-        int ownerTeacherId,
+        int adminUserId,
+        int teacherUserId,
         CancellationToken cancellationToken)
     {
-        var existing = await context.StudentGroups.FirstOrDefaultAsync(
-            g => g.OwnerTeacherId == ownerTeacherId && g.Name == GroupName,
-            cancellationToken);
+        var existing = await context.StudentGroups
+            .Include(g => g.Teachers)
+            .FirstOrDefaultAsync(g => g.Name == GroupName, cancellationToken);
 
         if (existing is not null)
         {
+            EnsureTeacherAssigned(context, existing, teacherUserId);
             return existing;
         }
 
@@ -106,11 +119,31 @@ public static class DbSeeder
         {
             Name = GroupName,
             Description = "Lớp mẫu dùng cho dữ liệu demo.",
-            OwnerTeacherId = ownerTeacherId
+            CreatedByUserId = adminUserId,
+            IsPublished = true,
+            PublishedAt = DateTime.UtcNow
         };
 
         await context.StudentGroups.AddAsync(group, cancellationToken);
+        EnsureTeacherAssigned(context, group, teacherUserId);
+
         return group;
+    }
+
+    /// <summary>Phân công giáo viên vào lớp nếu chưa có, không nhân đôi khi chạy lại.</summary>
+    private static void EnsureTeacherAssigned(AppDbContext context, StudentGroup group, int teacherUserId)
+    {
+        if (group.Teachers.Any(t => t.TeacherId == teacherUserId))
+        {
+            return;
+        }
+
+        group.Teachers.Add(new StudentGroupTeacher
+        {
+            StudentGroup = group,
+            TeacherId = teacherUserId,
+            AssignedAt = DateTime.UtcNow
+        });
     }
 
     /// <summary>

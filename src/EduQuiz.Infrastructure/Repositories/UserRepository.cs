@@ -181,6 +181,36 @@ public class UserRepository : GenericRepository<User>, IUserRepository
             .ThenBy(u => u.Id)
             .ToListAsync(cancellationToken);
 
+    public async Task<IReadOnlyList<User>> GetAssignableTeachersAsync(
+        int groupId,
+        CancellationToken cancellationToken = default) =>
+        await DbSet
+            .AsNoTracking()
+            .Include(u => u.Subject)
+            .Where(u => u.Role == UserRole.Teacher
+                        && !u.TeachingGroups.Any(t => t.StudentGroupId == groupId))
+            .OrderBy(u => u.FullName)
+            .ThenBy(u => u.Id)
+            .ToListAsync(cancellationToken);
+
+    public async Task<IReadOnlyList<User>> GetTeachersByIdsAsync(
+        IEnumerable<int> teacherIds,
+        CancellationToken cancellationToken = default)
+    {
+        var ids = teacherIds?.Distinct().ToList() ?? [];
+        if (ids.Count == 0)
+        {
+            return [];
+        }
+
+        // Lọc theo vai trò ngay trong truy vấn: chênh lệch giữa số id gửi lên và số dòng trả về
+        // chính là số id không tồn tại hoặc không phải giáo viên — service đếm bằng phép trừ đó.
+        return await DbSet
+            .Include(u => u.Subject)
+            .Where(u => ids.Contains(u.Id) && u.Role == UserRole.Teacher)
+            .ToListAsync(cancellationToken);
+    }
+
     public async Task<int> CountStudentsInGroupAsync(int groupId, CancellationToken cancellationToken = default) =>
         await DbSet.CountAsync(u => u.Role == UserRole.Student && u.GroupId == groupId, cancellationToken);
 

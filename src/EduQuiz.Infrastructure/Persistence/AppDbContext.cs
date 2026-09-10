@@ -27,6 +27,8 @@ public class AppDbContext : DbContext
 
     public DbSet<StudentGroup> StudentGroups => Set<StudentGroup>();
 
+    public DbSet<StudentGroupTeacher> StudentGroupTeachers => Set<StudentGroupTeacher>();
+
     public DbSet<Question> Questions => Set<Question>();
 
     public DbSet<AnswerOption> AnswerOptions => Set<AnswerOption>();
