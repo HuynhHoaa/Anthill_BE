@@ -141,4 +141,45 @@ public sealed class StudentsController : ApiControllerBase
     [ProducesResponseType<ApiErrorResponse>(StatusCodes.Status404NotFound)]
     public async Task<IActionResult> ResetPassword(int id, CancellationToken cancellationToken)
         => FromResult(await _studentService.ResetPasswordAsync(id, cancellationToken));
+
+    /// <summary>Đưa tài khoản học sinh vào danh sách chờ xoá, kèm lý do bắt buộc.</summary>
+    /// <remarks>
+    /// <para>
+    /// <b>Không xoá ngay.</b> Sau 60 ngày, tiến trình nền mới xoá sạch dữ liệu cá nhân. Khoảng chờ
+    /// đó tồn tại vì xoá người là thao tác không hoàn tác được, mà quyết định sai thường chỉ lộ ra
+    /// sau vài tuần — "em đó chuyển trường" hoá ra nhầm với em khác cùng họ.
+    /// </para>
+    /// <para>
+    /// Sau khi hết hạn, <b>dòng dữ liệu vẫn ở lại</b> nhưng tên, email, số điện thoại bị xoá; lượt
+    /// làm bài và điểm giữ nguyên dưới tên "Học sinh đã xoá". Đó là cách để bảng điểm giáo viên đã
+    /// dựng không thủng một dòng trong khi dữ liệu cá nhân vẫn biến mất thật.
+    /// </para>
+    /// <para>
+    /// Token đang cầm chết ngay lập tức, giống nhánh khoá tài khoản.
+    /// </para>
+    /// </remarks>
+    [Authorize(Roles = SystemRoles.Admin)]
+    [HttpPost("{id:int}/request-deletion")]
+    [ProducesResponseType<StudentDto>(StatusCodes.Status200OK)]
+    [ProducesResponseType<ApiErrorResponse>(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType<ApiErrorResponse>(StatusCodes.Status404NotFound)]
+    [ProducesResponseType<ApiErrorResponse>(StatusCodes.Status409Conflict)]
+    public async Task<IActionResult> RequestDeletion(
+        int id,
+        [FromBody] RequestDeletionRequest request,
+        CancellationToken cancellationToken)
+        => FromResult(await _studentService.RequestDeletionAsync(id, request, cancellationToken));
+
+    /// <summary>Đưa tài khoản đang chờ xoá trở lại hoạt động.</summary>
+    /// <remarks>
+    /// Chỉ dùng được trong thời gian chờ. Sau khi dữ liệu đã bị xoá thì trả <b>409</b> — không còn
+    /// gì để khôi phục, và nói thẳng điều đó tử tế hơn là trả về thành công trên một tài khoản rỗng.
+    /// </remarks>
+    [Authorize(Roles = SystemRoles.Admin)]
+    [HttpPost("{id:int}/restore")]
+    [ProducesResponseType<StudentDto>(StatusCodes.Status200OK)]
+    [ProducesResponseType<ApiErrorResponse>(StatusCodes.Status404NotFound)]
+    [ProducesResponseType<ApiErrorResponse>(StatusCodes.Status409Conflict)]
+    public async Task<IActionResult> Restore(int id, CancellationToken cancellationToken)
+        => FromResult(await _studentService.RestoreAsync(id, cancellationToken));
 }

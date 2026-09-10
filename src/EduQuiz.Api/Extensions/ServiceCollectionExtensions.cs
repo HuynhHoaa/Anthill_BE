@@ -248,6 +248,10 @@ public static class ServiceCollectionExtensions
         services.AddOptions<AutoSubmitOptions>().BindConfiguration(AutoSubmitOptions.SectionName);
         services.AddHostedService<AutoSubmitExpiredAttemptsService>();
 
+        // Xoá dữ liệu cá nhân của tài khoản đã hết thời gian chờ. Quét thưa hơn nhiều so với tiến
+        // trình trên vì trễ vài tiếng ở đây không ai nhận ra, mà việc nó làm thì không hoàn tác được.
+        services.AddHostedService<PurgeDeletedStudentsService>();
+
         services.AddSignalR(options =>
         {
             // Tắt ở mọi môi trường: bật lên thì thông điệp exception trong hub đi thẳng xuống client,

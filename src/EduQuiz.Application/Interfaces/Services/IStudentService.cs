@@ -57,6 +57,30 @@ public interface IStudentService
     /// Cấp lại mật khẩu khi học sinh quên. Mật khẩu mới chỉ trả về đúng một lần, kèm
     /// <c>MustChangePassword</c>, và mọi phiên đang mở của tài khoản đó bị đá ra.
     /// </summary>
+    /// <summary>
+    /// Đưa tài khoản vào danh sách chờ xoá, kèm lý do bắt buộc.
+    /// </summary>
+    /// <remarks>
+    /// Không xoá ngay: sau <see cref="Common.StudentAnonymizer.RetentionDays"/> ngày, tiến trình
+    /// nền mới xoá sạch dữ liệu cá nhân. Khoảng chờ đó tồn tại vì xoá người là thao tác không hoàn
+    /// tác được, mà quyết định sai thường chỉ lộ ra sau vài tuần.
+    ///
+    /// Token đang cầm chết ngay lập tức, giống nhánh khoá tài khoản.
+    /// </remarks>
+    Task<Result<StudentDto>> RequestDeletionAsync(
+        int id,
+        RequestDeletionRequest request,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>Đưa tài khoản chờ xoá trở lại hoạt động. Không dùng được sau khi dữ liệu đã bị xoá.</summary>
+    Task<Result<StudentDto>> RestoreAsync(int id, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Xoá dữ liệu cá nhân của những tài khoản đã hết thời gian chờ. Do tiến trình nền gọi.
+    /// </summary>
+    /// <returns>Số tài khoản vừa xử lý.</returns>
+    Task<Result<int>> PurgeDueAccountsAsync(int batchSize, CancellationToken cancellationToken = default);
+
     Task<Result<ResetPasswordResponse>> ResetPasswordAsync(
         int id,
         CancellationToken cancellationToken = default);

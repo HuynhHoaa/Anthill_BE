@@ -75,6 +75,20 @@ public class UserConfiguration : IEntityTypeConfiguration<User>
             .HasFilter("\"Code\" IS NOT NULL")
             .HasDatabaseName("IX_Users_Code");
 
+        builder.Property(u => u.DeletionReason)
+            .HasMaxLength(512);
+
+        // Người yêu cầu xoá là một tài khoản khác trong cùng bảng. Restrict để xoá tài khoản quản
+        // trị viên không kéo theo việc mất dấu vết ai đã ra quyết định.
+        builder.HasOne<User>()
+            .WithMany()
+            .HasForeignKey(u => u.DeletionRequestedByUserId)
+            .OnDelete(DeleteBehavior.Restrict);
+
+        // Tiến trình nền quét theo đúng hai cột này mỗi lượt: ai đang chờ, và chờ từ bao giờ.
+        builder.HasIndex(u => new { u.Status, u.DeletionRequestedAt })
+            .HasDatabaseName("IX_Users_Status_DeletionRequestedAt");
+
         builder.HasIndex(u => u.Role)
             .HasDatabaseName("IX_Users_Role");
 
