@@ -1,5 +1,6 @@
 using EduQuiz.Application.Common;
 using EduQuiz.Application.DTOs.ExamAttempts;
+using EduQuiz.Application.Interfaces.Realtime;
 using EduQuiz.Application.Interfaces.Security;
 using EduQuiz.Application.Interfaces.Services;
 using EduQuiz.Application.Interfaces.UnitOfWork;
@@ -57,15 +58,18 @@ public sealed class ExamAttemptService : IExamAttemptService
     private readonly IUnitOfWork _unitOfWork;
     private readonly ICurrentUser _currentUser;
     private readonly IExamGeneratorService _generator;
+    private readonly IRealtimeNotificationService _realtime;
 
     public ExamAttemptService(
         IUnitOfWork unitOfWork,
         ICurrentUser currentUser,
-        IExamGeneratorService generator)
+        IExamGeneratorService generator,
+        IRealtimeNotificationService realtime)
     {
         _unitOfWork = unitOfWork;
         _currentUser = currentUser;
         _generator = generator;
+        _realtime = realtime;
     }
 
     /// <summary>Danh tính lấy từ JWT, không bao giờ từ thân request (§3 quy tắc ④).</summary>
@@ -423,9 +427,103 @@ public sealed class ExamAttemptService : IExamAttemptService
             return graded;
         }
 
+        // Đọc số bài đã nộp TRONG transaction, trước khi commit. Đọc sau commit thì đó là một
+        // lượt đi database nằm ngoài mọi lớp bảo vệ: một trục trặc thoáng qua ở đó sẽ biến một bài
+        // vừa chấm xong thành lỗi 500 gửi về cho học sinh — bài đã lưu, điểm đã có, mà màn hình
+        // báo hỏng. Sau commit chỉ còn đúng một việc là bắn sự kiện, mà việc đó tự nuốt lỗi.
+        var submittedCount = await _unitOfWork.ExamAssignments.CountSubmittedByExamAsync(
+            attempt.Assignment.ExamId, cancellationToken);
+
         await transaction.CommitAsync(cancellationToken);
 
+        // SAU commit, không sớm hơn một dòng nào: giáo viên nhận thông báo về một bài đã thực sự
+        // nằm trong database, không phải về một transaction có thể cuộn lại ngay sau đó (§7).
+        await PublishSubmittedAsync(attempt, submittedCount, cancellationToken);
+
         return graded;
+    }
+
+    /// <summary>Báo cho cả học sinh lẫn giáo viên về một bài vừa được hệ thống tự nộp.</summary>
+    /// <remarks>
+    /// Đọc lại bản ghi kèm quan hệ vì <c>GetExpiredInProgressAsync</c> chỉ nạp những gì cần cho
+    /// việc chấm. Lượt đọc này nằm ngoài mọi transaction, nhưng nó chỉ phục vụ thông báo và
+    /// <see cref="IRealtimeNotificationService"/> tự nuốt lỗi, nên hỏng ở đây không kéo theo gì —
+    /// bài đã được chấm và ghi xong từ trước.
+    /// </remarks>
+    private async Task PublishAutoSubmittedAsync(ExamAttempt attempt, CancellationToken cancellationToken)
+    {
+        var detail = await _unitOfWork.ExamAttempts.GetSessionAsync(attempt.Id, cancellationToken);
+        if (detail is null)
+        {
+            return;
+        }
+
+        var exam = detail.Assignment.Exam;
+        var student = detail.Assignment.Student;
+        var submittedAt = (detail.SubmittedAt ?? DateTime.UtcNow).ToUtc();
+
+        var submittedCount = await _unitOfWork.ExamAssignments.CountSubmittedByExamAsync(
+            exam.Id, cancellationToken);
+
+        await _realtime.AutoSubmittedAsync(
+            detail.Assignment.StudentId,
+            new AutoSubmittedStudentEvent
+            {
+                ExamId = exam.Id,
+                AttemptId = detail.Id,
+                ExamTitle = exam.Title,
+                SubmittedAt = submittedAt,
+
+                // Điểm chỉ đi kèm khi giáo viên cho xem ngay — cùng quy tắc §3 ⑥ áp ở mọi nơi khác.
+                Score = exam.ShowResultAfterSubmit ? detail.Score : null
+            },
+            exam.CreatedByUserId,
+            new AutoSubmittedTeacherEvent
+            {
+                ExamId = exam.Id,
+                AttemptId = detail.Id,
+                StudentId = detail.Assignment.StudentId,
+                StudentName = student?.FullName ?? string.Empty,
+                ExamTitle = exam.Title,
+                Score = detail.Score,
+                MaxScore = detail.MaxScore,
+                SubmittedAt = submittedAt,
+                SubmittedCount = submittedCount
+            },
+            cancellationToken);
+    }
+
+    /// <summary>Báo cho giáo viên biết có học sinh vừa nộp bài.</summary>
+    /// <remarks>
+    /// Màn hình theo dõi của giáo viên dùng sự kiện này để tự tăng <c>submittedCount</c> mà không
+    /// phải hỏi lại server, nên con số đó đi kèm ngay trong payload.
+    ///
+    /// Không bọc try/catch ở đây: phần nuốt lỗi nằm trong bản cài đặt realtime, đúng một chỗ, để
+    /// mọi nơi gọi nó đều được bảo vệ như nhau thay vì mỗi nơi tự nhớ.
+    /// </remarks>
+    private async Task PublishSubmittedAsync(
+        ExamAttempt attempt,
+        int submittedCount,
+        CancellationToken cancellationToken)
+    {
+        var exam = attempt.Assignment.Exam;
+        var student = attempt.Assignment.Student;
+
+        await _realtime.ExamSubmittedAsync(
+            exam.CreatedByUserId,
+            new ExamSubmittedEvent
+            {
+                ExamId = exam.Id,
+                AttemptId = attempt.Id,
+                StudentId = attempt.Assignment.StudentId,
+                StudentName = student?.FullName ?? string.Empty,
+                ExamTitle = exam.Title,
+                Score = attempt.Score,
+                MaxScore = attempt.MaxScore,
+                SubmittedAt = (attempt.SubmittedAt ?? DateTime.UtcNow).ToUtc(),
+                SubmittedCount = submittedCount
+            },
+            cancellationToken);
     }
 
     /// <inheritdoc />
@@ -453,6 +551,14 @@ public sealed class ExamAttemptService : IExamAttemptService
             if (outcome.IsSuccess && outcome.ValueOrThrow)
             {
                 finalised++;
+
+                // Sự kiện AutoSubmitted của §7: hai payload cho hai vai trò. Học sinh biết bài
+                // mình đã được nộp hộ, giáo viên biết thêm em nào và số bài đã nộp.
+                //
+                // Không có nó thì tiến trình nền chấm bài trong im lặng: em mở máy lên và thấy
+                // một kết quả xuất hiện từ đâu không rõ, còn màn hình theo dõi của giáo viên vẫn
+                // đứng nguyên cho tới lần tải trang kế tiếp.
+                await PublishAutoSubmittedAsync(attempt, cancellationToken);
             }
         }
 

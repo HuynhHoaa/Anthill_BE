@@ -30,6 +30,10 @@ public class ExamAttemptRepository : GenericRepository<ExamAttempt>, IExamAttemp
                 .ThenInclude(assignment => assignment.Exam)
             .Include(a => a.Assignment)
                 .ThenInclude(assignment => assignment.Student)
+
+                    // Nhóm lớp: bản tóm tắt kết quả có cột nhóm, mà không nạp thì EF trả về null
+                    // lặng lẽ — dự án không bật lazy loading proxy — và cột đó luôn rỗng.
+                    .ThenInclude(student => student.Group)
             .Include(a => a.Assignment)
                 .ThenInclude(assignment => assignment.Paper)
             .FirstOrDefaultAsync(a => a.Id == attemptId, cancellationToken);
@@ -155,35 +159,13 @@ public class ExamAttemptRepository : GenericRepository<ExamAttempt>, IExamAttemp
         CancellationToken cancellationToken = default)
     {
         // Giáo viên chỉ thấy kết quả của đề do chính mình tạo.
-        var query = ResultsQuery().Where(a => a.Assignment.Exam.CreatedByUserId == teacherId);
-
-        if (examId.HasValue)
-        {
-            query = query.Where(a => a.Assignment.ExamId == examId.Value);
-        }
-
-        if (studentId.HasValue)
-        {
-            query = query.Where(a => a.Assignment.StudentId == studentId.Value);
-        }
-
-        if (groupId.HasValue)
-        {
-            query = query.Where(a => a.Assignment.Student.GroupId == groupId.Value);
-        }
-
-        if (status.HasValue)
-        {
-            query = query.Where(a => a.Status == status.Value);
-        }
-
-        if (SearchText.ToLikePattern(search) is { } pattern)
-        {
-            query = query.Where(a =>
-                EF.Functions.ILike(EF.Functions.Unaccent(a.Assignment.Student.FullName), pattern)
-                || EF.Functions.ILike(a.Assignment.Student.Code ?? string.Empty, pattern)
-                || EF.Functions.ILike(EF.Functions.Unaccent(a.Assignment.Exam.Title), pattern));
-        }
+        //
+        // Bộ lọc đi qua đúng một hàm dùng chung với phép đếm số liệu. Giữ hai bản sao thì bảng và
+        // bốn ô phía trên nó sẽ lệch nhau ngay lần đầu có ai sửa một bên mà quên bên kia — mà đó
+        // là hai phần nằm cạnh nhau trên cùng một màn hình.
+        var query = ApplyResultFilters(
+            ResultsQuery().Where(a => a.Assignment.Exam.CreatedByUserId == teacherId),
+            search, examId, studentId, groupId, status);
 
         return await OrderForDisplay(query).ToPagedResultAsync(pagination, cancellationToken);
     }
@@ -198,7 +180,9 @@ public class ExamAttemptRepository : GenericRepository<ExamAttempt>, IExamAttemp
 
         if (SearchText.ToLikePattern(search) is { } pattern)
         {
-            query = query.Where(a => EF.Functions.ILike(EF.Functions.Unaccent(a.Assignment.Exam.Title), pattern));
+            query = query.Where(a =>
+                EF.Functions.ILike(EF.Functions.Unaccent(a.Assignment.Exam.Title), pattern)
+                || EF.Functions.ILike(EF.Functions.Unaccent(a.Assignment.Exam.Topic ?? string.Empty), pattern));
         }
 
         return await OrderForDisplay(query).ToPagedResultAsync(pagination, cancellationToken);
@@ -270,6 +254,132 @@ public class ExamAttemptRepository : GenericRepository<ExamAttempt>, IExamAttemp
                  && a.SubmittedAt != null
                  && a.SubmittedAt >= sinceUtc,
             cancellationToken);
+
+    public async Task<ResultStatsSnapshot> GetResultStatsAsync(
+        int teacherId,
+        string? search,
+        int? examId,
+        int? studentId,
+        int? groupId,
+        AssignmentStatus? status,
+        CancellationToken cancellationToken = default)
+    {
+        // Cùng bộ lọc với bảng, nhưng không Include gì: đây là phép đếm, không phải phép đọc.
+        var attempts = ApplyResultFilters(
+            DbSet.AsNoTracking().Where(a => a.Assignment.Exam.CreatedByUserId == teacherId),
+            search, examId, studentId, groupId, status);
+
+        // Một lượt đi database cho cả năm con số. GroupBy trên hằng số là cách gom nhiều phép tổng
+        // hợp vào một câu lệnh SELECT mà EF Core dịch được.
+        var aggregate = await attempts
+            .GroupBy(_ => 1)
+            .Select(g => new
+            {
+                Total = g.Count(),
+                Graded = g.Count(a => a.Status == AssignmentStatus.Graded),
+                Submitted = g.Count(a => a.Status == AssignmentStatus.Submitted || a.Status == AssignmentStatus.Graded),
+
+                // Lọc ngay trong phép tổng hợp: gộp cả bài đang làm dở vào mẫu số sẽ kéo trung bình
+                // xuống theo tiến độ chấm chứ không theo năng lực học sinh.
+                Average = g.Where(a => a.Status == AssignmentStatus.Graded).Average(a => (decimal?)a.Score),
+                Highest = g.Where(a => a.Status == AssignmentStatus.Graded).Max(a => (decimal?)a.Score)
+            })
+            .FirstOrDefaultAsync(cancellationToken);
+
+        // Mẫu số của tỷ lệ hoàn thành đếm trên assignment, không trên attempt: em chưa từng vào thi
+        // không có dòng attempt nào, mà chính các em đó mới là phần còn thiếu của tỷ lệ.
+        //
+        // Nhưng nó phải chịu ĐÚNG bộ lọc mà tử số đang chịu. Bỏ qua ô tìm kiếm ở đây thì gõ tên
+        // một học sinh vào ra tỷ lệ 3,6% — ba bài đã nộp chia cho toàn bộ số bài đã giao của mọi
+        // lớp. Riêng bộ lọc trạng thái thì cố ý không áp: lọc "đã chấm" rồi lấy mẫu số cũng chỉ
+        // gồm bài đã chấm thì tỷ lệ luôn ra 100%, không nói lên điều gì.
+        var assignedQuery = Context.Set<ExamAssignment>()
+            .AsNoTracking()
+            .Where(assignment => assignment.Exam.CreatedByUserId == teacherId);
+
+        if (examId.HasValue) assignedQuery = assignedQuery.Where(a => a.ExamId == examId.Value);
+        if (studentId.HasValue) assignedQuery = assignedQuery.Where(a => a.StudentId == studentId.Value);
+        if (groupId.HasValue) assignedQuery = assignedQuery.Where(a => a.Student.GroupId == groupId.Value);
+
+        if (SearchText.ToLikePattern(search) is { } assignedPattern)
+        {
+            assignedQuery = assignedQuery.Where(a =>
+                EF.Functions.ILike(EF.Functions.Unaccent(a.Student.FullName), assignedPattern)
+                || EF.Functions.ILike(a.Student.Code ?? string.Empty, assignedPattern)
+                || EF.Functions.ILike(EF.Functions.Unaccent(a.Exam.Title), assignedPattern));
+        }
+
+        var assignedCount = await assignedQuery.CountAsync(cancellationToken);
+
+        return new ResultStatsSnapshot
+        {
+            TotalAttempts = aggregate?.Total ?? 0,
+            GradedCount = aggregate?.Graded ?? 0,
+            SubmittedCount = aggregate?.Submitted ?? 0,
+            AssignedCount = assignedCount,
+            AverageScore = Round1(aggregate?.Average ?? 0m),
+            // Làm tròn giống AverageScore. Không làm thì hai ô cạnh nhau hiện "3,1" và "9,00" —
+            // cùng một thang điểm mà hai định dạng, đọc vào tưởng hai đơn vị khác nhau.
+            HighestScore = Round1(aggregate?.Highest ?? 0m)
+        };
+    }
+
+    public async Task<IReadOnlyDictionary<int, int>> GetPaperQuestionCountsAsync(
+        IEnumerable<int> attemptIds,
+        CancellationToken cancellationToken = default)
+    {
+        var ids = attemptIds?.Distinct().ToList() ?? [];
+        if (ids.Count == 0)
+        {
+            return new Dictionary<int, int>();
+        }
+
+        // Bản đề riêng của học sinh nếu có, ngược lại là bản chung của cả lớp — cùng quy tắc mà
+        // ExamGeneratorService dùng khi sinh đề, chỉ khác là ở đây chỉ cần đếm.
+        var rows = await DbSet
+            .AsNoTracking()
+            .Where(a => ids.Contains(a.Id))
+            .Select(a => new
+            {
+                AttemptId = a.Id,
+                Count = Context.Set<ExamPaper>()
+                    .Where(paper => paper.AssignmentId == a.AssignmentId
+                                    || (paper.ExamId == a.Assignment.ExamId && paper.AssignmentId == null))
+
+                    // Bản riêng thắng bản chung khi cả hai cùng tồn tại.
+                    .OrderBy(paper => paper.AssignmentId == null ? 1 : 0)
+                    .Select(paper => paper.Questions.Count)
+                    .FirstOrDefault()
+            })
+            .ToListAsync(cancellationToken);
+
+        return rows.ToDictionary(row => row.AttemptId, row => row.Count);
+    }
+
+    /// <summary>Bộ lọc dùng chung giữa bảng kết quả và phép đếm số liệu, để hai bên không lệch nhau.</summary>
+    private static IQueryable<ExamAttempt> ApplyResultFilters(
+        IQueryable<ExamAttempt> query,
+        string? search,
+        int? examId,
+        int? studentId,
+        int? groupId,
+        AssignmentStatus? status)
+    {
+        if (examId.HasValue) query = query.Where(a => a.Assignment.ExamId == examId.Value);
+        if (studentId.HasValue) query = query.Where(a => a.Assignment.StudentId == studentId.Value);
+        if (groupId.HasValue) query = query.Where(a => a.Assignment.Student.GroupId == groupId.Value);
+        if (status.HasValue) query = query.Where(a => a.Status == status.Value);
+
+        if (SearchText.ToLikePattern(search) is { } pattern)
+        {
+            query = query.Where(a =>
+                EF.Functions.ILike(EF.Functions.Unaccent(a.Assignment.Student.FullName), pattern)
+                || EF.Functions.ILike(a.Assignment.Student.Code ?? string.Empty, pattern)
+                || EF.Functions.ILike(EF.Functions.Unaccent(a.Assignment.Exam.Title), pattern));
+        }
+
+        return query;
+    }
 
     private IQueryable<ExamAttempt> ResultsQuery() =>
         DbSet

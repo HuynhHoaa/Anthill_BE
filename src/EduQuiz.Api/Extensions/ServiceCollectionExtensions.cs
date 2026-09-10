@@ -3,11 +3,14 @@ using System.Text.Encodings.Web;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Text.Unicode;
+using EduQuiz.Api.BackgroundJobs;
 using EduQuiz.Api.Configuration;
+using EduQuiz.Api.Realtime;
 using EduQuiz.Api.Filters;
 using EduQuiz.Api.Security;
 using EduQuiz.Application.Common;
 using EduQuiz.Application.Interfaces.Security;
+using EduQuiz.Application.Interfaces.Realtime;
 using EduQuiz.Application.Interfaces.Services;
 using EduQuiz.Application.Services;
 using EduQuiz.Application.Validators;
@@ -51,7 +54,15 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IExamService, ExamService>();
         services.AddScoped<IExamGeneratorService, ExamGeneratorService>();
         services.AddScoped<IExamAssignmentService, ExamAssignmentService>();
+        services.AddScoped<IResultService, ResultService>();
+        services.AddScoped<IDashboardService, DashboardService>();
         services.AddScoped<IExamAttemptService, ExamAttemptService>();
+        services.AddScoped<INotificationService, NotificationService>();
+
+        // Cài đặt SignalR nằm ở tầng Api chứ không ở Infrastructure: hub là thành phần của
+        // ASP.NET Core, và IHubContext chỉ có nghĩa ở nơi hub được đăng ký. Tầng Application vẫn
+        // không biết gì về nó — nó chỉ nhìn thấy IRealtimeNotificationService.
+        services.AddScoped<IRealtimeNotificationService, SignalRNotificationService>();
 
         // Quét cả assembly Application: thêm validator mới chỉ cần tạo file, không phải sửa chỗ này.
         services.AddValidatorsFromAssemblyContaining<LoginRequestValidator>();
@@ -229,6 +240,14 @@ public static class ServiceCollectionExtensions
 
     private static IServiceCollection AddRealtime(this IServiceCollection services)
     {
+        // Tiến trình nền tự nộp bài quá hạn. Bắt buộc phải có: học sinh tắt trình duyệt giữa giờ
+        // thi thì không còn ai gọi submit, và bài đó nằm mãi ở trạng thái đang làm mà không có điểm.
+        // BindConfiguration thay vì Configure(configuration.GetSection(...)): hàm này không nhận
+        // IConfiguration, và nới chữ ký của nó chỉ vì một dòng cấu hình thì mọi lời gọi khác phải
+        // sửa theo.
+        services.AddOptions<AutoSubmitOptions>().BindConfiguration(AutoSubmitOptions.SectionName);
+        services.AddHostedService<AutoSubmitExpiredAttemptsService>();
+
         services.AddSignalR(options =>
         {
             // Tắt ở mọi môi trường: bật lên thì thông điệp exception trong hub đi thẳng xuống client,

@@ -1,5 +1,6 @@
 using EduQuiz.Application.Common;
 using EduQuiz.Application.DTOs.ExamAssignments;
+using EduQuiz.Application.Interfaces.Realtime;
 using EduQuiz.Application.Interfaces.Security;
 using EduQuiz.Application.Interfaces.Services;
 using EduQuiz.Application.Interfaces.UnitOfWork;
@@ -41,15 +42,18 @@ public sealed class ExamAssignmentService : IExamAssignmentService
     private readonly IUnitOfWork _unitOfWork;
     private readonly ICurrentUser _currentUser;
     private readonly IExamGeneratorService _generator;
+    private readonly IRealtimeNotificationService _realtime;
 
     public ExamAssignmentService(
         IUnitOfWork unitOfWork,
         ICurrentUser currentUser,
-        IExamGeneratorService generator)
+        IExamGeneratorService generator,
+        IRealtimeNotificationService realtime)
     {
         _unitOfWork = unitOfWork;
         _currentUser = currentUser;
         _generator = generator;
+        _realtime = realtime;
     }
 
     private int CurrentUserId => _currentUser.RequireUserId();
@@ -219,7 +223,35 @@ public sealed class ExamAssignmentService : IExamAssignmentService
         }
 
         await _unitOfWork.SaveChangesAsync(cancellationToken);
+
+        // Mọi lượt đọc phục vụ thông báo nằm TRONG transaction. Đọc sau commit là những lượt đi
+        // database không còn lớp bảo vệ nào: một trục trặc thoáng qua sẽ biến một lô giao bài đã
+        // thành công thành lỗi trả về cho giáo viên. Sau commit chỉ còn đúng việc bắn sự kiện,
+        // mà việc đó tự nuốt lỗi ở tầng cài đặt.
+        var teacherName = string.Empty;
+        var unreadCounts = new Dictionary<int, int>();
+
+        if (request.Notify)
+        {
+            var teacher = await _unitOfWork.Users.GetByIdAsync(exam.CreatedByUserId, cancellationToken);
+            teacherName = teacher?.FullName ?? string.Empty;
+
+            foreach (var assignment in assignments)
+            {
+                unreadCounts[assignment.StudentId] =
+                    await _unitOfWork.Notifications.CountUnreadAsync(assignment.StudentId, cancellationToken);
+            }
+        }
+
         await transaction.CommitAsync(cancellationToken);
+
+        // SAU khi commit, không sớm hơn một dòng nào. Bắn trước commit thì có lúc học sinh nhận
+        // thông báo về một bài mà transaction ngay sau đó cuộn lại — em mở ứng dụng ra và không
+        // thấy gì (§7).
+        if (request.Notify)
+        {
+            await PublishAssignedAsync(exam, assignments, teacherName, unreadCounts, cancellationToken);
+        }
 
         return Result.Success(response);
     }
@@ -411,6 +443,47 @@ public sealed class ExamAssignmentService : IExamAssignmentService
         }
 
         return Result.Success();
+    }
+
+    /// <summary>Bắn sự kiện realtime cho từng em vừa được giao.</summary>
+    /// <remarks>
+    /// Mỗi em một sự kiện mang <b>đúng assignmentId của chính em</b>. Gửi chung một payload cho cả
+    /// lô thì hai mươi chín em nhận id của bạn cùng lớp: liên kết sâu trong thông báo dẫn sang bài
+    /// của người khác — và tuy server vẫn chặn ở bước đọc, việc phát tán id của người khác là thứ
+    /// không cần thiết phải làm.
+    ///
+    /// Cũng đẩy lại số chưa đọc, vì bản ghi thông báo vừa được tạo trong transaction: không có nó
+    /// thì chấm đỏ trên chuông đứng yên cho tới lần tải trang kế tiếp — mà việc poll đã bị bỏ đi
+    /// chính vì sự kiện này (§7).
+    /// </remarks>
+    private async Task PublishAssignedAsync(
+        Exam exam,
+        IReadOnlyList<ExamAssignment> assignments,
+        string teacherName,
+        IReadOnlyDictionary<int, int> unreadCounts,
+        CancellationToken cancellationToken)
+    {
+        foreach (var assignment in assignments)
+        {
+            await _realtime.ExamAssignedAsync(
+                [assignment.StudentId],
+                new ExamAssignedEvent
+                {
+                    ExamId = exam.Id,
+                    AssignmentId = assignment.Id,
+                    ExamTitle = exam.Title,
+                    TeacherName = teacherName,
+                    DurationMinutes = exam.DurationMinutes,
+                    OpenAt = exam.OpenAt.ToUtc(),
+                    CloseAt = exam.CloseAt.ToUtc()
+                },
+                cancellationToken);
+
+            await _realtime.UnreadCountChangedAsync(
+                assignment.StudentId,
+                unreadCounts.GetValueOrDefault(assignment.StudentId),
+                cancellationToken);
+        }
     }
 
     /// <summary>Thông báo cho những em <b>mới</b> được giao.</summary>
