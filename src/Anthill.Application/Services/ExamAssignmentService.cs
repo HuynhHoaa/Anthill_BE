@@ -245,7 +245,7 @@ public sealed class ExamAssignmentService : IExamAssignmentService
         // Cần id thật của assignment trước khi sinh đề: hạt giống của bản đề riêng dựng từ id đó.
         await _unitOfWork.SaveChangesAsync(cancellationToken);
 
-        var generated = await GeneratePapersAsync(exam, assignments, cancellationToken);
+        var generated = await _generator.GeneratePapersAsync(exam, assignments, cancellationToken);
         if (generated.IsFailure)
         {
             // Không sinh nổi đề thì không giao. Cuộn lại cả lô thay vì để lại những assignment
@@ -468,46 +468,6 @@ public sealed class ExamAssignmentService : IExamAssignmentService
             OutOfScopeCount = outOfScope,
             OutOfScopeGroupCount = outOfScopeGroups
         };
-    }
-
-    /// <summary>
-    /// Sinh bản đề cho những assignment vừa tạo.
-    /// </summary>
-    /// <remarks>
-    /// <para>
-    /// Sinh <b>ngay lúc giao</b> chứ không đợi tới lúc học sinh mở bài. Sinh muộn thì một đề thiếu
-    /// câu hỏi sẽ nổ ra trước mặt học sinh, giữa giờ kiểm tra, và người duy nhất sửa được lại
-    /// không có mặt ở đó. Sinh sớm khiến thao tác giao bài chậm hơn một chút, đổi lại lỗi rơi
-    /// đúng vào lúc giáo viên đang ngồi trước màn hình và còn sửa được.
-    /// </para>
-    /// <para>
-    /// Khi tắt <c>randomizePerStudent</c>, lượt đầu tiên tạo bản đề chung rồi những lượt sau nhận
-    /// lại chính nó — cả lớp một bộ câu, đúng như cờ đó hứa hẹn.
-    /// </para>
-    /// </remarks>
-    private async Task<Result> GeneratePapersAsync(
-        Exam exam,
-        IReadOnlyList<ExamAssignment> assignments,
-        CancellationToken cancellationToken)
-    {
-        foreach (var assignment in assignments)
-        {
-            var paper = await _generator.GetOrCreatePaperAsync(exam, assignment, cancellationToken);
-            if (paper.IsFailure)
-            {
-                return Result.Failure(paper.Error!, paper.ErrorCode);
-            }
-
-            // Bản đề chung dùng lại cho mọi em, nên chỉ cần sinh một lần. Ghi xuống ngay để lượt
-            // sau tìm thấy nó thay vì sinh thêm một bản nữa.
-            if (!exam.RandomizePerStudent)
-            {
-                await _unitOfWork.SaveChangesAsync(cancellationToken);
-                break;
-            }
-        }
-
-        return Result.Success();
     }
 
     /// <summary>Bắn sự kiện realtime cho từng em vừa được giao.</summary>

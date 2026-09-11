@@ -31,7 +31,13 @@ public interface IExamService
         SaveExamRequest request,
         CancellationToken cancellationToken = default);
 
-    /// <summary>Thay <b>toàn bộ</b> cấu hình của đề.</summary>
+    /// <summary>Thay <b>toàn bộ</b> cấu hình của đề, theo luật của <see cref="Common.ExamEditPolicy"/>.</summary>
+    /// <remarks>
+    /// Chưa em nào bắt đầu làm: sửa được mọi trường, và nếu cấu hình đổi thứ bộ sinh đề đọc thì bản đề
+    /// của mọi lượt giao hiện có được sinh lại trong cùng transaction — ngân hàng không đủ câu thì không
+    /// ghi gì. Đã có em bắt đầu: đổi cấu hình đề trả <c>Conflict</c>; tên, mô tả, lịch và cờ hiện điểm
+    /// vẫn sửa được.
+    /// </remarks>
     Task<Result<ExamDto>> UpdateAsync(
         int id,
         SaveExamRequest request,
@@ -62,4 +68,10 @@ public interface IExamService
     /// với <c>lifecycle</c> bỏ trống (§4.6).
     /// </summary>
     Task<Result<ExamDto>> PublishAsync(int id, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Nhân bản một đề của chính mình thành bản nháp mới: cùng cấu hình và tuỳ chọn, tên thêm hậu tố
+    /// " (bản sao)", chưa giao cho ai. Đề của giáo viên khác trả <b>404</b> (§4.2).
+    /// </summary>
+    Task<Result<ExamDto>> DuplicateAsync(int id, CancellationToken cancellationToken = default);
 }

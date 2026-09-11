@@ -68,8 +68,25 @@ public interface IExamAssignmentRepository : IGenericRepository<ExamAssignment>
     /// <summary><c>Exam.submittedCount</c> — đếm assignment có attempt ở trạng thái submitted hoặc graded.</summary>
     Task<int> CountSubmittedByExamAsync(int examId, CancellationToken cancellationToken = default);
 
-    /// <summary>Hai con số dẫn xuất cho nhiều đề cùng lúc, tránh N+1 ở màn hình danh sách đề.</summary>
-    Task<IReadOnlyDictionary<int, (int Assigned, int Submitted)>> CountByExamsAsync(
+    /// <summary>
+    /// <c>Exam.startedCount</c> — số assignment đã có lượt làm bài, ở bất kỳ trạng thái nào. Khác 0 là
+    /// cấu hình đề bị khoá (<c>ExamEditPolicy</c>).
+    /// </summary>
+    Task<int> CountStartedByExamAsync(int examId, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Khoá ghi (<c>FOR UPDATE</c>) mọi bản ghi giao bài của đề và trả về chúng, có theo dõi thay đổi.
+    /// </summary>
+    /// <remarks>
+    /// Dành cho lần sửa đề có thể sinh lại bản đề. Tạo lượt làm bài phải khoá chia sẻ dòng giao bài mà
+    /// nó trỏ tới (khoá ngoại), nên trong lúc khoá này còn giữ không em nào bắt đầu được: phép đếm
+    /// <see cref="CountStartedByExamAsync"/> ngay sau đó là con số thật, không phải con số của một
+    /// khoảnh khắc đã qua. Phải gọi bên trong transaction.
+    /// </remarks>
+    Task<IReadOnlyList<ExamAssignment>> LockByExamAsync(int examId, CancellationToken cancellationToken = default);
+
+    /// <summary>Ba con số dẫn xuất cho nhiều đề cùng lúc, tránh N+1 ở màn hình danh sách đề.</summary>
+    Task<IReadOnlyDictionary<int, (int Assigned, int Submitted, int Started)>> CountByExamsAsync(
         IEnumerable<int> examIds,
         CancellationToken cancellationToken = default);
 

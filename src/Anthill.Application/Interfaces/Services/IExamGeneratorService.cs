@@ -35,4 +35,17 @@ public interface IExamGeneratorService
         Exam exam,
         ExamAssignment assignment,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Sinh bản đề cho một loạt assignment: bản chung một lần cho cả loạt, hoặc mỗi em một bản riêng.
+    /// </summary>
+    /// <remarks>
+    /// Đường dùng chung của lúc giao bài và lúc sửa đề sinh lại bản đề — hai nơi phải ra cùng một kết
+    /// quả cho cùng một cấu hình. Ghi bản đề chung xuống ngay (nhưng không commit) để lượt sau tìm thấy
+    /// nó; người gọi phải đang mở transaction.
+    /// </remarks>
+    Task<Result> GeneratePapersAsync(
+        Exam exam,
+        IReadOnlyList<ExamAssignment> assignments,
+        CancellationToken cancellationToken = default);
 }

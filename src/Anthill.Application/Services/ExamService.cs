@@ -4,6 +4,7 @@ using Anthill.Application.Interfaces.Security;
 using Anthill.Application.Interfaces.Services;
 using Anthill.Application.Interfaces.UnitOfWork;
 using Anthill.Application.Mappings;
+using Anthill.Application.Validators;
 using Anthill.Domain.Entities;
 using Anthill.Domain.Enums;
 
@@ -45,14 +46,33 @@ public sealed class ExamService : IExamService
         "Không thể xoá bài kiểm tra đã có học sinh nộp bài. Hãy để đề tự đóng theo lịch thay vì xoá, "
         + "để kết quả của các em vẫn tra cứu được.";
 
+    /// <summary>Hậu tố tên của bản nhân bản — đủ để giáo viên không nhầm hai đề cùng tên trong danh sách.</summary>
+    public const string CopyTitleSuffix = " (bản sao)";
+
     private readonly IUnitOfWork _unitOfWork;
     private readonly ICurrentUser _currentUser;
+    private readonly IExamGeneratorService _generator;
 
-    public ExamService(IUnitOfWork unitOfWork, ICurrentUser currentUser)
+    public ExamService(IUnitOfWork unitOfWork, ICurrentUser currentUser, IExamGeneratorService generator)
     {
         _unitOfWork = unitOfWork;
         _currentUser = currentUser;
+        _generator = generator;
     }
+
+    /// <summary>Câu từ chối khi request đổi cấu hình của một đề đã có em bắt đầu làm.</summary>
+    /// <remarks>
+    /// Kể tên đúng những trường request vừa cố đổi, không đọc cả danh sách trường bị khoá: giáo viên cần
+    /// biết mình phải trả ô nào về giá trị cũ, và cần biết lối ra là nhân bản chứ không phải thử lại.
+    /// </remarks>
+    private static string FrozenBlueprintMessage(int startedCount, IReadOnlyList<string> fields) =>
+        $"Đã có {startedCount} học sinh bắt đầu làm bài nên cấu hình đề đã bị khoá, không đổi được "
+        + $"{string.Join(", ", fields)}. Muốn dùng cấu hình khác, hãy nhân bản đề thành một đề mới rồi sửa "
+        + "trên bản sao. Tên, mô tả, lịch mở/đóng và tuỳ chọn hiện kết quả vẫn sửa được như thường.";
+
+    private static string BackToDraftMessage(int startedCount) =>
+        $"Đã có {startedCount} học sinh bắt đầu làm bài nên không đưa đề về bản nháp được nữa. "
+        + "Muốn dừng nhận bài, hãy dời giờ đóng bài.";
 
     private int CurrentUserId => _currentUser.RequireUserId();
 
@@ -165,7 +185,7 @@ public sealed class ExamService : IExamService
         await _unitOfWork.SaveChangesAsync(cancellationToken);
 
         // Đề vừa tạo chưa thể có assignment nào, khỏi phải đếm.
-        return Result.Success(exam.ToDto(now, assignedCount: 0, submittedCount: 0));
+        return Result.Success(exam.ToDto(now, assignedCount: 0, submittedCount: 0, startedCount: 0));
     }
 
     /// <inheritdoc />
@@ -185,6 +205,41 @@ public sealed class ExamService : IExamService
         var exam = found.ValueOrThrow;
         var isDraft = IsDraftRequest(request);
 
+        // Mọi thứ từ đây tới lúc ghi nằm trong một transaction, bắt đầu bằng khoá ghi trên các dòng giao
+        // bài. Không có khoá thì một em có thể bấm "Vào thi" đúng lúc giữa phép đếm bên dưới và lần sinh
+        // lại bản đề: phép đếm nói "chưa ai làm", em nhận bản đề cũ, rồi bản đề đó bị xoá dưới tay em.
+        await using var transaction = await _unitOfWork.BeginTransactionAsync(cancellationToken);
+
+        var assignments = await _unitOfWork.ExamAssignments.LockByExamAsync(exam.Id, cancellationToken);
+        var startedCount = assignments.Count == 0
+            ? 0
+            : await _unitOfWork.ExamAssignments.CountStartedByExamAsync(exam.Id, cancellationToken);
+
+        var plan = ExamEditPolicy.Decide(
+            exam,
+            request,
+            hasAssignments: assignments.Count > 0,
+            hasStartedAttempts: startedCount > 0);
+
+        switch (plan.Decision)
+        {
+            case ExamEditDecision.RejectBackToDraft:
+                return Result.Conflict<ExamDto>(BackToDraftMessage(startedCount));
+
+            case ExamEditDecision.RejectFrozen:
+                return Result.Conflict<ExamDto>(FrozenBlueprintMessage(startedCount, plan.FrozenFieldsChanged));
+        }
+
+        var regenerate = plan.Decision == ExamEditDecision.ApplyAndRegenerate;
+
+        // Hai trường hợp được miễn phép kiểm ngân hàng, và chỉ hai:
+        //  - Lưu nháp mà không phải sinh lại gì — mục đích của nháp là cất một cấu hình chưa xong. Sinh lại
+        //    là rút câu thật, nên một đề đã giao mà rút về nháp kèm cấu hình dở dang vẫn phải qua phép kiểm.
+        //  - Đề đã xuất bản mà cấu hình đề không đổi. Không có miễn trừ này thì chỉ cần đồng nghiệp ẩn bớt
+        //    câu hỏi là giáo viên hết cả sửa tên hay dời lịch — đúng những thứ luật khoá hứa vẫn sửa được.
+        var skipBankCheck = (isDraft && !regenerate)
+                            || (!exam.IsDraft && !ExamEditPolicy.ChangesGeneratedPaper(exam, request));
+
         var check = await ValidateBlueprintAsync(
             request.TotalQuestions,
             request.EasyPercentage,
@@ -192,7 +247,7 @@ public sealed class ExamService : IExamService
             request.HardPercentage,
             request.Topic,
             exam.CreatedByUserId,
-            isDraft,
+            skipBankCheck,
             cancellationToken);
 
         if (check.IsFailure)
@@ -237,10 +292,46 @@ public sealed class ExamService : IExamService
             exam.PublishedAt = now;
         }
 
-        _unitOfWork.Exams.Update(exam);
+        // Không gọi Exams.Update(exam): đề đang được theo dõi từ lúc đọc, và các dòng giao bài vừa khoá
+        // đã được EF gắn vào exam.Assignments. Update() đi hết đồ thị đó, đánh dấu mọi dòng giao bài là
+        // đã sửa và chép đè chúng bằng bản đọc lúc đầu request. Theo dõi thay đổi tự nhận ra cột nào đổi.
+        if (regenerate)
+        {
+            var regenerated = await RegeneratePapersAsync(exam, assignments, cancellationToken);
+            if (regenerated.IsFailure)
+            {
+                // Ngân hàng không sinh nổi cấu hình mới: cuộn lại cả cấu hình lẫn lệnh xoá bản đề cũ,
+                // để các em vẫn cầm đúng bản đề của cấu hình đang có.
+                await transaction.RollbackAsync(cancellationToken);
+                return Result.Failure<ExamDto>(regenerated.Error!, regenerated.ErrorCode);
+            }
+        }
+
         await _unitOfWork.SaveChangesAsync(cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
 
         return Result.Success(await ToDtoAsync(exam, now, cancellationToken));
+    }
+
+    /// <summary>Bỏ mọi bản đề đã sinh của đề rồi sinh lại cho đúng những lượt giao đang có.</summary>
+    /// <remarks>
+    /// Chỉ gọi khi chưa em nào bắt đầu làm, nên không lượt làm bài hay câu trả lời nào trỏ vào bản đề cũ.
+    /// Hạt giống không đổi (vẫn theo id đề và id lượt giao), nên cùng một cấu hình luôn cho ra cùng một
+    /// bản đề — đổi cấu hình rồi đổi lại thì các em nhận lại đúng bộ câu ban đầu.
+    /// </remarks>
+    private async Task<Result> RegeneratePapersAsync(
+        Exam exam,
+        IReadOnlyList<ExamAssignment> assignments,
+        CancellationToken cancellationToken)
+    {
+        await _unitOfWork.Exams.RemovePapersAsync(exam.Id, cancellationToken);
+
+        // Lệnh xoá phải chạm database trước khi sinh: bộ sinh đề tìm bản đề có sẵn bằng một truy vấn, nên
+        // bản cũ còn nằm đó thì nó trả lại chính bản cũ. Chỉ mục duy nhất trên bản đề chung cũng không cho
+        // bản mới và bản cũ cùng tồn tại. Vẫn nằm trong transaction nên hỏng ở bước sau thì cuộn lại được.
+        await _unitOfWork.SaveChangesAsync(cancellationToken);
+
+        return await _generator.GeneratePapersAsync(exam, assignments, cancellationToken);
     }
 
     /// <inheritdoc />
@@ -411,6 +502,76 @@ public sealed class ExamService : IExamService
         return Result.Success(await ToDtoAsync(exam, now, cancellationToken));
     }
 
+    /// <inheritdoc />
+    /// <remarks>
+    /// Bản sao luôn ra đời ở dạng <b>nháp</b>, kể cả khi đề gốc đã xuất bản: người ta nhân bản để sửa, và
+    /// một bản sao đã xuất bản sẵn thì chỉ cần lỡ tay bấm "Giao bài" là cả lớp nhận một đề trùng. Nháp
+    /// cũng miễn phép kiểm ngân hàng, nên nhân bản được cả khi ngân hàng hôm nay không còn đủ câu cho cấu
+    /// hình cũ — đó thường chính là lúc giáo viên cần sửa nó.
+    ///
+    /// Không chép lượt giao, bản đề hay lượt làm bài nào: bản sao là một cấu hình, chưa phải một bài thi.
+    /// </remarks>
+    public async Task<Result<ExamDto>> DuplicateAsync(int id, CancellationToken cancellationToken = default)
+    {
+        var found = await FindOwnedAsync(id, cancellationToken);
+        if (found.IsFailure)
+        {
+            return Result.Failure<ExamDto>(found.Error!, found.ErrorCode);
+        }
+
+        var source = found.ValueOrThrow;
+        var now = DateTime.UtcNow;
+
+        var copy = new Exam
+        {
+            Title = CopyTitle(source.Title),
+            Description = source.Description,
+            Topic = source.Topic,
+            DurationMinutes = source.DurationMinutes,
+            TotalQuestions = source.TotalQuestions,
+            EasyPercentage = source.EasyPercentage,
+            MediumPercentage = source.MediumPercentage,
+            HardPercentage = source.HardPercentage,
+            PointPerQuestion = source.PointPerQuestion,
+            ShuffleQuestions = source.ShuffleQuestions,
+            ShuffleAnswers = source.ShuffleAnswers,
+            ShowResultAfterSubmit = source.ShowResultAfterSubmit,
+
+            // Chép theo đề gốc để bản sao "giống hệt" đúng nghĩa. Chưa có lượt giao nào nên màn hình giao
+            // bài vẫn đổi được cờ này như với một đề mới.
+            RandomizePerStudent = source.RandomizePerStudent,
+
+            OpenAt = source.OpenAt,
+            CloseAt = source.CloseAt,
+            IsDraft = true,
+            PublishedAt = null,
+            CreatedByUserId = source.CreatedByUserId,
+            CreatedAt = now
+        };
+
+        await _unitOfWork.Exams.AddAsync(copy, cancellationToken);
+        await _unitOfWork.SaveChangesAsync(cancellationToken);
+
+        return Result.Success(copy.ToDto(now, assignedCount: 0, submittedCount: 0, startedCount: 0));
+    }
+
+    /// <summary>Tên bản sao: tên gốc cộng hậu tố, cắt bớt tên gốc khi tổng vượt trần độ dài cột.</summary>
+    /// <remarks>
+    /// Cắt tên gốc chứ không cắt hậu tố: hậu tố là thứ duy nhất phân biệt hai đề trong danh sách. Không
+    /// để lại nửa cặp surrogate ở chỗ cắt, vì PostgreSQL từ chối chuỗi UTF-8 hỏng.
+    /// </remarks>
+    private static string CopyTitle(string title)
+    {
+        var room = SaveExamRequestValidator.MaxTitleLength - CopyTitleSuffix.Length;
+        if (title.Length <= room)
+        {
+            return title + CopyTitleSuffix;
+        }
+
+        var cut = char.IsHighSurrogate(title[room - 1]) ? room - 1 : room;
+        return title[..cut].TrimEnd() + CopyTitleSuffix;
+    }
+
     /// <summary>Đề mà người gọi được <b>đọc</b>: giáo viên đọc đề mình tạo, quản trị viên đọc mọi đề.</summary>
     private async Task<Result<Exam>> FindReadableAsync(int id, CancellationToken cancellationToken)
     {
@@ -577,17 +738,18 @@ public sealed class ExamService : IExamService
     {
         var assigned = await _unitOfWork.ExamAssignments.CountByExamAsync(exam.Id, cancellationToken);
         var submitted = await _unitOfWork.ExamAssignments.CountSubmittedByExamAsync(exam.Id, cancellationToken);
+        var started = await _unitOfWork.ExamAssignments.CountStartedByExamAsync(exam.Id, cancellationToken);
 
-        return exam.ToDto(asOf, assigned, submitted);
+        return exam.ToDto(asOf, assigned, submitted, started);
     }
 
     private static ExamDto ToDto(
         Exam exam,
         DateTime asOf,
-        IReadOnlyDictionary<int, (int Assigned, int Submitted)> counters)
+        IReadOnlyDictionary<int, (int Assigned, int Submitted, int Started)> counters)
     {
-        var counts = counters.TryGetValue(exam.Id, out var value) ? value : (Assigned: 0, Submitted: 0);
-        return exam.ToDto(asOf, counts.Assigned, counts.Submitted);
+        var counts = counters.TryGetValue(exam.Id, out var value) ? value : (Assigned: 0, Submitted: 0, Started: 0);
+        return exam.ToDto(asOf, counts.Assigned, counts.Submitted, counts.Started);
     }
 
     /// <summary>Bản nháp khi client gửi <c>lifecycle: "draft"</c>; bỏ trống nghĩa là đề có hiệu lực thật.</summary>
