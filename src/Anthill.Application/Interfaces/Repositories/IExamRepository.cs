@@ -27,6 +27,27 @@ public interface IExamRepository : IGenericRepository<Exam>
 
     Task<bool> IsOwnedByAsync(int examId, int teacherId, CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// Khoá ghi dòng đề (<c>FOR NO KEY UPDATE</c>) rồi trả về đề với giá trị đọc <b>sau</b> khi đã cầm khoá.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Dành cho hai thao tác đọc cấu hình đề rồi quyết định ghi: sửa đề và giao bài. Hai lần sửa, hoặc một
+    /// lần sửa và một lần giao, trên cùng một đề phải xếp hàng: không khoá thì lần giao có thể sinh bản đề
+    /// từ cấu hình cũ đúng lúc lần sửa vừa xoá và sinh lại bản đề theo cấu hình mới.
+    /// </para>
+    /// <para>
+    /// <c>FOR NO KEY UPDATE</c> chứ không <c>FOR UPDATE</c>: thêm một bản đề cần khoá chia sẻ khoá ngoại
+    /// (<c>FOR KEY SHARE</c>) trên dòng đề, và <c>FOR UPDATE</c> chặn cả khoá đó. Một em đang giữ khoá dòng
+    /// giao bài để vào thi mà cần sinh bản đề sẽ phải chờ lần sửa, trong khi lần sửa lại chờ chính dòng giao
+    /// bài em đang giữ — hai bên chờ nhau mãi. Hai lần khoá <c>FOR NO KEY UPDATE</c> vẫn loại trừ nhau.
+    /// </para>
+    /// <para>
+    /// Trả NULL khi đề đã bị xoá trong lúc chờ. Phải gọi bên trong transaction.
+    /// </para>
+    /// </remarks>
+    Task<Exam?> LockForEditAsync(int examId, CancellationToken cancellationToken = default);
+
     /// <summary>Đề chung của cả lớp (<c>AssignmentId = NULL</c>), chỉ có khi tắt randomizePerStudent.</summary>
     Task<ExamPaper?> GetSharedPaperAsync(int examId, CancellationToken cancellationToken = default);
 

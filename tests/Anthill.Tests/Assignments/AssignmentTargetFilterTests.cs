@@ -32,7 +32,6 @@ public class AssignmentTargetFilterTests
     [InlineData(UserStatus.Active, AssignmentSkipReason.None)]
     [InlineData(UserStatus.Locked, AssignmentSkipReason.Locked)]
     [InlineData(UserStatus.PendingDeletion, AssignmentSkipReason.Retired)]
-    [InlineData(UserStatus.Deleted, AssignmentSkipReason.Retired)]
     public void Em_trong_lop_cua_minh_duoc_phan_loai_theo_trang_thai(UserStatus status, AssignmentSkipReason expected)
     {
         AssignmentTargetFilter.Classify(Student(status), MyGroups).Should().Be(expected);
@@ -52,7 +51,8 @@ public class AssignmentTargetFilterTests
     [Fact]
     public void Em_chua_phan_lop_la_ngoai_pham_vi()
     {
-        // Tai khoan da xoa bi go khoi lop (GroupId = NULL) nen roi vao nhanh nay truoc.
+        // Tai khoan da xoa bi go khoi lop (GroupId = NULL) nen roi vao nhanh nay truoc. Day la duong duy
+        // nhat mot tai khoan da xoa di qua bo loc, nen skippedRetired chi dem em dang cho xoa.
         AssignmentTargetFilter.Classify(Student(UserStatus.Deleted, groupId: null), MyGroups)
             .Should().Be(AssignmentSkipReason.OutOfScope);
     }

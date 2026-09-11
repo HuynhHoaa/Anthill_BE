@@ -15,7 +15,11 @@ public enum AssignmentSkipReason
     /// <summary>Tài khoản đang khoá — vẫn là học sinh của trường, mở khoá là giao lại được.</summary>
     Locked,
 
-    /// <summary>Tài khoản chờ xoá hoặc đã xoá — em đã rời trường.</summary>
+    /// <summary>Tài khoản đang chờ xoá — em đã rời trường.</summary>
+    /// <remarks>
+    /// Không gồm tài khoản đã xoá hẳn: ẩn danh hoá gỡ em khỏi lớp (<c>GroupId = NULL</c>), nên em đó luôn
+    /// dừng ở <see cref="OutOfScope"/> trước khi trạng thái được xét tới.
+    /// </remarks>
     Retired
 }
 
@@ -51,10 +55,12 @@ public static class AssignmentTargetFilter
             return AssignmentSkipReason.OutOfScope;
         }
 
+        // Tài khoản đã xoá hẳn không tới được đây: StudentAnonymizer đặt GroupId = NULL nên em đó đã dừng ở
+        // phép kiểm phạm vi ngay trên. Vì thế không có nhánh riêng cho Deleted.
         return student.Status switch
         {
             UserStatus.Active => AssignmentSkipReason.None,
-            UserStatus.PendingDeletion or UserStatus.Deleted => AssignmentSkipReason.Retired,
+            UserStatus.PendingDeletion => AssignmentSkipReason.Retired,
 
             // Tài khoản khoá thì không đăng nhập được, nên tạo bài cho em cũng chỉ tạo ra một dòng
             // không ai dùng tới. Frontend hiện vẫn cho chọn và vẫn tạo.

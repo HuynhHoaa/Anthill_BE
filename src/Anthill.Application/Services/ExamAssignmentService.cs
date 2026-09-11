@@ -97,6 +97,18 @@ public sealed class ExamAssignmentService : IExamAssignmentService
 
         var exam = found.ValueOrThrow;
 
+        // Transaction mở ngay từ đây và bắt đầu bằng khoá dòng đề — cùng khoá ExamService.UpdateAsync lấy
+        // trước khi sửa. Mọi phép kiểm bên dưới (nháp hay chưa, thời lượng, cờ randomizePerStudent) và bước
+        // sinh bản đề đều đọc cấu hình đề; không khoá thì một lần sửa commit xen giữa là lô này sinh bản đề
+        // theo cấu hình cũ, hoặc lần sửa đếm "chưa có lượt giao" rồi bỏ bản đề mà lô này vừa sinh. Các
+        // nhánh trả về sớm chỉ đọc, nên để transaction tự cuộn lại khi rời khối using là đủ.
+        await using var transaction = await _unitOfWork.BeginTransactionAsync(cancellationToken);
+
+        if (await _unitOfWork.Exams.LockForEditAsync(exam.Id, cancellationToken) is null)
+        {
+            return Result.NotFound<AssignExamResponse>(ExamNotFoundMessage);
+        }
+
         // Frontend không kiểm điều này. Giao một bản nháp nghĩa là phát cho học sinh một đề mà
         // chính giáo viên còn chưa chốt tỷ lệ, và blueprint của nó có thể chưa sinh nổi câu hỏi.
         if (exam.IsDraft)
@@ -194,8 +206,6 @@ public sealed class ExamAssignmentService : IExamAssignmentService
             // được giao, và "đã giao hết rồi" là câu trả lời hợp lệ chứ không phải lỗi.
             return Result.Success(response);
         }
-
-        await using var transaction = await _unitOfWork.BeginTransactionAsync(cancellationToken);
 
         // Ghi cờ BÊN TRONG transaction. Đặt ngoài — kèm SaveChanges riêng — thì nó đã nằm trong
         // database trước khi transaction mở, nên lần rollback phía dưới không cuốn nó theo: sinh
@@ -348,7 +358,11 @@ public sealed class ExamAssignmentService : IExamAssignmentService
 
         public required int LockedCount { get; init; }
 
-        /// <summary>Số em chờ xoá hoặc đã xoá — đếm riêng khỏi <see cref="LockedCount"/>.</summary>
+        /// <summary>Số em đang chờ xoá — đếm riêng khỏi <see cref="LockedCount"/>.</summary>
+        /// <remarks>
+        /// Tài khoản đã xoá hẳn không bao giờ vào đây: ẩn danh hoá gỡ em khỏi lớp, nên em rơi vào
+        /// <see cref="OutOfScopeCount"/> trước.
+        /// </remarks>
         public required int RetiredCount { get; init; }
 
         /// <summary>Số <b>học sinh</b> không thuộc nhóm nào của giáo viên này.</summary>

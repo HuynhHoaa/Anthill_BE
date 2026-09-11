@@ -13,6 +13,16 @@ public enum ExamEditDecision
     /// <summary>Ghi, rồi sinh lại bản đề của mọi lượt giao hiện có — chưa em nào cầm bản cũ trên tay.</summary>
     ApplyAndRegenerate,
 
+    /// <summary>
+    /// Ghi, rồi bỏ mọi bản đề còn sót lại. Đề không còn lượt giao nào nên không có gì để sinh lại ngay:
+    /// cấu hình mới áp ở lần giao sau.
+    /// </summary>
+    /// <remarks>
+    /// Bản đề chung không gắn với lượt giao nào nên thu hồi hết các em không xoá nó. Để lại thì lần giao sau
+    /// tìm thấy nó và phát lại bộ câu của cấu hình cũ, trong khi màn hình giáo viên hiện cấu hình mới.
+    /// </remarks>
+    ApplyAndDiscardPapers,
+
     /// <summary>Đã có em bắt đầu làm mà request đổi cấu hình đề — từ chối, không ghi gì.</summary>
     RejectFrozen,
 
@@ -53,7 +63,10 @@ public static class ExamEditPolicy
 {
     /// <param name="exam">Đề như đang nằm trong database, <b>trước</b> khi áp request.</param>
     /// <param name="request">Cấu hình mới giáo viên gửi lên.</param>
-    /// <param name="hasAssignments">Đề đã giao cho ít nhất một em — tức là đã có bản đề được sinh.</param>
+    /// <param name="hasAssignments">
+    /// Đề đang có ít nhất một lượt giao — tức là có bản đề đang chờ các em. Đề từng giao rồi thu hồi hết
+    /// thì là <c>false</c>, dù bản đề chung của lần giao cũ có thể vẫn còn.
+    /// </param>
     /// <param name="hasStartedAttempts">Đã có ít nhất một em bắt đầu làm bài.</param>
     public static ExamEditPlan Decide(
         Exam exam,
@@ -80,10 +93,16 @@ public static class ExamEditPolicy
                 : new ExamEditPlan(ExamEditDecision.Apply, []);
         }
 
-        // Chưa giao cho ai thì chưa có bản đề nào để sinh lại: cấu hình mới áp ở lần giao đầu tiên.
-        return hasAssignments && ChangesGeneratedPaper(exam, request)
+        if (!ChangesGeneratedPaper(exam, request))
+        {
+            return new ExamEditPlan(ExamEditDecision.Apply, []);
+        }
+
+        // Không còn lượt giao nào thì không có ai để sinh lại cho, nhưng vẫn phải bỏ bản đề cũ: đề từng giao
+        // rồi thu hồi hết vẫn giữ bản đề chung, và lần giao sau sẽ dùng lại nó thay vì sinh theo cấu hình mới.
+        return hasAssignments
             ? new ExamEditPlan(ExamEditDecision.ApplyAndRegenerate, [])
-            : new ExamEditPlan(ExamEditDecision.Apply, []);
+            : new ExamEditPlan(ExamEditDecision.ApplyAndDiscardPapers, []);
     }
 
     /// <summary>Những trường bị khoá mà request đang cố đổi, theo thứ tự hiện trên form.</summary>

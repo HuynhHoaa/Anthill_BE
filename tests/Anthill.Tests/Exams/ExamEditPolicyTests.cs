@@ -103,14 +103,46 @@ public class ExamEditPolicyTests
 
     [Theory]
     [MemberData(nameof(PaperFieldChanges))]
-    public void Chua_giao_cho_ai_thi_khong_co_ban_de_nao_de_sinh_lai(
+    public void Khong_con_luot_giao_nao_ma_doi_truong_bo_sinh_de_doc_thi_bo_ban_de_cu(
+        string field,
+        Func<SaveExamRequest, SaveExamRequest> change)
+    {
+        // Giao, thu hồi hết, rồi sửa: bản đề chung của lần giao cũ vẫn còn vì nó không gắn với lượt giao
+        // nào. Để lại thì lần giao sau phát lại bộ câu của cấu hình cũ.
+        var exam = PublishedExam();
+
+        ExamEditPolicy.Decide(exam, change(SameAs(exam)), hasAssignments: false, hasStartedAttempts: false)
+            .Decision.Should().Be(
+                ExamEditDecision.ApplyAndDiscardPapers,
+                because: $"đổi {field} thì bản đề cũ không còn khớp cấu hình");
+    }
+
+    [Theory]
+    [MemberData(nameof(FreeFieldChanges))]
+    public void Khong_con_luot_giao_nao_ma_chi_doi_truong_tu_do_thi_giu_ban_de(
         string field,
         Func<SaveExamRequest, SaveExamRequest> change)
     {
         var exam = PublishedExam();
 
         ExamEditPolicy.Decide(exam, change(SameAs(exam)), hasAssignments: false, hasStartedAttempts: false)
-            .Decision.Should().Be(ExamEditDecision.Apply, because: $"đổi {field} chỉ áp ở lần giao đầu tiên");
+            .Decision.Should().Be(ExamEditDecision.Apply, because: $"{field} không đổi bộ câu nào");
+    }
+
+    [Fact]
+    public void Ban_nhap_khong_con_luot_giao_van_bo_ban_de_cu_khi_doi_cau_hinh()
+    {
+        // Rút về nháp sau khi thu hồi hết rồi sửa dở cấu hình: bỏ bản đề không cần ngân hàng đủ câu, nên nút
+        // "Lưu nháp" vẫn dùng được, mà lần giao sau (sau khi xuất bản) vẫn sinh theo cấu hình mới.
+        var exam = PublishedExam();
+        exam.IsDraft = true;
+
+        ExamEditPolicy.Decide(
+                exam,
+                SameAs(exam) with { Lifecycle = "draft", TotalQuestions = 25 },
+                hasAssignments: false,
+                hasStartedAttempts: false)
+            .Decision.Should().Be(ExamEditDecision.ApplyAndDiscardPapers);
     }
 
     [Theory]

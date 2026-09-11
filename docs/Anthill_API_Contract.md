@@ -4,7 +4,7 @@ Tài liệu này được **rút ra từ tầng service của frontend** trướ
 
 Backend đã được dựng theo tài liệu này, và frontend đã chuyển mọi hàm service sang gọi `apiClient` — **chữ ký hàm giữ nguyên nên không trang nào phải sửa**. Tài liệu được cập nhật theo code; chỗ nào lệch thì code là chuẩn.
 
-Ngày lập: 06/09/2026 · Nguồn: 9 service, ~50 hàm · Kết quả: **68 endpoint**
+Ngày lập: 06/09/2026 · Nguồn: 9 service, ~50 hàm · Hiện tại: **69 endpoint** (kể cả `POST /api/exams/{id}/duplicate`)
 
 > Đọc kèm: `Anthill_Requirement.md` (nghiệp vụ), `Anthill_BE_Tech_Structure.md` (kiến trúc BE), `Anthill_Workflow_Deploy.md` (lộ trình và hạ tầng).
 
@@ -34,14 +34,14 @@ Ngày lập: 06/09/2026 · Nguồn: 9 service, ~50 hàm · Kết quả: **68 end
 
 ## 2. Ba vai trò
 
-> **Admin sở hữu TÀI KHOẢN** (danh tính, mật khẩu, khoá/mở).
-> **Teacher sở hữu VIỆC DẠY** (nhóm lớp, ngân hàng câu hỏi, đề, giao bài, kết quả).
+> **Admin sở hữu TỔ CHỨC** (tài khoản học sinh, lớp, xếp học sinh vào lớp, phân công giáo viên).
+> **Teacher sở hữu VIỆC DẠY** (ngân hàng câu hỏi, đề, giao bài, kết quả) trong những lớp đã công bố mà mình được phân công.
 > **Student làm bài và xem kết quả của chính mình.**
 
 | Khu vực | admin | teacher | student |
 |---|:---:|:---:|:---:|
-| Tài khoản học sinh (tạo/sửa/khoá/reset mật khẩu) | ✅ | đọc, chỉ học sinh mình phụ trách (§4.3) | — |
-| Nhóm lớp và thành viên | đọc | ✅ | — |
+| Tài khoản học sinh (tạo/sửa/khoá/reset mật khẩu, yêu cầu xoá/khôi phục) | ✅ | đọc, chỉ học sinh mình phụ trách (§4.3) | — |
+| Lớp, thành viên, công bố, phân công giáo viên | ✅ | đọc, chỉ lớp đã công bố mình được phân công (§4.4) | — |
 | Ngân hàng câu hỏi | đọc | ✅ | — |
 | Bài kiểm tra, giao bài | — | ✅ | — |
 | Kết quả toàn lớp | — | ✅ | — |
@@ -110,9 +110,13 @@ JWT claims tối thiểu: `sub` = userId, `role`, `name`, `subject_id` (giáo vi
 | GET | `/api/students/{id}` | admin, teacher | Hồ sơ một học sinh. Giáo viên: học sinh lớp mình dạy, hoặc đã nhận một đề do chính mình tạo; ngoài ra 404 |
 | POST | `/api/students` | admin | Tạo tài khoản kèm mật khẩu ban đầu |
 | PUT | `/api/students/{id}` | admin | Cập nhật hồ sơ, nhóm, trạng thái. **Không nhận mật khẩu** |
-| PATCH | `/api/students/{id}/status` | admin | Khoá / mở khoá |
+| PATCH | `/api/students/{id}/status` | admin | Khoá / mở khoá — chỉ nhận `active` hoặc `locked`; hai trạng thái xoá đi qua hai endpoint riêng bên dưới |
 | POST | `/api/students/{id}/reset-password` | admin | **Bổ sung** — cấp lại mật khẩu khi học sinh quên |
+| POST | `/api/students/{id}/request-deletion` | admin | **Bổ sung** — đưa vào diện chờ xoá (`pendingDeletion`), lý do bắt buộc (≥ 10 ký tự). Không đăng nhập được, token cũ chết ngay. Sau 60 ngày tiến trình nền ẩn danh hoá, gỡ khỏi lớp và chuyển sang `deleted`; lượt làm bài và điểm giữ nguyên |
+| POST | `/api/students/{id}/restore` | admin | **Bổ sung** — khôi phục tài khoản đang chờ xoá. Đã ẩn danh hoá rồi thì **409** |
 | GET | `/api/students/availability` | admin | **Bổ sung** — kiểm tra email/username/code đã dùng chưa, thay cho việc FE tải 500 bản ghi về so sánh tại chỗ |
+
+`Student.status`: `active` · `locked` · `pendingDeletion` · `deleted`.
 
 > **Phạm vi đọc của giáo viên.** Danh sách là "lớp tôi đang dạy": học sinh có `GroupId` thuộc một lớp **đã công bố** mà giáo viên **được phân công** — đúng tập lớp `GET /api/student-groups` trả cho họ. Bộ lọc `groupId` / `status` / `search` chạy bên trong phạm vi đó: `groupId` của lớp khác hay lớp nháp, và `groupId=0` ("chưa phân nhóm"), đều ra trang rỗng, không lỗi. Hồ sơ rộng hơn danh sách một vế: mở được cả học sinh đã nhận một đề do chính giáo viên đó tạo, vì kết quả thuộc về đề chứ không thuộc về lớp hiện tại — em chuyển lớp hay đã bị xoá dữ liệu cá nhân thì liên kết từ bảng kết quả vẫn phải mở được. Ngoài phạm vi trả **404** cùng thông điệp với id không tồn tại. Admin không bị giới hạn.
 
@@ -120,18 +124,24 @@ JWT claims tối thiểu: `sub` = userId, `role`, `name`, `subject_id` (giáo vi
 
 | Method | Path | Vai trò | Mô tả |
 |---|---|---|---|
-| GET | `/api/student-groups` | teacher, admin | Danh sách nhóm kèm sĩ số |
-| GET | `/api/student-groups/{id}` | teacher, admin | Chi tiết một nhóm |
-| POST | `/api/student-groups` | teacher | Tạo nhóm. Chủ sở hữu lấy từ JWT |
-| PUT | `/api/student-groups/{id}` | teacher | Đổi tên và mô tả |
-| DELETE | `/api/student-groups/{id}` | teacher | Xoá nhóm **rỗng**. Không kéo theo tài khoản học sinh |
-| GET | `/api/student-groups/{id}/students` | teacher | Thành viên của nhóm |
-| GET | `/api/student-groups/{id}/assignable-students` | teacher | Học sinh có thể thêm vào nhóm |
-| POST | `/api/student-groups/{id}/students` | teacher | Thêm **nhiều** học sinh trong một lần gọi |
-| DELETE | `/api/student-groups/{id}/students/{studentId}` | teacher | Gỡ khỏi nhóm (đặt `GroupId = NULL`) |
+| GET | `/api/student-groups` | admin, teacher | Danh sách lớp kèm sĩ số. Query `search`, `status` (`draft` · `published` · `all`, mặc định `all`; giá trị khác trả 400). Giáo viên chỉ nhận lớp **đã công bố** mà mình **được phân công** |
+| GET | `/api/student-groups/{id}` | admin, teacher | Chi tiết một lớp. Lớp ngoài phạm vi của giáo viên trả **404** |
+| POST | `/api/student-groups` | admin | Lập lớp. Lớp mới ra đời ở dạng **nháp** — giáo viên chưa thấy |
+| PUT | `/api/student-groups/{id}` | admin | Đổi tên và mô tả |
+| DELETE | `/api/student-groups/{id}` | admin | Xoá lớp **rỗng** (còn học sinh hoặc tài khoản chờ xoá thì **409**). Không kéo theo tài khoản học sinh |
+| GET | `/api/student-groups/{id}/students` | admin, teacher | Thành viên của lớp |
+| GET | `/api/student-groups/{id}/assignable-students` | admin | Học sinh có thể xếp vào lớp (gồm cả em đang ở lớp khác — thêm vào là chuyển lớp) |
+| POST | `/api/student-groups/{id}/students` | admin | Xếp **nhiều** học sinh vào lớp trong một lần gọi. Trả `added`, `skippedAlreadyMember`, `skippedNotFound`, `skippedRetired` |
+| DELETE | `/api/student-groups/{id}/students/{studentId}` | admin | Gỡ khỏi lớp (đặt `GroupId = NULL`) |
+| POST | `/api/student-groups/{id}/publish` | admin | **Bổ sung** — công bố lớp nháp; từ đây giáo viên được phân công mới thấy lớp. Đã công bố rồi thì **409** |
+| POST | `/api/student-groups/{id}/unpublish` | admin | **Bổ sung** — đưa lớp về nháp (lùi lại khi công bố nhầm). Không đụng tới học sinh hay bài đã giao. Vốn là nháp thì **409** |
+| GET | `/api/student-groups/{id}/assignable-teachers` | admin | **Bổ sung** — giáo viên có thể phân công, kèm trạng thái tài khoản |
+| POST | `/api/student-groups/{id}/teachers` | admin | **Bổ sung** — phân công **nhiều** giáo viên phụ trách lớp, báo lại từng loại bị bỏ qua |
+| DELETE | `/api/student-groups/{id}/teachers/{teacherId}` | admin | **Bổ sung** — gỡ giáo viên khỏi lớp. Bài đã giao gắn với học sinh nên không bị ảnh hưởng |
 
-> `PUT /student-groups/{id}` ở FE phải lan tên nhóm mới xuống mọi bản ghi học sinh. Ở BE việc đó **biến mất hoàn toàn** nếu chuẩn hoá đúng — học sinh chỉ giữ khoá ngoại `GroupId`, tên luôn đọc qua JOIN.
-> `POST .../students` nhận mảng: FE hiện gọi lặp từng em rồi tự đếm thành công/thất bại. Gộp thành batch để tránh N request.
+> Lớp thuộc về **tổ chức**, không thuộc về giáo viên nào: quản trị viên lập lớp, xếp học sinh, phân công một hoặc nhiều giáo viên (bảng `StudentGroupTeacher`) rồi công bố. Giáo viên chỉ đọc và giao bài cho lớp đã công bố mình được phân công.
+> Đổi tên lớp không phải ghi lại bản ghi học sinh nào — học sinh chỉ giữ khoá ngoại `GroupId`, tên luôn đọc qua JOIN.
+> `POST .../students` nhận mảng: FE từng gọi lặp từng em rồi tự đếm thành công/thất bại. Gộp thành batch để tránh N request.
 
 ### 4.5 Ngân hàng câu hỏi
 
@@ -157,13 +167,13 @@ JWT claims tối thiểu: `sub` = userId, `role`, `name`, `subject_id` (giáo vi
 | GET | `/api/exams` | teacher, admin | Danh sách, tìm kiếm + lọc theo vòng đời |
 | GET | `/api/exams/{id}` | teacher, admin | Chi tiết một đề |
 | POST | `/api/exams` | teacher | Tạo đề theo blueprint. **Đề không chứa danh sách câu hỏi cụ thể** |
-| PUT | `/api/exams/{id}` | teacher | Sửa toàn bộ cấu hình. Chưa em nào bắt đầu làm: sửa được mọi trường, bản đề đã sinh cho các lượt giao được **sinh lại** theo cấu hình mới (ngân hàng không đủ câu thì từ chối, không đổi gì). Đã có em bắt đầu (`blueprintFrozen`): đổi số câu, ba tỷ lệ, chủ đề, điểm mỗi câu, thời lượng, tuỳ chọn trộn hoặc đưa về nháp trả **409**; tên, mô tả, lịch và `showResultAfterSubmit` vẫn sửa được. Điểm đã chấm không bao giờ đổi |
+| PUT | `/api/exams/{id}` | teacher | Sửa toàn bộ cấu hình. Chưa em nào bắt đầu làm: sửa được mọi trường, bản đề đã sinh cho các lượt giao được **sinh lại** theo cấu hình mới (ngân hàng không đủ câu thì từ chối, không đổi gì); đề không còn lượt giao nào (đã thu hồi hết) thì bản đề cũ bị bỏ, lần giao sau sinh theo cấu hình mới. Đã có em bắt đầu (`blueprintFrozen`): đổi số câu, ba tỷ lệ, chủ đề, điểm mỗi câu, thời lượng, tuỳ chọn trộn hoặc đưa về nháp trả **409**; tên, mô tả, lịch và `showResultAfterSubmit` vẫn sửa được. Điểm đã chấm không bao giờ đổi |
 | PATCH | `/api/exams/{id}/schedule` | teacher | **Chỉ** đổi lịch mở/đóng — hẹp và an toàn hơn PUT |
-| DELETE | `/api/exams/{id}` | teacher | Xoá đề kèm toàn bộ bản ghi giao bài |
+| DELETE | `/api/exams/{id}` | teacher | Xoá đề kèm toàn bộ bản ghi giao bài và bản đề đã sinh. Đã có học sinh nộp bài thì **409** — để đề tự đóng theo lịch, kết quả của các em vẫn tra cứu được |
 | POST | `/api/exams/blueprint-preview` | teacher | **Trái tim của tính năng.** Nhận cấu hình đang gõ dở, trả số câu cần / số câu có / hợp lệ hay không |
 | GET | `/api/exams/{id}/blueprint` | teacher | Blueprint của đề đã lưu |
 | POST | `/api/exams/{id}/publish` | teacher | **Bổ sung** — chuyển nháp sang xuất bản. FE hiện làm việc này bằng cách gửi PUT với `lifecycle` bỏ trống |
-| POST | `/api/exams/{id}/duplicate` | teacher | **Bổ sung** — nhân bản đề của chính mình thành một bản **nháp** mới, cùng cấu hình, tên thêm " (bản sao)", chưa giao cho ai. Lối ra khi cấu hình đã khoá. Đề của giáo viên khác trả 404 |
+| POST | `/api/exams/{id}/duplicate` | teacher | **Bổ sung** — nhân bản đề của chính mình thành một bản **nháp** mới, cùng cấu hình, tên thêm " (bản sao)", chưa giao cho ai. Lối ra khi cấu hình đã khoá. Đề của giáo viên khác trả 404; giáo viên chưa được gán môn trả 403 như khi tạo đề |
 | GET | `/api/exams/{id}/assignments` | teacher | Danh sách học sinh đã giao kèm trạng thái làm bài. Mỗi dòng mang khung giờ thật của em (`openAt`, `closeAt`, `hasScheduleOverride`, `assignedViaGroupId`); `expired` tính theo khung giờ đó |
 | POST | `/api/exams/{id}/assignments` | teacher | Giao bài cho học sinh lẻ và/hoặc cả nhóm, tuỳ chọn kèm khung giờ riêng (`openAt` + `closeAt`, phải chứa trọn `durationMinutes`, nếu không 400). Gửi lại một lớp kèm khung giờ là sửa giờ cho em chưa bắt đầu (`scheduleUpdatedCount`, `scheduleKeptStartedCount`) |
 | DELETE | `/api/exams/{examId}/assignments/{assignmentId}` | teacher | **Bổ sung** — thu hồi bài đã giao. Giao nhầm lớp là chuyện thường, mà endpoint giao bài lại cố ý idempotent nên không có đường lùi |
@@ -179,6 +189,18 @@ JWT claims tối thiểu: `sub` = userId, `role`, `name`, `subject_id` (giáo vi
 | GET | `/api/exam-attempts/{attemptId}/time` | student | **Bổ sung** — đồng bộ đồng hồ với giờ server |
 | PUT | `/api/exam-attempts/{attemptId}/answers` | student | Lưu nháp. Ngữ nghĩa **MERGE** theo `questionId`, không thay cả bộ |
 | POST | `/api/exam-attempts/{attemptId}/submit` | student | Nộp bài và **chấm điểm ở server** |
+
+**409 hay 410 ở ba endpoint làm bài.** 410 nghĩa là "thời gian đã hết", 409 nghĩa là "trạng thái hiện tại không cho làm việc này":
+
+| Tình huống | `POST /exam-attempts` | `GET /exam-attempts/{id}` | `PUT .../answers` |
+|---|---|---|---|
+| Đề nháp hoặc chưa tới giờ mở | 409 | — | — |
+| Khung giờ đã đóng mà em chưa từng vào | 410 | — | — |
+| Lượt còn hạn | 200 (làm tiếp, không cấp thêm giờ) | 200 | 200 |
+| Lượt đã quá `expiresAt` hoặc đã bị chốt vì hết giờ — dù tiến trình nền hay chính request này chốt | 410 | 410 | 410 |
+| Em đã tự nộp trước giờ | 409 | 409 | 409 |
+
+`POST .../submit` sau khi đã chốt (vì hết giờ hoặc em đã nộp) trả lại đúng kết quả cũ với 200 — nộp bài là idempotent.
 
 ### 4.8 Kết quả và tổng quan
 
@@ -239,14 +261,15 @@ Mock hiện tra ngược `mockQuestions` theo id lúc chấm — điều đó c�
 
 - **Khử trùng lặp ở BE** bằng `HashSet`: `targets = distinct(studentIds hợp lệ ∪ học sinh của groupIds)`. FE có tính số hiển thị nhưng đó chỉ để hiện lên màn hình.
 - **Idempotent** theo cặp `(examId, studentId)` — unique index. Giao lại cho người đã có bài thì bỏ qua, giữ nguyên `status`/`attemptId`/`score`.
-- **Kiểm tra phạm vi:** học sinh phải thuộc nhóm do chính giáo viên đó quản lý. Không cho giáo viên A giao bài cho lớp của giáo viên B bằng cách đoán id.
-- **Học sinh bị khoá:** FE hiển thị nhãn "Đã khóa" nhưng vẫn cho chọn và vẫn tạo assignment. BE nên **bỏ qua** và trả `skippedLocked` để giáo viên biết. Tài khoản chờ xoá hoặc đã xoá cũng bị bỏ qua nhưng đếm riêng vào `skippedRetired` — em đã rời trường thì không có gì để mở khoá.
+- **Kiểm tra phạm vi:** học sinh phải thuộc một lớp đã công bố mà giáo viên đó được phân công. Không cho giáo viên A giao bài cho lớp của giáo viên B bằng cách đoán id. Em ngoài phạm vi đếm vào `skippedOutOfScope`, xét **trước** trạng thái tài khoản.
+- **Học sinh bị khoá:** FE hiển thị nhãn "Đã khóa" nhưng vẫn cho chọn và vẫn tạo assignment. BE **bỏ qua** và trả `skippedLocked` để giáo viên biết. Tài khoản đang chờ xoá cũng bị bỏ qua nhưng đếm riêng vào `skippedRetired` — em đã rời trường thì không có gì để mở khoá. Tài khoản đã xoá hẳn đã bị gỡ khỏi lớp nên rơi vào `skippedOutOfScope`.
 - **Chặn giao đề đang là nháp.** FE hoàn toàn không kiểm điều này.
+- **`randomizePerStudent` chốt từ lần giao đầu tiên.** Đề đã có lượt giao mà request đổi cờ thì **409**; muốn đổi thì thu hồi hết rồi giao lại.
 
 ### Lưu nháp và nộp bài
 
 - **Chống ghi đè ngược thứ tự:** autosave chạy mỗi 800ms; mạng chậm khiến gói cũ tới sau gói mới. Server giữ `lastAppliedSeq` cho mỗi attempt và bỏ qua request có `clientSeq` nhỏ hơn. **Không dùng timestamp client** làm mốc.
-- **Hết giờ không nhận nháp mới:** `PUT answers` trả **410** khi `serverNow > expiresAt`.
+- **Hết giờ không nhận nháp mới:** `PUT answers` trả **410** khi `serverNow > expiresAt`, và vẫn 410 khi lượt đã bị chốt vì hết giờ từ trước (bảng 409/410 ở §4.7).
 - **Validate đáp án gửi lên:** `questionId` phải thuộc đúng attempt đó, `answerId` phải thuộc đúng `questionId` đó. Trả **422** nếu lạ, không âm thầm bỏ qua.
 - **Nộp idempotent:** nộp lại cùng `attemptId` trả đúng kết quả cũ (200), không tạo bản ghi thứ hai. FE có cờ chống bấm hai lần, nhưng retry sau timeout mạng vẫn tới server hai lần — chỉ khoá ở DB mới chắc.
 
@@ -262,7 +285,7 @@ Mock hiện tra ngược `mockQuestions` theo id lúc chấm — điều đó c�
 | `Student.averageScore` | AVG(score) trên các lượt `graded`, làm tròn 1 chữ số |
 | `Student.deletionScheduledAt` | `deletionRequestedAt` + 60 ngày, chỉ có khi `status = pendingDeletion`. Server tính sẵn — FE không tự cộng ngày |
 | `AddMembersResponse.skippedRetired` | Số tài khoản chờ xoá hoặc đã xoá bị bỏ qua, không đưa vào lớp |
-| `AssignExamResponse.skippedRetired` | Số tài khoản chờ xoá hoặc đã xoá bị bỏ qua khi giao bài — không tính vào `skippedLocked` |
+| `AssignExamResponse.skippedRetired` | Số tài khoản **đang chờ xoá** bị bỏ qua khi giao bài — không tính vào `skippedLocked`. Tài khoản đã xoá hẳn không có lớp nên nằm trong `skippedOutOfScope` |
 | `studentStatus` trên `ExamAssignment`, `ResultSummary`, `AttemptDetail` | Trạng thái tài khoản của em (`active` · `locked` · `pendingDeletion` · `deleted`), cùng chuỗi với `Student.status`. Tách khỏi `status` — trường đó là trạng thái lượt làm bài |
 | `StudentGroup.studentCount` | COUNT thành viên đang hoạt động hoặc đang khoá — không tính tài khoản chờ xoá |
 | `Student.group` (tên) | dữ liệu JOIN, **chỉ đọc** — client gửi lên thì bỏ qua |
@@ -300,10 +323,16 @@ User      (Id, FullName, Email, Username, PasswordHash, SecurityStamp,
            SubjectId      FK -> Subject.Id  NULL,     -- NULL với Admin và Student
            Code           NULL,                        -- mã học sinh
            GroupId        FK -> StudentGroup.Id NULL,
-           Status,        -- Active | Locked
+           Status,        -- Active | Locked | PendingDeletion | Deleted
+           DeletionReason, DeletionRequestedAt, DeletionRequestedByUserId, DeletedAt,
            Phone, School, AvatarColor, CreatedAt, MustChangePassword)
 
-StudentGroup (Id, Name, Description, OwnerTeacherId FK -> User.Id, CreatedAt)
+StudentGroup (Id, Name, Description,
+              CreatedByUserId FK -> User.Id,   -- quản trị viên đã lập lớp, chỉ để truy vết
+              IsPublished, PublishedAt, CreatedAt)
+
+StudentGroupTeacher (StudentGroupId FK, TeacherId FK -> User.Id, AssignedAt,
+                     PRIMARY KEY (StudentGroupId, TeacherId))   -- một lớp nhiều giáo viên
 
 Question  (Id, Content, ImageUrl, Topic, Difficulty, DefaultPoint, Status,
            SubjectId       FK -> Subject.Id  NOT NULL,  -- PHẠM VI: ai được thấy
@@ -319,6 +348,8 @@ Exam      (Id, Title, Description, Topic, DurationMinutes, TotalQuestions,
            CreatedByUserId FK -> User.Id)
 
 ExamAssignment (Id, ExamId FK, StudentId FK, AssignedAt,
+                AssignedViaGroupId FK -> StudentGroup.Id NULL,
+                OpenAt NULL, CloseAt NULL,        -- khung giờ riêng của lớp; NULL = theo lịch đề
                 UNIQUE (ExamId, StudentId))
 
 ExamPaper      (Id, ExamId FK, AssignmentId FK NULL)   -- NULL = đề chung cho cả lớp
@@ -369,8 +400,8 @@ Phiên bị thu hồi (§5 Tài khoản): negotiate và request mở kết nối
 | `ExamAssigned` | student | Giáo viên giao bài, chỉ khi `notify = true` |
 | `ExamSubmitted` | teacher | Học sinh nộp bài. Bắn cả vào group `exam:{examId}` để màn theo dõi tự tăng `submittedCount` |
 | `AutoSubmitted` | teacher + student | Hết giờ, hệ thống tự nộp. **Hai payload khác nhau** cho hai vai trò |
-| `DeadlineSoon` | student (chưa nộp) + teacher | Bài sắp đóng |
-| `ExamUpdated` | student | Giáo viên sửa đề đã giao (đổi lịch, đổi thời lượng) |
+| `DeadlineSoon` | student (chưa nộp) + teacher | Bài sắp đóng. **Chưa phát** — chưa có tiến trình nào sinh sự kiện này |
+| `ExamUpdated` | student | Giáo viên sửa đề đã giao (đổi lịch, đổi thời lượng). **Chưa phát** — sửa đề hiện không đẩy gì xuống học sinh |
 | `UnreadCountChanged` | tất cả | Thay thế trực tiếp cho việc poll `GET /notifications/unread-count` |
 
 > **Sinh thông báo là việc của BE**, trong **cùng transaction** với hành động nghiệp vụ. FE hiện tự `unshift` vào mảng mock — lên BE thì client không được phép tạo thông báo.

@@ -453,7 +453,10 @@ expect_json   "  autoSubmitted = true" autoSubmitted true
 expect_number "  score = 0 (chưa kịp trả lời câu nào)" score 0
 expect_status "  answeredCount = 0" 0 "$(json_field answeredCount)"
 
-expect_status "vào lại lượt đã hết giờ → 409 (đã nộp rồi)" 409 \
+# Bài bị chốt vì hết giờ: vào lại nhận 410 "hết giờ" như lưu nháp và nạp lại phiên, dù chính lời gọi
+# hay tiến trình tự nộp bài chốt trước. Trước đây nhánh này trả 409 "đã nộp rồi" nếu tiến trình nền
+# thắng cuộc đua. Bài em tự nộp trước giờ vẫn là 409 — xem phép "bắt đầu lại đúng bài đó" ở trên.
+expect_status "vào lại lượt đã chốt vì hết giờ → 410 (hết giờ)" 410 \
   "$(call POST /api/exam-attempts "$STUDENT_B" "{\"assignmentId\":$ASSIGN_B_SHORT}")"
 
 # ── Không cho xem điểm ───────────────────────────────────────────────────────────

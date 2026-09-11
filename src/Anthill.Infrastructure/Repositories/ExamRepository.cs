@@ -69,6 +69,38 @@ public class ExamRepository : GenericRepository<Exam>, IExamRepository
     public async Task<bool> IsOwnedByAsync(int examId, int teacherId, CancellationToken cancellationToken = default) =>
         await DbSet.AnyAsync(e => e.Id == examId && e.CreatedByUserId == teacherId, cancellationToken);
 
+    /// <inheritdoc />
+    public async Task<Exam?> LockForEditAsync(int examId, CancellationToken cancellationToken = default)
+    {
+        // Phải hỏi trước khi truy vấn, vì ngay sau nó thì dòng nào cũng đã nằm trong change tracker.
+        var trackedBefore = Context.ChangeTracker
+            .Entries<Exam>()
+            .Any(entry => entry.Entity.Id == examId);
+
+        // Không nối thêm toán tử LINQ nào phía sau, để EF gửi thẳng câu lệnh này xuống thay vì bọc nó vào
+        // một truy vấn con.
+        var rows = await DbSet
+            .FromSql($"""SELECT * FROM "Exams" WHERE "Id" = {examId} FOR NO KEY UPDATE""")
+            .ToListAsync(cancellationToken);
+
+        if (rows.Count == 0)
+        {
+            return null;
+        }
+
+        var exam = rows[0];
+
+        if (trackedBefore)
+        {
+            // Đề đã được đọc lúc kiểm quyền, trước khi xếp hàng chờ khoá. EF trả lại chính đối tượng đó với
+            // giá trị cũ, mà đem giá trị cũ ra so với request là quyết định trên một cấu hình người khác vừa
+            // sửa xong. Đọc lại ở đây an toàn vì dòng đã bị khoá.
+            await Context.Entry(exam).ReloadAsync(cancellationToken);
+        }
+
+        return exam;
+    }
+
     public async Task<ExamPaper?> GetSharedPaperAsync(int examId, CancellationToken cancellationToken = default) =>
         await Context.ExamPapers
             .FirstOrDefaultAsync(p => p.ExamId == examId && p.AssignmentId == null, cancellationToken);
