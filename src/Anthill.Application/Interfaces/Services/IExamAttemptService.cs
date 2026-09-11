@@ -80,7 +80,8 @@ public interface IExamAttemptService
 
     /// <summary>Lưu nháp, ngữ nghĩa MERGE theo <c>questionId</c>.</summary>
     /// <remarks>
-    /// Trả <see cref="ErrorCode.Gone"/> (410) khi đã quá <c>ExpiresAt</c>, và
+    /// Trả <see cref="ErrorCode.Gone"/> (410) khi đã quá <c>ExpiresAt</c> — kể cả khi tiến trình nền
+    /// đã chốt lượt đó trước lời gọi này; 409 chỉ dành cho bài học sinh tự nộp trước giờ — và
     /// <see cref="ErrorCode.Unprocessable"/> (422) khi <c>questionId</c> không thuộc lượt này hoặc
     /// <c>answerId</c> không thuộc <c>questionId</c> đó.
     /// </remarks>

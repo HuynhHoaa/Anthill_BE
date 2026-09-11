@@ -46,8 +46,10 @@ Giới hạn đã biết:
   trả lỗi kèm lý do và cắt kết nối) hoặc tới khi token hết hạn (server tự đóng kết nối nhờ
   `CloseOnAuthenticationExpiration`). Negotiate, mở kết nối mới và mọi request REST của phiên đó thì bị
   từ chối ngay. Đóng hẳn khe này cần ghi lại connectionId của từng tài khoản để cắt ngay lúc xoay stamp.
-- Lưu nháp sau khi hết giờ trả 410, nhưng nếu `AutoSubmitExpiredAttemptsService` đã chốt bài trước gói
-  nháp thì trả 409 (lượt không còn ở trạng thái đang làm). Client phải xử lý cả hai mã như "hết giờ".
+- Lưu nháp và nạp lại phiên sau khi hết giờ luôn trả 410, dù `AutoSubmitExpiredAttemptsService` có chốt bài
+  trước hay không; 409 chỉ dành cho bài học sinh tự nộp trước giờ. Riêng `POST /api/exam-attempts` trên
+  lượt vừa hết giờ vẫn còn cuộc đua đó: 410 nếu chính lời gọi chốt bài, 409 "đã nộp rồi" nếu tiến trình nền
+  chốt trước.
 
 ## API
 
@@ -244,9 +246,8 @@ chỉ quản trị viên được làm.
 
 `step6-attempts.sh` có một quãng chờ 30 giây thật và `per-class-schedule.sh` chờ tới mốc giờ thật, để
 chứng minh hạn giờ tính bằng đồng hồ server. Phép kiểm "lưu nháp sau khi hết giờ → 410" trong
-`step6-attempts.sh` chập chờn: tiến trình tự nộp bài chốt lượt trước gói nháp thì API trả 409 (xem giới
-hạn ở phần Trạng thái). Muốn chạy tất định thì bật API với `AutoSubmit__Enabled=false` hoặc profile
-`http-no-autosubmit`.
+`step6-attempts.sh` cho cùng kết quả dù tiến trình tự nộp bài có chốt lượt trước gói nháp hay không, nên
+không cần tắt tiến trình đó khi chạy script.
 
 ## Phát triển
 

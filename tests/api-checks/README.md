@@ -67,17 +67,10 @@ bước dọn gỡ học sinh khỏi lớp và xoá lớp bằng token giáo vi�
 hết giờ. `per-class-schedule.sh` cũng chờ tới mốc giờ thật. Không có quãng chờ đó thì không phép nào
 chứng minh được rằng hạn nộp tính bằng đồng hồ server — mà đó lại là quy tắc dễ cài sai nhất.
 
-## Một phép kiểm chập chờn
+## Phép kiểm hết giờ và tiến trình tự nộp bài
 
-API có một **tiến trình nền tự nộp bài** chạy mỗi 30 giây. Phép "lưu nháp sau khi hết giờ → 410"
-trong `step6-attempts.sh` hỏng khoảng một nửa số lần chạy trọn bộ: khi tiến trình nền chốt lượt làm
-bài trước gói nháp của script, API trả 409 (lượt không còn ở trạng thái đang làm) thay vì 410.
-
-Muốn chạy tất định thì tắt tiến trình đó khi khởi động API (hoặc dùng profile `http-no-autosubmit`):
-
-```bash
-AutoSubmit__Enabled=false dotnet run --project src/Anthill.Api
-```
-
-Tắt nó không làm hỏng phép nào khác: lượt quá hạn trong `step6-attempts.sh` được chốt ngay ở lời gọi
-lưu nháp, nên phép `autoSubmitted = true` vẫn đạt.
+API có một **tiến trình nền tự nộp bài** chạy mỗi 30 giây, nên lượt quá hạn trong `step6-attempts.sh`
+có thể bị chốt bởi tiến trình đó hoặc bởi chính gói nháp của script. Phép "lưu nháp sau khi hết giờ
+→ 410" từng chập chờn vì hai đường cho hai mã (410 và 409); giờ cả hai đường đều trả 410, và script
+gửi thêm một gói nháp thứ hai để lần nào cũng đi qua nhánh "đã bị chốt trước". Chạy với
+`AutoSubmit__Enabled=true` hay `false` (profile `http-no-autosubmit`) đều phải đạt.

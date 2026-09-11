@@ -436,7 +436,15 @@ sleep 30
 expect_status "lưu nháp sau khi hết giờ → 410" 410 \
   "$(call PUT "/api/exam-attempts/$SHORT_ATTEMPT/answers" "$STUDENT_B" '{"clientSeq":1,"answers":[]}')"
 
-# Lượt quá hạn đã bị chốt sổ ngay ở lời gọi trên, nên nộp lại chỉ đọc lại kết quả đã chấm.
+# Tới đây lượt chắc chắn đã bị chốt — ở lời gọi trên hoặc bởi tiến trình tự nộp bài chạy trước nó.
+# Hai lời gọi dưới đi qua nhánh "đã chốt rồi" ở mọi lần chạy, và vẫn phải nói "hết giờ" chứ không
+# phải "lượt đã kết thúc": trước đây nhánh đó trả 409 nên phép trên chập chờn theo lịch quét.
+expect_status "lưu nháp lần nữa trên lượt đã chốt vì hết giờ → 410" 410 \
+  "$(call PUT "/api/exam-attempts/$SHORT_ATTEMPT/answers" "$STUDENT_B" '{"clientSeq":2,"answers":[]}')"
+expect_status "nạp lại phiên đã chốt vì hết giờ → 410" 410 \
+  "$(call GET "/api/exam-attempts/$SHORT_ATTEMPT" "$STUDENT_B")"
+
+# Lượt quá hạn đã bị chốt sổ, nên nộp lại chỉ đọc lại kết quả đã chấm.
 expect_status "nộp sau khi hết giờ → 200, đọc lại bản đã chốt" 200 \
   "$(call POST "/api/exam-attempts/$SHORT_ATTEMPT/submit" "$STUDENT_B" '{"answers":[]}')"
 expect_json   "  status = graded"      status graded

@@ -203,9 +203,13 @@ public sealed class ExamAttemptService : IExamAttemptService
 
         // Bài đã nộp thì không dựng lại màn hình làm bài nữa: đưa lại một phiên gõ được cho một lượt
         // đã chấm chỉ mời thêm một lần nộp thứ hai. Xem lại từng câu là việc của §4.8.
+        // Bài bị chốt vì hết giờ thì báo đúng "hết giờ" như nhánh tự chốt ngay dưới, dù tiến trình
+        // nền có chốt trước lời gọi này hay không — cùng lý do như ở SaveAnswersAsync.
         if (attempt.Status != AssignmentStatus.InProgress)
         {
-            return Result.Conflict<AttemptSessionDto>(NotInProgressMessage);
+            return AttemptClosure.ClosedByDeadline(attempt.Status, attempt.AutoSubmitted, attempt.ExpiresAt, now)
+                ? Result.Gone<AttemptSessionDto>(ExpiredMessage)
+                : Result.Conflict<AttemptSessionDto>(NotInProgressMessage);
         }
 
         if (AttemptDeadline.IsExpired(attempt.ExpiresAt, now))
@@ -270,9 +274,14 @@ public sealed class ExamAttemptService : IExamAttemptService
 
         // Đọc dưới khoá nên đây là trạng thái thật lúc này: một lần nộp bài chạy song song thì hoặc
         // đã xong hẳn và nhìn thấy được ở đây, hoặc còn đang chờ chính khoá này.
+        //
+        // Lượt đã bị tiến trình nền chốt vì hết giờ vẫn phải nhận 410 như nhánh tự chốt ngay dưới.
+        // Trả 409 ở đây thì cùng một gói nháp sau giờ hết nhận hai mã khác nhau tuỳ ai chốt trước.
         if (attempt.Status != AssignmentStatus.InProgress)
         {
-            return Result.Conflict<SaveAnswersResponse>(NotInProgressMessage);
+            return AttemptClosure.ClosedByDeadline(attempt.Status, attempt.AutoSubmitted, attempt.ExpiresAt, now)
+                ? Result.Gone<SaveAnswersResponse>(ExpiredMessage)
+                : Result.Conflict<SaveAnswersResponse>(NotInProgressMessage);
         }
 
         // §5: hết giờ thì không nhận nháp mới, trả 410. Chốt sổ luôn tại đây để lần gọi sau nhận
