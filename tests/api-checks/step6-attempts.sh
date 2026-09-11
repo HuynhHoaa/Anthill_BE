@@ -41,15 +41,16 @@ cleanup() {
 
   # Tài khoản học sinh cố ý KHÔNG có endpoint xoá (§4.2): khoá chứ không xoá, để kết quả các em đã
   # làm vẫn tra cứu được. Gỡ khỏi nhóm rồi khoá lại — nhóm mới xoá được, còn tài khoản nằm im.
+  # Gỡ khỏi lớp và xoá lớp là việc của quản trị viên: token giáo viên nhận 403 và để sót lớp thử.
   for id in "${STUDENTS[@]}"; do
     if [[ -n "$GROUP_ID" ]]; then
-      [[ "$(call DELETE "/api/student-groups/$GROUP_ID/students/$id" "$TEACHER")" == "200" ]] && members=$((members + 1))
+      [[ "$(call DELETE "/api/student-groups/$GROUP_ID/students/$id" "$ADMIN")" == "200" ]] && members=$((members + 1))
     fi
     [[ "$(call PATCH "/api/students/$id/status" "$ADMIN" '{"status":"locked"}')" == "200" ]] && locked=$((locked + 1))
   done
 
   for id in "${GROUP_IDS[@]}"; do
-    [[ "$(call DELETE "/api/student-groups/$id" "$TEACHER")" == "200" ]] && groups=$((groups + 1))
+    [[ "$(call DELETE "/api/student-groups/$id" "$ADMIN")" == "200" ]] && groups=$((groups + 1))
   done
 
   rm -f "$SESSION_FILE"

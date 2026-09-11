@@ -70,8 +70,7 @@ public sealed class LocalFileStorageService : IFileService
         // Chặn theo Length trước khi đọc một byte nào: đọc rồi mới đo nghĩa là đĩa đã phải chứa nó.
         if (request.Length > _options.MaxBytes)
         {
-            return Result.Failure<UploadedFileDto>(
-                $"Ảnh vượt quá dung lượng cho phép ({_options.MaxBytes / (1024 * 1024)} MB).");
+            return Result.Failure<UploadedFileDto>(_options.TooLargeMessage);
         }
 
         var extension = Path.GetExtension(request.FileName)?.Trim() ?? string.Empty;

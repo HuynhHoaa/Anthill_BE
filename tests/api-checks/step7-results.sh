@@ -20,11 +20,12 @@ cleanup() {
   local exams=0 questions=0 groups=0
   for id in "${EXAMS[@]}";     do [[ "$(call DELETE "/api/exams/$id" "$TEACHER")" == "200" ]] && exams=$((exams + 1)); done
   for id in "${QUESTIONS[@]}"; do [[ "$(call DELETE "/api/questions/$id" "$TEACHER")" == "200" ]] && questions=$((questions + 1)); done
+  # Go khoi lop va xoa lop la viec cua quan tri vien: token giao vien nhan 403 va de sot lop thu.
   for id in "${STUDENTS[@]}"; do
-    call DELETE "/api/student-groups/$GROUP_ID/students/$id" "$TEACHER" > /dev/null
+    call DELETE "/api/student-groups/$GROUP_ID/students/$id" "$ADMIN" > /dev/null
     call PATCH "/api/students/$id/status" "$ADMIN" '{"status":"locked"}' > /dev/null
   done
-  for id in "${GROUP_IDS[@]}"; do [[ "$(call DELETE "/api/student-groups/$id" "$TEACHER")" == "200" ]] && groups=$((groups + 1)); done
+  for id in "${GROUP_IDS[@]}"; do [[ "$(call DELETE "/api/student-groups/$id" "$ADMIN")" == "200" ]] && groups=$((groups + 1)); done
   printf '  xoa %d/%d de · %d/%d cau hoi · %d/%d nhom · khoa %d hoc sinh\n' \
     "$exams" "${#EXAMS[@]}" "$questions" "${#QUESTIONS[@]}" "$groups" "${#GROUP_IDS[@]}" "${#STUDENTS[@]}"
   printf '  de da co bai nop thi khong xoa duoc — dung thiet ke, khong phai loi don dep.\n'

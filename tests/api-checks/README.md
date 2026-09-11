@@ -36,9 +36,7 @@ lúc này đổi lại là một tầng hạ tầng phải bảo trì để ki�
 
 Mỗi script **tự dựng dữ liệu của chính nó** nên không phụ thuộc vào việc database đang có sẵn những
 gì, và dọn trong `trap EXIT` kể cả khi hỏng giữa chừng. Dọn chỉ được phần xoá được: đề đã có bài nộp
-được giữ lại, học sinh chỉ bị khoá chứ không xoá. Riêng `step5` tới `step8` còn để lại lớp thử, vì
-bước dọn gỡ học sinh khỏi lớp và xoá lớp bằng token giáo viên, mà hai thao tác đó chỉ quản trị viên
-được làm.
+được giữ lại, học sinh chỉ bị khoá chứ không xoá.
 
 ## Các bộ hiện có
 

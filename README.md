@@ -128,9 +128,10 @@ Ngoài ra:
 - Claim `role` sinh từ cột `User.Role`; trường `role` client gửi lúc đăng nhập chỉ để đối chiếu, sai
   là 403. (`AuthService.LoginAsync`)
 - Upload qua bốn lớp kiểm: giới hạn 4 MB, lọc phần mở rộng, đối chiếu magic bytes với phần mở rộng, và
-  tên file trên đĩa là GUID do server sinh. SVG cố ý bị loại vì chứa được `<script>`; ảnh được phục vụ
+  tên file trên đĩa là GUID do server sinh. Giới hạn dung lượng chặn ngay ở đầu vào, trước khi form được
+  đọc, và trả 400 kèm thông điệp. SVG cố ý bị loại vì chứa được `<script>`; ảnh được phục vụ
   với Content-Type lấy từ bảng khai sẵn theo phần mở rộng, kèm `X-Content-Type-Options: nosniff`.
-  (`LocalFileStorageService`, `ApplicationBuilderExtensions.UseUploadedFiles`)
+  (`UploadSizeLimitAttribute`, `LocalFileStorageService`, `ApplicationBuilderExtensions.UseUploadedFiles`)
 - Xoá mềm có lý do, ẩn danh sau 60 ngày. Chỉ quản trị viên yêu cầu xoá được, lý do từ 10 ký tự; tài
   khoản chờ xoá không đăng nhập được và khôi phục được trong 60 ngày. Hết hạn,
   `PurgeDeletedStudentsService` (quét sáu giờ một lần) gọi `StudentAnonymizer`: dữ liệu cá nhân bị thay
@@ -240,9 +241,7 @@ for s in tests/api-checks/*.sh; do [ "$(basename "$s")" = lib.sh ] || bash "$s";
 ```
 
 Mỗi script tự dựng dữ liệu, dọn trong `trap EXIT` phần xoá được (đề đã có bài nộp được giữ lại, học
-sinh chỉ bị khoá), và thoát với mã khác 0 khi có phép kiểm hỏng. Riêng `step5` tới `step8` còn để lại
-lớp thử của chúng, vì bước dọn gỡ học sinh khỏi lớp và xoá lớp bằng token giáo viên, mà hai thao tác đó
-chỉ quản trị viên được làm.
+sinh chỉ bị khoá), và thoát với mã khác 0 khi có phép kiểm hỏng.
 
 `step6-attempts.sh` có một quãng chờ 30 giây thật và `per-class-schedule.sh` chờ tới mốc giờ thật, để
 chứng minh hạn giờ tính bằng đồng hồ server. Phép kiểm "lưu nháp sau khi hết giờ → 410" trong
