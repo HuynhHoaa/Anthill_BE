@@ -58,12 +58,18 @@ public static class ExamMappingExtensions
     ///
     /// Trạng thái nháp vẫn đọc từ đề: một đề chưa xuất bản thì không lớp nào làm được, bất kể lịch
     /// riêng đặt ra sao.
+    ///
+    /// Mọi đường phía học sinh phải dùng bản này; bản nhận <see cref="Exam"/> ở trên chỉ dành cho
+    /// góc nhìn của giáo viên về chính đề đó.
     /// </remarks>
+    /// <exception cref="InvalidOperationException">Exam chưa được nạp.</exception>
     public static ExamLifecycle ResolveLifecycle(this ExamAssignment assignment, DateTime asOfUtc)
     {
         ArgumentNullException.ThrowIfNull(assignment);
 
-        if (assignment.Exam.IsDraft)
+        // Cờ nháp chỉ nằm trên đề, nên hàm này cần Exam kể cả khi bản ghi có đủ giờ riêng — khác
+        // Resolve, vốn tính được lịch mà không cần đề trong trường hợp đó.
+        if (AssignmentSchedule.RequireExam(assignment).IsDraft)
         {
             return ExamLifecycle.Draft;
         }

@@ -41,16 +41,24 @@ public interface IRealtimeNotificationService
         AutoSubmittedTeacherEvent teacherPayload,
         CancellationToken cancellationToken = default);
 
-    /// <summary>Bài sắp đóng. Người nhận: học sinh <b>chưa nộp</b> và giáo viên sở hữu đề.</summary>
+    /// <summary>Bài sắp đóng. Người nhận: <b>một</b> học sinh chưa nộp, và giáo viên sở hữu đề.</summary>
+    /// <remarks>
+    /// Mỗi lần gọi là một em, vì từ khi có khung giờ riêng theo lớp thì hai em cùng một đề không còn
+    /// chung hạn nộp. Một payload cho cả danh sách là báo giờ sai cho mọi lớp không trùng lịch chung.
+    /// </remarks>
     Task DeadlineSoonAsync(
-        IEnumerable<int> studentUserIds,
+        int studentUserId,
         int teacherUserId,
         DeadlineSoonEvent payload,
         CancellationToken cancellationToken = default);
 
-    /// <summary>Giáo viên sửa đề đã giao (đổi lịch, đổi thời lượng). Người nhận: học sinh đã được giao.</summary>
+    /// <summary>Giáo viên sửa đề đã giao (đổi lịch, đổi thời lượng). Người nhận: <b>một</b> học sinh đã được giao.</summary>
+    /// <remarks>
+    /// Mỗi lần gọi là một em, payload dựng bằng <c>ExamAssignmentMappingExtensions.ToUpdatedEvent</c>
+    /// để mang khung giờ thật của em đó. Em có giờ riêng không bị ảnh hưởng khi chỉ lịch chung đổi.
+    /// </remarks>
     Task ExamUpdatedAsync(
-        IEnumerable<int> studentUserIds,
+        int studentUserId,
         ExamUpdatedEvent payload,
         CancellationToken cancellationToken = default);
 
@@ -71,7 +79,14 @@ public sealed record ExamAssignedEvent
     public required string ExamTitle { get; init; }
     public required string TeacherName { get; init; }
     public required int DurationMinutes { get; init; }
+
+    /// <summary>
+    /// Giờ mở CÓ HIỆU LỰC của chính em nhận sự kiện — lịch riêng của lớp nếu có, ngược lại là lịch
+    /// chung của đề. Luôn trùng với <c>openAt</c> của <c>GET /api/my/exams</c>.
+    /// </summary>
     public required DateTime OpenAt { get; init; }
+
+    /// <summary>Giờ đóng CÓ HIỆU LỰC của chính em nhận sự kiện. Cùng quy tắc với <see cref="OpenAt"/>.</summary>
     public required DateTime CloseAt { get; init; }
 }
 
@@ -117,18 +132,35 @@ public sealed record AutoSubmittedTeacherEvent
 public sealed record DeadlineSoonEvent
 {
     public required int ExamId { get; init; }
+
+    /// <summary>Bản ghi giao bài của chính em nhận sự kiện — hạn nộp tính theo bản ghi, không theo đề.</summary>
+    public required int AssignmentId { get; init; }
+
     public required string ExamTitle { get; init; }
+
+    /// <summary>
+    /// Hạn thật của em này: <c>ExpiresAt</c> của lượt đang làm, hoặc giờ đóng có hiệu lực
+    /// (<c>AssignmentSchedule.Resolve</c>) khi em chưa bắt đầu. Không bao giờ là <c>exam.CloseAt</c> trần.
+    /// </summary>
     public required DateTime CloseAt { get; init; }
 
-    /// <summary>Số phút còn lại tại thời điểm bắn, tính theo đồng hồ server.</summary>
+    /// <summary>Số phút còn lại tới <see cref="CloseAt"/> tại thời điểm bắn, tính theo đồng hồ server.</summary>
     public required int MinutesRemaining { get; init; }
 }
 
 public sealed record ExamUpdatedEvent
 {
     public required int ExamId { get; init; }
+
+    /// <summary>Bản ghi giao bài của chính em nhận sự kiện.</summary>
+    public required int AssignmentId { get; init; }
+
     public required string ExamTitle { get; init; }
     public required int DurationMinutes { get; init; }
+
+    /// <summary>Giờ mở CÓ HIỆU LỰC của em nhận sự kiện — lịch riêng của lớp nếu có, ngược lại lịch chung.</summary>
     public required DateTime OpenAt { get; init; }
+
+    /// <summary>Giờ đóng CÓ HIỆU LỰC của em nhận sự kiện. Cùng quy tắc với <see cref="OpenAt"/>.</summary>
     public required DateTime CloseAt { get; init; }
 }

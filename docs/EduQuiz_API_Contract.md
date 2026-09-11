@@ -71,7 +71,7 @@ Và: **phải có background job** quét các attempt `inprogress` quá hạn đ
 Mock hiện lấy hồ sơ theo đúng role client chọn (`getDefaultProfile(payload.role)`). Bê nguyên logic đó lên BE là **leo thang quyền tức thì** — gửi `role: 'admin'` là thành admin. Trường `role` trong request chỉ dùng để đối chiếu, hoặc bỏ hẳn.
 
 **⑥ Quyền xem đáp án thực thi ở server.**
-Quy tắc: giáo viên sở hữu đề luôn xem được; học sinh chỉ xem khi *(attempt là của mình)* **và** *(status = graded)* **và** *(exam.showResultAfterSubmit = true)*. Khi không đủ điều kiện, response phải **không chứa** `correctAnswerId`/`isCorrect` — không phải ẩn ở giao diện.
+Quy tắc: giáo viên sở hữu đề luôn xem được. Học sinh xem **điểm** (`score`, `maxScore`, `correctCount`) khi *(attempt là của mình)* **và** *(status = graded)* **và** *(exam.showResultAfterSubmit = true)*. **Đáp án từng câu** (`correctAnswerId`, `isCorrect`) cần thêm điều kiện thứ tư: *(mọi lượt giao của đề đã qua giờ đóng có hiệu lực — lịch riêng của lớp nếu có, ngược lại lịch chung của đề)* — một đề giao cho nhiều lớp với nhiều khung giờ, và em lớp làm trước không được cầm đáp án chuyền cho lớp chưa thi. Khi không đủ điều kiện, response phải **không chứa** các trường đó — không phải ẩn ở giao diện. `GET /api/results/{attemptId}` trả kèm `answersVisibleAt` (mốc đáp án sẽ mở; vắng mặt khi đã mở, hoặc khi không có mốc nào để hẹn).
 
 ---
 
@@ -161,8 +161,8 @@ JWT claims tối thiểu: `sub` = userId, `role`, `name`, `subject_id` (giáo vi
 | POST | `/api/exams/blueprint-preview` | teacher | **Trái tim của tính năng.** Nhận cấu hình đang gõ dở, trả số câu cần / số câu có / hợp lệ hay không |
 | GET | `/api/exams/{id}/blueprint` | teacher | Blueprint của đề đã lưu |
 | POST | `/api/exams/{id}/publish` | teacher | **Bổ sung** — chuyển nháp sang xuất bản. FE hiện làm việc này bằng cách gửi PUT với `lifecycle` bỏ trống |
-| GET | `/api/exams/{id}/assignments` | teacher | Danh sách học sinh đã giao kèm trạng thái làm bài |
-| POST | `/api/exams/{id}/assignments` | teacher | Giao bài cho học sinh lẻ và/hoặc cả nhóm |
+| GET | `/api/exams/{id}/assignments` | teacher | Danh sách học sinh đã giao kèm trạng thái làm bài. Mỗi dòng mang khung giờ thật của em (`openAt`, `closeAt`, `hasScheduleOverride`, `assignedViaGroupId`); `expired` tính theo khung giờ đó |
+| POST | `/api/exams/{id}/assignments` | teacher | Giao bài cho học sinh lẻ và/hoặc cả nhóm, tuỳ chọn kèm khung giờ riêng (`openAt` + `closeAt`, phải chứa trọn `durationMinutes`, nếu không 400). Gửi lại một lớp kèm khung giờ là sửa giờ cho em chưa bắt đầu (`scheduleUpdatedCount`, `scheduleKeptStartedCount`) |
 | DELETE | `/api/exams/{examId}/assignments/{assignmentId}` | teacher | **Bổ sung** — thu hồi bài đã giao. Giao nhầm lớp là chuyện thường, mà endpoint giao bài lại cố ý idempotent nên không có đường lùi |
 
 ### 4.7 Làm bài (phía học sinh)

@@ -45,7 +45,13 @@ public sealed record AssignExamRequest
     /// </para>
     /// <para>
     /// Đi <b>cùng cặp</b> với <see cref="CloseAt"/>: gửi một nửa là trạng thái vô nghĩa và bị từ
-    /// chối, thay vì ghép nửa gửi lên với nửa lấy từ đề.
+    /// chối, thay vì ghép nửa gửi lên với nửa lấy từ đề. Khung giờ phải chứa trọn thời lượng làm
+    /// bài của đề, nếu không bị từ chối 400.
+    /// </para>
+    /// <para>
+    /// Gửi lại một lớp đã giao kèm khung giờ thì khung giờ của những em được giao qua lớp đó mà chưa
+    /// bắt đầu làm bài cũng được đổi theo; em chọn đích danh không bị đổi; bỏ trống thì không đụng
+    /// tới khung giờ đã đặt.
     /// </para>
     /// </remarks>
     public DateTime? OpenAt { get; init; }

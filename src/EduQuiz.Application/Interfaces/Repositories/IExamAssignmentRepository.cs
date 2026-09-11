@@ -8,13 +8,47 @@ namespace EduQuiz.Application.Interfaces.Repositories;
 /// </summary>
 public interface IExamAssignmentRepository : IGenericRepository<ExamAssignment>
 {
-    /// <summary>Danh sách đã giao của một đề, kèm hồ sơ học sinh và lượt làm bài để dựng bảng theo dõi.</summary>
+    /// <summary>
+    /// Danh sách đã giao của một đề, kèm đề, hồ sơ học sinh và lượt làm bài để dựng bảng theo dõi —
+    /// đề cần cho việc suy trạng thái expired theo khung giờ của từng em.
+    /// </summary>
     Task<IReadOnlyList<ExamAssignment>> GetByExamAsync(int examId, CancellationToken cancellationToken = default);
 
+    /// <summary>Nạp kèm Exam và Attempt.</summary>
     Task<ExamAssignment?> GetByExamAndStudentAsync(int examId, int studentId, CancellationToken cancellationToken = default);
 
-    /// <summary>Nạp kèm Exam và Attempt — mọi kiểm tra quyền và hạn giờ đều cần cả ba.</summary>
+    /// <summary>Nạp kèm Exam (và người tạo), Student, Attempt và bản đề riêng — mọi kiểm tra quyền và hạn giờ đều cần.</summary>
     Task<ExamAssignment?> GetDetailAsync(int assignmentId, CancellationToken cancellationToken = default);
+
+    /// <summary>Các bản ghi của đề này đã được giao QUA những lớp đã cho, kèm lượt làm bài — để sửa khung giờ.</summary>
+    /// <remarks>
+    /// Khớp theo <c>AssignedViaGroupId</c> chứ không theo thành viên hiện tại: em đã chuyển đi vẫn mang
+    /// khung giờ của lớp đã giao bài cho em, còn em mới chuyển tới thì chưa hề được giao qua lớp này.
+    /// Có theo dõi thay đổi vì service sửa trực tiếp trên các bản ghi này.
+    /// </remarks>
+    Task<IReadOnlyList<ExamAssignment>> GetByExamViaGroupsAsync(
+        int examId,
+        IEnumerable<int> groupIds,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Các khung giờ riêng của một đề mà chưa ai bắt đầu làm — để chặn tăng thời lượng vượt khung.
+    /// </summary>
+    /// <remarks>
+    /// Bỏ qua bản ghi đã có lượt làm bài: hạn nộp của các em đã chốt vào ExpiresAt lúc bắt đầu, nên
+    /// thời lượng mới không còn tác động gì tới họ.
+    /// </remarks>
+    Task<IReadOnlyList<(DateTime OpenAt, DateTime CloseAt)>> GetPendingOverrideWindowsAsync(
+        int examId,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Mốc sớm nhất mà đáp án từng câu của đề được phép rời server: giờ đóng có hiệu lực muộn nhất
+    /// trong mọi lượt giao của đề, hoặc hạn nộp muộn nhất của lượt còn đang làm nếu muộn hơn. NULL khi
+    /// đề chưa giao cho ai.
+    /// </summary>
+    /// <remarks>Xem <c>ResultMappingExtensions.ResolveAnswerVisibility</c>.</remarks>
+    Task<DateTime?> GetAnswersReleaseAtAsync(int examId, CancellationToken cancellationToken = default);
 
     /// <summary>Học sinh nào trong tập này đã được giao rồi — để khử trùng lặp trước khi ghi.</summary>
     Task<IReadOnlyList<int>> GetAssignedStudentIdsAsync(

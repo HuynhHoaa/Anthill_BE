@@ -23,8 +23,15 @@ public class ExamAssignment : BaseEntity
     /// giữa kỳ thì <c>GroupId</c> đổi theo, và lúc đó không còn cách nào biết bài này vốn được giao
     /// cho em với tư cách thành viên lớp nào — mà đó chính là thứ quyết định em làm bài vào khung
     /// giờ nào.
+    ///
+    /// Gửi lại một lớp để sửa khung giờ tra theo đúng cột này. Xoá lớp thì cột này về NULL (khoá
+    /// ngoại SET NULL) nhưng khung giờ riêng vẫn ở lại: xoá hồ sơ một lớp không được phép dời giờ thi
+    /// của các em.
     /// </remarks>
     public int? AssignedViaGroupId { get; set; }
+
+    /// <summary>Lớp ứng với <see cref="AssignedViaGroupId"/>. Chỉ nạp khi cần hiện tên lớp.</summary>
+    public StudentGroup? AssignedViaGroup { get; set; }
 
     /// <summary>
     /// Giờ mở bài riêng cho bản ghi này. NULL nghĩa là dùng lịch chung của đề.
@@ -46,7 +53,10 @@ public class ExamAssignment : BaseEntity
     /// </remarks>
     public DateTime? OpenAt { get; set; }
 
-    /// <summary>Giờ đóng bài riêng. NULL nghĩa là dùng lịch chung của đề. Đi cùng cặp với <see cref="OpenAt"/>.</summary>
+    /// <summary>
+    /// Giờ đóng bài riêng. NULL nghĩa là dùng lịch chung của đề. Đi cùng cặp với <see cref="OpenAt"/>:
+    /// chỉ đặt một nửa thì cả cặp bị bỏ qua và bản ghi theo trọn lịch chung.
+    /// </summary>
     public DateTime? CloseAt { get; set; }
 
     public Exam Exam { get; set; } = null!;
