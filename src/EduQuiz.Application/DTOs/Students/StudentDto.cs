@@ -38,8 +38,29 @@ public sealed record StudentDto
     /// <summary>0 nghĩa là chưa thuộc nhóm nào, xem <see cref="Common.StudentGroupDefaults"/>.</summary>
     public required int GroupId { get; init; }
 
-    /// <summary>Chữ thường: <c>"active" | "locked"</c>, khớp union <c>StudentStatus</c> của frontend.</summary>
+    /// <summary>Chữ thường: <c>"active" | "locked" | "pendingDeletion" | "deleted"</c>, khớp union <c>StudentStatus</c> của frontend.</summary>
     public required string Status { get; init; }
+
+    /// <summary>
+    /// Vì sao tài khoản bị yêu cầu xoá. Chỉ có mặt khi đã có yêu cầu xoá.
+    /// </summary>
+    /// <remarks>
+    /// Giữ lại cả sau khi dữ liệu cá nhân bị xoá: lúc đó họ tên đã biến mất, và đây là thứ duy nhất
+    /// còn giải thích được vì sao lớp hụt một em.
+    /// </remarks>
+    public string? DeletionReason { get; init; }
+
+    /// <summary>Lúc yêu cầu xoá được ghi nhận. Chỉ có mặt khi đã có yêu cầu xoá.</summary>
+    public DateTime? DeletionRequestedAt { get; init; }
+
+    /// <summary>
+    /// Lúc dữ liệu cá nhân sẽ bị xoá vĩnh viễn. Chỉ có mặt khi tài khoản đang chờ xoá.
+    /// </summary>
+    /// <remarks>
+    /// Tính sẵn ở server chứ không để giao diện tự cộng 60 ngày: con số 60 là chính sách của hệ
+    /// thống, và để hai bên cùng giữ một bản thì ngày đổi chính sách là ngày hai bên nói khác nhau.
+    /// </remarks>
+    public DateTime? DeletionScheduledAt { get; init; }
 
     /// <summary>ISO 8601 UTC khi serialize, đúng quy ước §1. Do server đặt, không nhận từ client.</summary>
     public required DateTime CreatedAt { get; init; }

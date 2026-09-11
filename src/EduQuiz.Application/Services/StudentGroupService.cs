@@ -264,9 +264,19 @@ public sealed class StudentGroupService : IStudentGroupService
 
         var added = 0;
         var alreadyMember = 0;
+        var retired = 0;
 
         foreach (var student in found)
         {
+            // Tài khoản chờ xoá hoặc đã xoá không được đưa trở lại lớp. Một em đã rời trường mà vẫn
+            // đếm vào sĩ số thì mọi con số của lớp sai theo — kể cả những hộp xác nhận "N học sinh
+            // sẽ nhận bài" mà giáo viên dựa vào để quyết định.
+            if (student.Status is UserStatus.PendingDeletion or UserStatus.Deleted)
+            {
+                retired++;
+                continue;
+            }
+
             if (student.GroupId == group.Id)
             {
                 alreadyMember++;
@@ -293,6 +303,7 @@ public sealed class StudentGroupService : IStudentGroupService
             Added = added,
             SkippedAlreadyMember = alreadyMember,
             SkippedNotFound = requestedIds.Count - found.Count,
+            SkippedRetired = retired,
             StudentCount = count
         });
     }

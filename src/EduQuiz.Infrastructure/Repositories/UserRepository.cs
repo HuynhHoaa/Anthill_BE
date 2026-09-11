@@ -176,7 +176,12 @@ public class UserRepository : GenericRepository<User>, IUserRepository
         await DbSet
             .AsNoTracking()
             .Include(u => u.Group)
-            .Where(u => u.Role == UserRole.Student && (u.GroupId == null || u.GroupId != groupId))
+            // Không liệt kê tài khoản chờ xoá hay đã xoá: sau 60 ngày chúng hiện ra dưới tên
+            // "Học sinh đã xoá" cùng mã deleted-N, và "Chọn tất cả" sẽ đưa chúng trở lại lớp.
+            .Where(u => u.Role == UserRole.Student
+                        && u.Status != UserStatus.PendingDeletion
+                        && u.Status != UserStatus.Deleted
+                        && (u.GroupId == null || u.GroupId != groupId))
             .OrderBy(u => u.Code)
             .ThenBy(u => u.Id)
             .ToListAsync(cancellationToken);

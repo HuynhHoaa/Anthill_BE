@@ -58,7 +58,7 @@ public sealed class StudentService : IStudentService
         if (!StudentMappingExtensions.TryParseStatusFilter(query.Status, out var status))
         {
             return Result.Failure<PagedResult<StudentDto>>(
-                "Bộ lọc trạng thái chỉ nhận 'active', 'locked' hoặc 'all'.");
+                "Bộ lọc trạng thái chỉ nhận 'active', 'locked', 'pendingDeletion', 'deleted' hoặc 'all'.");
         }
 
         var page = await _unitOfWork.Users.GetStudentsPagedAsync(
@@ -163,6 +163,11 @@ public sealed class StudentService : IStudentService
         }
 
         var account = student!;
+
+        if (RetiredAccountError(account) is { } retired)
+        {
+            return Result.Conflict<StudentDto>(retired);
+        }
         var fields = StudentFields.From(request.FullName, request.Email, request.Username, request.Code);
 
         // Loại trừ chính bản ghi đang sửa, nếu không lưu lại hồ sơ mà không đổi gì cũng tự báo trùng.
@@ -213,6 +218,11 @@ public sealed class StudentService : IStudentService
         }
 
         var account = student!;
+
+        if (RetiredAccountError(account) is { } retired)
+        {
+            return Result.Conflict<StudentDto>(retired);
+        }
 
         if (account.Status != status)
         {
@@ -376,6 +386,12 @@ public sealed class StudentService : IStudentService
         }
 
         var account = student!;
+
+        if (RetiredAccountError(account) is { } retired)
+        {
+            return Result.Conflict<ResetPasswordResponse>(retired);
+        }
+
         var password = PasswordGenerator.Generate();
 
         account.PasswordHash = _passwordHasher.Hash(password);
@@ -550,8 +566,29 @@ public sealed class StudentService : IStudentService
     /// </summary>
     private static bool IsStudent(User? user) => user is { Role: UserRole.Student };
 
+    /// <summary>
+    /// Câu từ chối khi tài khoản đang ở diện xoá, hoặc NULL nếu được phép thao tác.
+    /// </summary>
+    /// <remarks>
+    /// Siết bộ phân tích trạng thái thôi chưa đủ: <c>active</c> là giá trị hợp lệ, nên PATCH status
+    /// đặt <c>active</c> lên một tài khoản chờ xoá vẫn đi vòng qua bước khôi phục, để lại lý do và
+    /// mốc đếm ngược cũ. Nên mọi lối ghi — sửa hồ sơ, đổi trạng thái, cấp lại mật khẩu — đều hỏi ở
+    /// đây trước. Lối duy nhất đi được là <see cref="RestoreAsync"/>.
+    ///
+    /// Cấp lại mật khẩu cho tài khoản chờ xoá cũng vô nghĩa: em đó không đăng nhập được, và mật
+    /// khẩu mới chỉ là thêm một bí mật phải giữ cho một tài khoản sắp biến mất.
+    /// </remarks>
+    private static string? RetiredAccountError(User account) => account.Status switch
+    {
+        UserStatus.PendingDeletion =>
+            "Tài khoản đang chờ xoá. Hãy khôi phục tài khoản trước khi thao tác.",
+        UserStatus.Deleted =>
+            "Dữ liệu của tài khoản này đã bị xoá vĩnh viễn, không thao tác được nữa.",
+        _ => null
+    };
+
     private static UserStatus ParseStatusOrDefault(string? value, UserStatus fallback) =>
-        StudentMappingExtensions.TryParseStatus(value, out var parsed) ? parsed : fallback;
+        StudentMappingExtensions.TryParseSettableStatus(value, out var parsed) ? parsed : fallback;
 
     private static string? Normalize(string? value)
     {

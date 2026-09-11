@@ -13,7 +13,7 @@ public sealed class UpdateStudentStatusRequestValidator : AbstractValidator<Upda
     public UpdateStudentStatusRequestValidator()
     {
         RuleFor(request => request.Status)
-            .Must(status => StudentMappingExtensions.TryParseStatus(status, out _))
+            .Must(status => StudentMappingExtensions.TryParseSettableStatus(status, out _))
             .WithMessage("Trạng thái tài khoản chỉ nhận giá trị 'active' hoặc 'locked'.");
     }
 }
