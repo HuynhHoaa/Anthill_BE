@@ -176,7 +176,12 @@ public class UserRepository : GenericRepository<User>, IUserRepository
         await DbSet
             .AsNoTracking()
             .Include(u => u.Group)
-            .Where(u => u.Role == UserRole.Student && (u.GroupId == null || u.GroupId != groupId))
+            // Không liệt kê tài khoản chờ xoá hay đã xoá: sau 60 ngày chúng hiện ra dưới tên
+            // "Học sinh đã xoá" cùng mã deleted-N, và "Chọn tất cả" sẽ đưa chúng trở lại lớp.
+            .Where(u => u.Role == UserRole.Student
+                        && u.Status != UserStatus.PendingDeletion
+                        && u.Status != UserStatus.Deleted
+                        && (u.GroupId == null || u.GroupId != groupId))
             .OrderBy(u => u.Code)
             .ThenBy(u => u.Id)
             .ToListAsync(cancellationToken);
@@ -224,7 +229,12 @@ public class UserRepository : GenericRepository<User>, IUserRepository
     }
 
     public async Task<int> CountStudentsInGroupAsync(int groupId, CancellationToken cancellationToken = default) =>
-        await DbSet.CountAsync(u => u.Role == UserRole.Student && u.GroupId == groupId, cancellationToken);
+        await DbSet.CountAsync(
+            u => u.Role == UserRole.Student
+                 && u.GroupId == groupId
+                 && u.Status != UserStatus.PendingDeletion
+                 && u.Status != UserStatus.Deleted,
+            cancellationToken);
 
     public async Task<IReadOnlyDictionary<int, int>> CountStudentsByGroupAsync(
         IEnumerable<int> groupIds,
@@ -237,7 +247,11 @@ public class UserRepository : GenericRepository<User>, IUserRepository
         }
 
         var counts = await DbSet
-            .Where(u => u.Role == UserRole.Student && u.GroupId != null && ids.Contains(u.GroupId!.Value))
+            .Where(u => u.Role == UserRole.Student
+                        && u.GroupId != null
+                        && ids.Contains(u.GroupId!.Value)
+                        && u.Status != UserStatus.PendingDeletion
+                        && u.Status != UserStatus.Deleted)
             .GroupBy(u => u.GroupId!.Value)
             .Select(g => new { GroupId = g.Key, Count = g.Count() })
             .ToListAsync(cancellationToken);

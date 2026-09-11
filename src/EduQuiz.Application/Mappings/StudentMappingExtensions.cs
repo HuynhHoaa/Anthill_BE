@@ -49,6 +49,14 @@ public static class StudentMappingExtensions
             Group = StudentGroupDefaults.ToClientGroupName(groupName ?? user.Group?.Name),
             GroupId = StudentGroupDefaults.ToClientGroupId(user.GroupId),
             Status = user.Status.ToStatusString(),
+
+            // Ba trường của quy trình xoá. Vắng mặt với tài khoản bình thường nhờ cấu hình bỏ qua
+            // giá trị null toàn cục, nên không làm phình response của danh sách học sinh.
+            DeletionReason = user.DeletionReason,
+            DeletionRequestedAt = user.DeletionRequestedAt?.ToUtc(),
+            DeletionScheduledAt = user.Status == UserStatus.PendingDeletion
+                ? user.DeletionRequestedAt?.AddDays(StudentAnonymizer.RetentionDays).ToUtc()
+                : null,
             CreatedAt = user.CreatedAt.ToUtc(),
             CompletedExams = completedExams,
             AverageScore = averageScore
@@ -56,15 +64,28 @@ public static class StudentMappingExtensions
     }
 
     /// <summary>
-    /// Đọc ngược chuỗi trạng thái do client gửi: <c>"active" | "locked"</c>.
+    /// Đọc trạng thái mà quản trị viên được phép <b>đặt trực tiếp</b>: chỉ <c>active</c> và <c>locked</c>.
     /// </summary>
     /// <remarks>
-    /// Cặp đôi của <see cref="UserMappingExtensions.ToStatusString"/>. Dùng
-    /// <see cref="Enum.TryParse{TEnum}(string, bool, out TEnum)"/> nên <c>"Active"</c> và
-    /// <c>"active"</c> đều qua, còn <c>Enum.IsDefined</c> chặn trường hợp client gửi số:
-    /// <c>"7"</c> parse thành công thành một <see cref="UserStatus"/> không tồn tại.
+    /// Hai trạng thái còn lại của quy trình xoá — chờ xoá và đã xoá — có lối đi riêng
+    /// (<c>request-deletion</c>, <c>restore</c>), vì mỗi lối phải làm thêm việc: ghi lý do, xoay
+    /// SecurityStamp, xoá dấu vết khi khôi phục. Trước đây hàm này nhận cả bốn, nên PATCH status
+    /// đặt thẳng <c>deleted</c> được — tài khoản mang nhãn đã xoá trong khi họ tên, email, số điện
+    /// thoại vẫn còn nguyên, vì bước ẩn danh hoá không bao giờ chạy.
     /// </remarks>
-    public static bool TryParseStatus(string? value, out UserStatus status)
+    public static bool TryParseSettableStatus(string? value, out UserStatus status)
+    {
+        if (TryParseAnyStatus(value, out status) && status is UserStatus.Active or UserStatus.Locked)
+        {
+            return true;
+        }
+
+        status = default;
+        return false;
+    }
+
+    /// <summary>Đọc bất kỳ trạng thái nào. Chỉ ô lọc được dùng, vì ở đó phải tìm ra cả tài khoản chờ xoá.</summary>
+    private static bool TryParseAnyStatus(string? value, out UserStatus status)
     {
         status = default;
         if (string.IsNullOrWhiteSpace(value))
@@ -79,7 +100,7 @@ public static class StudentMappingExtensions
     public const string AllFilterValue = "all";
 
     /// <summary>
-    /// Đọc chuỗi trạng thái ở ô <b>lọc</b>: khác <see cref="TryParseStatus"/> ở chỗ chấp nhận thêm
+    /// Đọc chuỗi trạng thái ở ô <b>lọc</b>: khác <see cref="TryParseSettableStatus"/> ở chỗ chấp nhận thêm
     /// <c>"all"</c> và chuỗi rỗng, cả hai nghĩa là không lọc.
     /// </summary>
     /// <returns>False khi giá trị không đọc được — chỗ gọi trả lỗi thay vì âm thầm bỏ lọc.</returns>
@@ -93,7 +114,7 @@ public static class StudentMappingExtensions
             return true;
         }
 
-        if (!TryParseStatus(value, out var parsed))
+        if (!TryParseAnyStatus(value, out var parsed))
         {
             return false;
         }

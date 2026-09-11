@@ -110,7 +110,7 @@ internal static class StudentFieldRules
     public static void ApplyOptionalStatus<T>(AbstractValidator<T> validator, Func<T, string?> selector)
     {
         validator.RuleFor(request => selector(request))
-            .Must(value => StudentMappingExtensions.TryParseStatus(value, out _))
+            .Must(value => StudentMappingExtensions.TryParseSettableStatus(value, out _))
             .WithName(StudentFieldNames.Status)
             .WithMessage("Trạng thái tài khoản chỉ nhận giá trị 'active' hoặc 'locked'.")
             .When(request => !string.IsNullOrWhiteSpace(selector(request)));

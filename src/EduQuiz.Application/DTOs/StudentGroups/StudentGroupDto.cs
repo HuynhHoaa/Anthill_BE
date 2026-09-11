@@ -9,6 +9,10 @@ public sealed record StudentGroupDto
 
     public required string Description { get; init; }
 
+    /// <summary>
+    /// Sĩ số: học sinh đang hoạt động hoặc đang khoá. Không tính tài khoản chờ xoá, dù những tài
+    /// khoản đó vẫn có mặt trong danh sách thành viên cho tới khi được khôi phục hoặc xoá hẳn.
+    /// </summary>
     public required int StudentCount { get; init; }
 
     /// <summary>

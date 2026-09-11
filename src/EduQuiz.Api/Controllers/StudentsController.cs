@@ -121,7 +121,7 @@ public sealed class StudentsController : ApiControllerBase
         // Validator đã bảo đảm chuỗi đọc được trước khi action chạy, nên nhánh false ở đây không
         // với tới được. Vẫn giữ để controller không phải dùng dấu chấm than: một ngày nào đó
         // validator bị gỡ khỏi pipeline thì đây trả 400 chứ không ném NullReference.
-        if (!StudentMappingExtensions.TryParseStatus(request.Status, out var status))
+        if (!StudentMappingExtensions.TryParseSettableStatus(request.Status, out var status))
         {
             return FromFailure(Result.Failure("Trạng thái tài khoản chỉ nhận giá trị 'active' hoặc 'locked'."));
         }

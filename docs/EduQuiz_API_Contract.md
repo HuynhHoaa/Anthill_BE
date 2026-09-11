@@ -255,7 +255,9 @@ Mock hiện tra ngược `mockQuestions` theo id lúc chấm — điều đó c�
 | `Exam.submittedCount` | số assignment có status ∈ {submitted, graded} |
 | `Student.completedExams` | COUNT lượt có status ∈ {submitted, graded} |
 | `Student.averageScore` | AVG(score) trên các lượt `graded`, làm tròn 1 chữ số |
-| `StudentGroup.studentCount` | COUNT thành viên |
+| `Student.deletionScheduledAt` | `deletionRequestedAt` + 60 ngày, chỉ có khi `status = pendingDeletion`. Server tính sẵn — FE không tự cộng ngày |
+| `AddMembersResponse.skippedRetired` | Số tài khoản chờ xoá hoặc đã xoá bị bỏ qua, không đưa vào lớp |
+| `StudentGroup.studentCount` | COUNT thành viên đang hoạt động hoặc đang khoá — không tính tài khoản chờ xoá |
 | `Student.group` (tên) | dữ liệu JOIN, **chỉ đọc** — client gửi lên thì bỏ qua |
 
 `lifecycle` của đề **không nên là cột lưu cứng**. Chỉ lưu `IsDraft` (hoặc `PublishedAt`), ba trạng thái còn lại tính theo giờ server mỗi lần đọc: `now < openAt` → scheduled · `openAt ≤ now ≤ closeAt` → open · `now > closeAt` → closed.

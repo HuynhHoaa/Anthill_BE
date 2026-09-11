@@ -26,6 +26,9 @@ public sealed record AddMembersResponse
     /// <summary>Id không tồn tại hoặc không phải tài khoản học sinh.</summary>
     public required int SkippedNotFound { get; init; }
 
+    /// <summary>Tài khoản đang chờ xoá hoặc đã xoá — bị bỏ qua, không đưa vào lớp.</summary>
+    public required int SkippedRetired { get; init; }
+
     /// <summary>Sĩ số sau khi thêm, để màn hình cập nhật mà không phải gọi lại danh sách.</summary>
     public required int StudentCount { get; init; }
 }

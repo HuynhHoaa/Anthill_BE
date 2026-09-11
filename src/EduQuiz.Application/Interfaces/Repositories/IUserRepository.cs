@@ -49,9 +49,20 @@ public interface IUserRepository : IGenericRepository<User>
     /// <summary>Học sinh chưa thuộc nhóm này, cho màn hình thêm thành viên.</summary>
     Task<IReadOnlyList<User>> GetAssignableStudentsAsync(int groupId, CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// Sĩ số của lớp: học sinh đang hoạt động hoặc đang khoá. Tài khoản chờ xoá không được tính.
+    /// </summary>
+    /// <remarks>
+    /// Tài khoản chờ xoá vẫn giữ GroupId suốt 60 ngày để khôi phục là về đúng lớp cũ, nên vẫn hiện
+    /// trong danh sách thành viên. Nhưng em đó đã rời trường: đếm vào sĩ số thì câu "giao bài cho
+    /// 30 học sinh" sai ngay từ đầu, vì bước giao bài bỏ qua mọi tài khoản không hoạt động.
+    /// </remarks>
     Task<int> CountStudentsInGroupAsync(int groupId, CancellationToken cancellationToken = default);
 
-    /// <summary>Sĩ số của nhiều nhóm trong một truy vấn, tránh N+1 ở màn hình danh sách nhóm.</summary>
+    /// <summary>
+    /// Sĩ số của nhiều nhóm trong một truy vấn, tránh N+1 ở màn hình danh sách nhóm. Cùng quy tắc
+    /// với <see cref="CountStudentsInGroupAsync"/>.
+    /// </summary>
     Task<IReadOnlyDictionary<int, int>> CountStudentsByGroupAsync(
         IEnumerable<int> groupIds,
         CancellationToken cancellationToken = default);
