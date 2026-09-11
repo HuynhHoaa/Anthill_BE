@@ -185,19 +185,27 @@ public sealed class StudentGroupService : IStudentGroupService
         }
 
         var group = load.ValueOrThrow;
-        var count = await _unitOfWork.Users.CountStudentsInGroupAsync(group.Id, cancellationToken);
+        var members = await _unitOfWork.Users.GetStudentsByGroupAsync(group.Id, cancellationToken);
 
         // Khoá ngoại đặt OnDelete(SetNull) nên xoá nhóm còn người sẽ *chạy được* và âm thầm đẩy cả
         // lớp về "chưa phân nhóm". Chặn ở đây để việc đó phải là một quyết định có ý thức: giáo viên
         // chuyển học sinh đi trước, rồi mới xoá.
         //
-        // Tài khoản chờ xoá không chặn việc xoá lớp: sĩ số không tính chúng, và bắt quản trị viên
-        // chờ 60 ngày chỉ vì một em đã rời trường là vô lý. Khoá ngoại đưa em đó về "chưa phân
-        // nhóm"; nếu sau này được khôi phục, em quay lại mà không có lớp — đúng, vì lớp không còn.
-        if (count > 0)
+        // Đếm cả tài khoản chờ xoá, dù sĩ số không tính chúng. Để khoá ngoại gỡ các em thì khôi phục
+        // xong em quay lại không có lớp mà không ai được hỏi — trong khi màn hình xoá lớp vừa nói
+        // "không ai bị ảnh hưởng". Gỡ khỏi lớp là thao tác có sẵn, nên chặn không bắt ai chờ 60 ngày.
+        if (members.Count > 0)
         {
-            return Result.Conflict(
-                $"Không thể xoá nhóm còn {count} học sinh. Hãy chuyển học sinh sang nhóm khác trước.");
+            var retired = members.Count(m => m.Status is UserStatus.PendingDeletion or UserStatus.Deleted);
+            var enrolled = members.Count - retired;
+
+            return Result.Conflict((enrolled, retired) switch
+            {
+                (_, 0) => $"Không thể xoá nhóm còn {enrolled} học sinh. Hãy chuyển học sinh sang nhóm khác trước.",
+                (0, _) => $"Không thể xoá lớp còn {retired} tài khoản đang chờ xoá. Hãy gỡ các em khỏi lớp trước.",
+                _ => $"Không thể xoá nhóm còn {enrolled} học sinh và {retired} tài khoản đang chờ xoá. "
+                     + "Hãy chuyển học sinh sang nhóm khác và gỡ các tài khoản chờ xoá khỏi lớp trước."
+            });
         }
 
         _unitOfWork.StudentGroups.Remove(group);

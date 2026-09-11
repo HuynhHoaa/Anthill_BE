@@ -17,7 +17,9 @@ source "$(dirname "$0")/lib.sh"
 ADMIN=$(login "huy.pq@eduquiz.vn" "eduquiz123")
 TEACHER=$(login "an.nv@eduquiz.vn" "eduquiz123")
 
-STAMP=$(date +%H%M%S)
+# Co ca ngay trong nam: tai khoan cua lan chay truoc con nam lai (khong xoa cung duoc), nen chi gio
+# phut giay thi chay lai dung gio do vao hom khac se dung ma.
+STAMP=$(date +%j%H%M%S)
 SID=""; OTHER=""; GID=""
 CID=""; LEAVER=""; STAYER=""; LONE=""; LONE_GID=""; EID=""
 
@@ -27,7 +29,7 @@ cleanup() {
   # Tai khoan cho xoa khong khoa duoc nua (dung la dieu bo kiem nay chung minh), nen khoi phuc truoc.
   for id in $SID $OTHER $LEAVER $STAYER $LONE; do
     call POST "/api/students/$id/restore" "$ADMIN" > /dev/null
-    for gid in $GID $CID; do call DELETE "/api/student-groups/$gid/students/$id" "$ADMIN" > /dev/null; done
+    for gid in $GID $CID $LONE_GID; do call DELETE "/api/student-groups/$gid/students/$id" "$ADMIN" > /dev/null; done
     call PATCH "/api/students/$id/status" "$ADMIN" '{"status":"locked"}' > /dev/null
   done
   for gid in $GID $CID $LONE_GID; do call DELETE "/api/student-groups/$gid" "$ADMIN" > /dev/null; done
@@ -192,17 +194,25 @@ EID=$(json_field id)
 expect_status "giao bai cho ca lop → 200" 200 \
   "$(call POST "/api/exams/$EID/assignments" "$TEACHER" "{\"studentIds\":[],\"groupIds\":[$CID],\"notify\":false}")"
 expect_json   "  chi giao cho em con hoc" assignedCount 1
+# Em cho xoa hien duoc dem vao skippedLocked. Tach thanh skippedRetired la viec cua nhanh lich
+# rieng, vi nhanh do dang sua chinh doan gom hoc sinh nay (EduQuiz_Status.md, muc 8.2b).
 expect_json   "  em cho xoa bi bo qua" skippedLocked 1
 
-section "Lop chi con tai khoan cho xoa thi xoa duoc"
-# Bat quan tri vien cho 60 ngay moi xoa duoc lop chi vi mot em da roi truong la vo ly.
+section "Lop con tai khoan cho xoa thi phai go ra truoc khi xoa"
+# Si so khong tinh em cho xoa, nhung xoa lop van bi chan: de khoa ngoai go em ra thi khoi phuc
+# xong em ve khong co lop ma khong ai duoc hoi. Go khoi lop la thao tac co san, nen khong ai phai
+# cho 60 ngay.
 LONE_GID=$(new_class "$ADMIN" "$TEACHER" "Mot$STAMP") || fail_fast "tao lop thu hai"
 new_student "${STAMP}e"; LONE=$NEW_ID
 expect_status "xep em vao lop → 200" 200 \
   "$(call POST "/api/student-groups/$LONE_GID/students" "$ADMIN" "{\"studentIds\":[$LONE]}")"
 expect_status "em roi truong → 200" 200 \
   "$(call POST "/api/students/$LONE/request-deletion" "$ADMIN" '{"reason":"Hoc sinh chuyen truong giua hoc ky."}')"
-expect_status "xoa lop chi con em cho xoa → 200" 200 "$(call DELETE "/api/student-groups/$LONE_GID" "$ADMIN")"
+expect_status "doc lop → 200" 200 "$(call GET "/api/student-groups/$LONE_GID" "$ADMIN")"
+expect_json   "  si so = 0" studentCount 0
+expect_status "xoa lop con em cho xoa → 409" 409 "$(call DELETE "/api/student-groups/$LONE_GID" "$ADMIN")"
+expect_status "go em khoi lop → 200" 200 "$(call DELETE "/api/student-groups/$LONE_GID/students/$LONE" "$ADMIN")"
+expect_status "xoa lop da rong → 200" 200 "$(call DELETE "/api/student-groups/$LONE_GID" "$ADMIN")"
 expect_status "doc lai em do → 200" 200 "$(call GET "/api/students/$LONE" "$ADMIN")"
 expect_json   "  ve chua phan nhom" groupId 0
 expect_json   "  van dang cho xoa" status pendingDeletion
