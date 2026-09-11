@@ -42,7 +42,7 @@ bước dọn gỡ học sinh khỏi lớp và xoá lớp bằng token giáo vi�
 
 ## Các bộ hiện có
 
-13 script, tổng cộng 777 phép kiểm.
+14 script, tổng cộng 828 phép kiểm.
 
 | Script | Phủ |
 |---|---|
@@ -59,6 +59,7 @@ bước dọn gỡ học sinh khỏi lớp và xoá lớp bằng token giáo vi�
 | `students-deletion.sh` | xoá mềm: lý do bắt buộc, chỉ quản trị viên, chặn đăng nhập, khôi phục |
 | `session-revocation.sh` | token cũ nhận 401 trên mọi endpoint và hub sau khi khoá, mở khoá, cấp lại hay tự đổi mật khẩu, đưa vào diện xoá, khôi phục; token giáo viên và quản trị viên không bị ảnh hưởng |
 | `students-status-guards.sh` | chặn các lối vòng quanh trạng thái tài khoản học sinh (đặt thẳng `deleted`, sửa hay cấp lại mật khẩu cho tài khoản chờ xoá...) |
+| `teacher-student-scope.sh` | giáo viên chỉ thấy học sinh lớp mình dạy: lớp khác, lớp nháp, chưa phân lớp đều ngoài phạm vi; hồ sơ em đã nhận đề của mình vẫn mở được sau khi em chuyển lớp; quản trị viên thấy tất cả |
 
 `lib.sh` là khung dùng chung: `call`, `expect_status`, `expect_json`, `login`, `new_class`, `summary`.
 

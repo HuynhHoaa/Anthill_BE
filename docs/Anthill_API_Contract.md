@@ -40,7 +40,7 @@ Ngày lập: 06/09/2026 · Nguồn: 9 service, ~50 hàm · Kết quả: **68 end
 
 | Khu vực | admin | teacher | student |
 |---|:---:|:---:|:---:|
-| Tài khoản học sinh (tạo/sửa/khoá/reset mật khẩu) | ✅ | đọc | — |
+| Tài khoản học sinh (tạo/sửa/khoá/reset mật khẩu) | ✅ | đọc, chỉ học sinh mình phụ trách (§4.3) | — |
 | Nhóm lớp và thành viên | đọc | ✅ | — |
 | Ngân hàng câu hỏi | đọc | ✅ | — |
 | Bài kiểm tra, giao bài | — | ✅ | — |
@@ -106,13 +106,15 @@ JWT claims tối thiểu: `sub` = userId, `role`, `name`, `subject_id` (giáo vi
 
 | Method | Path | Vai trò | Mô tả |
 |---|---|---|---|
-| GET | `/api/students` | admin, teacher | Danh sách có phân trang, lọc theo từ khoá / nhóm / trạng thái |
-| GET | `/api/students/{id}` | admin, teacher | Hồ sơ một học sinh |
+| GET | `/api/students` | admin, teacher | Danh sách có phân trang, lọc theo từ khoá / nhóm / trạng thái. Giáo viên chỉ nhận học sinh ở lớp đã công bố mà mình được phân công |
+| GET | `/api/students/{id}` | admin, teacher | Hồ sơ một học sinh. Giáo viên: học sinh lớp mình dạy, hoặc đã nhận một đề do chính mình tạo; ngoài ra 404 |
 | POST | `/api/students` | admin | Tạo tài khoản kèm mật khẩu ban đầu |
 | PUT | `/api/students/{id}` | admin | Cập nhật hồ sơ, nhóm, trạng thái. **Không nhận mật khẩu** |
 | PATCH | `/api/students/{id}/status` | admin | Khoá / mở khoá |
 | POST | `/api/students/{id}/reset-password` | admin | **Bổ sung** — cấp lại mật khẩu khi học sinh quên |
 | GET | `/api/students/availability` | admin | **Bổ sung** — kiểm tra email/username/code đã dùng chưa, thay cho việc FE tải 500 bản ghi về so sánh tại chỗ |
+
+> **Phạm vi đọc của giáo viên.** Danh sách là "lớp tôi đang dạy": học sinh có `GroupId` thuộc một lớp **đã công bố** mà giáo viên **được phân công** — đúng tập lớp `GET /api/student-groups` trả cho họ. Bộ lọc `groupId` / `status` / `search` chạy bên trong phạm vi đó: `groupId` của lớp khác hay lớp nháp, và `groupId=0` ("chưa phân nhóm"), đều ra trang rỗng, không lỗi. Hồ sơ rộng hơn danh sách một vế: mở được cả học sinh đã nhận một đề do chính giáo viên đó tạo, vì kết quả thuộc về đề chứ không thuộc về lớp hiện tại — em chuyển lớp hay đã bị xoá dữ liệu cá nhân thì liên kết từ bảng kết quả vẫn phải mở được. Ngoài phạm vi trả **404** cùng thông điệp với id không tồn tại. Admin không bị giới hạn.
 
 ### 4.4 Nhóm lớp
 

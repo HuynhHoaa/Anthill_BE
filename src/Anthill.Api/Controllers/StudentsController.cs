@@ -17,6 +17,11 @@ namespace Anthill.Api.Controllers;
 /// để giao bài chứ không cần quyền đổi mật khẩu của học sinh. Vì vậy lớp mặc định là
 /// <c>[Authorize(Roles = AdminOrTeacher)]</c>, còn năm action ghi đè thành chỉ quản trị viên.
 /// <para>
+/// "Đọc" của giáo viên cũng có giới hạn, và giới hạn đó nằm ở <see cref="IStudentService"/> chứ
+/// không ở attribute: danh sách chỉ gồm học sinh các lớp đã công bố mà họ được phân công, hồ sơ mở
+/// thêm được cho em đã nhận đề của họ. Ngoài phạm vi trả 404 như id không tồn tại.
+/// </para>
+/// <para>
 /// Controller không chứa logic nghiệp vụ: mỗi action gọi đúng một phương thức của
 /// <see cref="IStudentService"/> rồi để <see cref="ApiControllerBase"/> dịch kết quả sang HTTP.
 /// </para>

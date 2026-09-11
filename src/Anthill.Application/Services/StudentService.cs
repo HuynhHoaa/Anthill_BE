@@ -24,6 +24,9 @@ namespace Anthill.Application.Services;
 /// hai mươi học sinh mà hỏi riêng thì thành bốn mươi truy vấn.</item>
 /// <item>Endpoint nào cũng chỉ nhìn thấy tài khoản có <c>Role = Student</c>. Id của giáo viên
 /// truyền vào đây trả <c>NotFound</c>, không phải sửa nhầm người.</item>
+/// <item>Hai đường <b>đọc</b> mở cho giáo viên bị giới hạn trong phạm vi của họ
+/// (<see cref="TeacherStudentScope"/>): danh sách chỉ gồm lớp mình dạy, hồ sơ mở thêm được cho em
+/// đã nhận đề của mình. Ngoài phạm vi là <c>NotFound</c> như id không tồn tại.</item>
 /// </list>
 /// </remarks>
 public sealed class StudentService : IStudentService
@@ -33,7 +36,10 @@ public sealed class StudentService : IStudentService
     private readonly IUnitOfWork _unitOfWork;
     private readonly IPasswordHasher _passwordHasher;
 
-    /// <summary>Chỉ dùng để ghi lại ai đã yêu cầu xoá — mọi kiểm tra quyền đã nằm ở tầng Api.</summary>
+    /// <summary>
+    /// Hai việc: quyết định phạm vi đọc của giáo viên, và ghi lại ai đã yêu cầu xoá. Phân quyền theo
+    /// vai trò (ai được gọi endpoint nào) vẫn nằm ở tầng Api.
+    /// </summary>
     private readonly ICurrentUser _currentUser;
 
     public StudentService(
@@ -61,12 +67,23 @@ public sealed class StudentService : IStudentService
                 "Bộ lọc trạng thái chỉ nhận 'active', 'locked', 'pendingDeletion', 'deleted' hoặc 'all'.");
         }
 
-        var page = await _unitOfWork.Users.GetStudentsPagedAsync(
-            query.Search,
-            query.GroupId,
-            status,
-            query,
-            cancellationToken);
+        // Hai đường tách hẳn nhau, cùng khuôn với danh sách lớp ở StudentGroupService. Mặc định là
+        // đường HẸP: ai không phải quản trị viên đều bị giới hạn theo lớp mình dạy, nên thêm một vai
+        // trò mới vào [Authorize] mà quên sửa ở đây thì kết quả là thấy ít đi, không phải thấy hết.
+        var page = _currentUser.IsInRole(UserRole.Admin)
+            ? await _unitOfWork.Users.GetStudentsPagedAsync(
+                query.Search,
+                query.GroupId,
+                status,
+                query,
+                cancellationToken)
+            : await _unitOfWork.Users.GetStudentsPagedForTeacherAsync(
+                _currentUser.RequireUserId(),
+                query.Search,
+                query.GroupId,
+                status,
+                query,
+                cancellationToken);
 
         // Một truy vấn GROUP BY cho cả trang thay vì hai truy vấn mỗi học sinh.
         var stats = await _unitOfWork.ExamAttempts.GetStatsByStudentsAsync(
@@ -81,8 +98,18 @@ public sealed class StudentService : IStudentService
     /// <inheritdoc />
     public async Task<Result<StudentDto>> GetAsync(int id, CancellationToken cancellationToken = default)
     {
-        // GetProfileAsync nạp kèm Group nên tên nhóm có sẵn, không phải truy vấn thêm.
-        var student = await _unitOfWork.Users.GetProfileAsync(id, cancellationToken);
+        // Cả hai đường đều nạp kèm Group nên tên nhóm có sẵn, không phải truy vấn thêm.
+        //
+        // Giáo viên: em ngoài phạm vi trả đúng câu "không tìm thấy" của id không tồn tại, không phải
+        // 403 — 403 là xác nhận rằng id đó là một học sinh có thật (§4.2). Phạm vi ở đây rộng hơn
+        // danh sách một vế (em đã nhận đề của giáo viên này), để liên kết từ trang kết quả vẫn mở
+        // được hồ sơ của em đã chuyển lớp; lý do nằm ở TeacherStudentScope.CanReadProfile.
+        var student = _currentUser.IsInRole(UserRole.Admin)
+            ? await _unitOfWork.Users.GetProfileAsync(id, cancellationToken)
+            : await _unitOfWork.Users.GetStudentProfileForTeacherAsync(
+                id,
+                _currentUser.RequireUserId(),
+                cancellationToken);
         if (!IsStudent(student))
         {
             return Result.NotFound<StudentDto>(NotFoundMessage);

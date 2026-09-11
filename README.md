@@ -101,6 +101,14 @@ truy vấn theo khoá chính trên mỗi request có token; cố ý không cache
 khoảng trễ này. (`SessionValidation`, `AccountSessionReader`,
 `ServiceCollectionExtensions.OnTokenValidated`, `ReportsBlockedAccountAttribute`)
 
+**Giáo viên chỉ thấy học sinh mình phụ trách.** `GET /api/students` của giáo viên chỉ trả các em ở lớp họ
+được phân công và lớp đã công bố — cùng tập với danh sách lớp của họ. Lọc theo lớp người khác, lớp nháp
+hay "chưa phân nhóm" ra trang rỗng chứ không báo lỗi. `GET /api/students/{id}` mở thêm cho em đã nhận
+một đề do chính giáo viên đó tạo, để liên kết từ trang kết quả vẫn mở được hồ sơ em đã chuyển lớp hoặc
+đã bị xoá dữ liệu cá nhân; ngoài hai trường hợp đó là 404. Quy tắc là một biểu thức duy nhất, ghép thẳng
+vào truy vấn EF nên lọc trong SQL, và unit test chạy chính biểu thức ấy. Quản trị viên vẫn thấy mọi tài
+khoản. (`TeacherStudentScope`, `UserRepository.GetStudentsPagedForTeacherAsync`)
+
 Ngoài ra:
 
 - Claim `role` sinh từ cột `User.Role`; trường `role` client gửi lúc đăng nhập chỉ để đối chiếu, sai
@@ -188,20 +196,21 @@ trống, và được tự chuyển sang chuỗi kết nối Npgsql. Hai điều
 
 ## Kiểm thử
 
-**Unit test** — `tests/Anthill.Tests/`, 221 test:
+**Unit test** — `tests/Anthill.Tests/`, 267 test:
 
 ```bash
 dotnet test
 ```
 
 Chúng kiểm tra logic thuần, không cần database: chia blueprint, xáo đề có seed, vòng đời đề, hạn giờ và
-điều kiện bắt đầu làm bài, chấm điểm, lịch theo lớp, cổng xem đáp án, ẩn danh hoá, luật validator.
+điều kiện bắt đầu làm bài, chấm điểm, lịch theo lớp, cổng xem đáp án, ẩn danh hoá, phạm vi học sinh của
+giáo viên, luật validator.
 
-**Bộ kiểm HTTP** — `tests/api-checks/`, 12 script, 676 phép kiểm; chi tiết từng bộ ở
+**Bộ kiểm HTTP** — `tests/api-checks/`, 14 script, 828 phép kiểm; chi tiết từng bộ ở
 [tests/api-checks/README.md](tests/api-checks/README.md). Chúng chạy trên API thật để kiểm thứ unit test
 không với tới: 401/403/404, phân quyền theo vai trò, phạm vi dữ liệu, transaction. Có một bộ cho mỗi bước
-từ `step2` tới `step8`, và năm bộ cho các phần thêm sau đó: lớp do quản trị viên lập, luồng từ lớp tới
-học sinh, lịch theo lớp, xoá mềm, trạng thái tài khoản.
+từ `step2` tới `step8`, và sáu bộ cho các phần thêm sau đó: lớp do quản trị viên lập, luồng từ lớp tới
+học sinh, lịch theo lớp, xoá mềm, trạng thái tài khoản, phạm vi học sinh của giáo viên.
 
 Cần API đang chạy, database đã migrate và đã có tài khoản demo (script đăng nhập bằng chúng), cùng
 `bash`, `curl` và `python` (`lib.sh` dùng python để đọc JSON; trên Windows chạy trong Git Bash).
@@ -211,7 +220,7 @@ Cần API đang chạy, database đã migrate và đã có tài khoản demo (sc
 bash tests/api-checks/step6-attempts.sh
 HOST=http://localhost:8080 bash tests/api-checks/step6-attempts.sh
 
-# chạy cả 12 bộ
+# chạy cả 13 bộ
 for s in tests/api-checks/*.sh; do [ "$(basename "$s")" = lib.sh ] || bash "$s"; done
 ```
 

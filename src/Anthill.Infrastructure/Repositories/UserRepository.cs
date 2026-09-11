@@ -111,6 +111,54 @@ public class UserRepository : GenericRepository<User>, IUserRepository
             .Include(u => u.Group)
             .Where(u => u.Role == UserRole.Student);
 
+        return await ApplyStudentFilters(query, search, groupId, status)
+            .ToPagedResultAsync(pagination, cancellationToken);
+    }
+
+    public async Task<PagedResult<User>> GetStudentsPagedForTeacherAsync(
+        int teacherId,
+        string? search,
+        int? groupId,
+        UserStatus? status,
+        PaginationParams pagination,
+        CancellationToken cancellationToken = default)
+    {
+        // Phạm vi đặt TRƯỚC mọi bộ lọc người dùng gửi lên và nằm trong cùng mệnh đề WHERE, nên không
+        // tổ hợp groupId / status / search nào nới được nó ra. groupId của lớp khác hay groupId = 0
+        // chỉ còn giao với tập rỗng.
+        var query = DbSet
+            .AsNoTracking()
+            .Include(u => u.Group)
+            .Where(u => u.Role == UserRole.Student)
+            .Where(TeacherStudentScope.InTaughtClass(teacherId));
+
+        return await ApplyStudentFilters(query, search, groupId, status)
+            .ToPagedResultAsync(pagination, cancellationToken);
+    }
+
+    public async Task<User?> GetStudentProfileForTeacherAsync(
+        int studentId,
+        int teacherId,
+        CancellationToken cancellationToken = default) =>
+        await DbSet
+            .Include(u => u.Group)
+            .Where(u => u.Id == studentId && u.Role == UserRole.Student)
+            .Where(TeacherStudentScope.CanReadProfile(teacherId))
+            .FirstOrDefaultAsync(cancellationToken);
+
+    /// <summary>
+    /// Ba bộ lọc của màn hình danh sách và thứ tự sắp xếp, dùng chung cho quản trị viên và giáo viên.
+    /// </summary>
+    /// <remarks>
+    /// Dùng chung phần lọc chứ không dùng chung phần phạm vi: hai hàm public ở trên mỗi hàm tự dựng
+    /// điểm xuất phát của mình, nên không có tham số nào để truyền nhầm.
+    /// </remarks>
+    private static IQueryable<User> ApplyStudentFilters(
+        IQueryable<User> query,
+        string? search,
+        int? groupId,
+        UserStatus? status)
+    {
         if (groupId.HasValue)
         {
             // 0 là UNASSIGNED_GROUP_ID của frontend, nghĩa là "chưa phân nhóm" — không phải một
@@ -136,9 +184,7 @@ public class UserRepository : GenericRepository<User>, IUserRepository
         }
 
         // Mã học sinh là thứ tự tự nhiên của danh sách lớp; ThenBy(Id) để phân trang ổn định.
-        query = query.OrderBy(u => u.Code).ThenBy(u => u.Id);
-
-        return await query.ToPagedResultAsync(pagination, cancellationToken);
+        return query.OrderBy(u => u.Code).ThenBy(u => u.Id);
     }
 
     public async Task<IReadOnlyList<User>> GetStudentsByGroupAsync(
