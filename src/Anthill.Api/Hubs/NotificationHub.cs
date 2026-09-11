@@ -58,21 +58,10 @@ public sealed class NotificationHub : Hub
             return;
         }
 
-        // Token còn hạn vẫn có thể trỏ tới một tài khoản đã bị khoá hoặc vừa đổi mật khẩu sau khi
-        // token được cấp (§5). Kết nối WebSocket sống hàng giờ nên phải chặn ngay tại đây, không thì
-        // tài khoản bị khoá vẫn nhận thông báo cho tới lúc token hết hạn.
-        var account = await _unitOfWork.Users.GetByIdAsync(userId.Value, Context.ConnectionAborted);
-        var stamp = Context.User?.FindFirst(CurrentUser.SecurityStampClaimType)?.Value;
-
-        if (account is null
-            || account.Status == UserStatus.Locked
-            || (!string.IsNullOrEmpty(stamp) && !string.Equals(stamp, account.SecurityStamp, StringComparison.Ordinal)))
-        {
-            _logger.LogInformation("Từ chối kết nối hub của người dùng {UserId}: tài khoản không còn hợp lệ.", userId);
-            Context.Abort();
-            return;
-        }
-
+        // Không tra lại tài khoản ở đây. Token của tài khoản bị khoá, chờ xoá hay đã xoay stamp bị
+        // OnTokenValidated (AddJwtAuthentication) chặn ngay ở request negotiate và request mở kết
+        // nối, trước khi hub được dựng — nên một phép tra ở đây không bao giờ còn gặp token cũ, mà
+        // bản trước đó lại chỉ biết mỗi trạng thái Locked.
         await Groups.AddToGroupAsync(Context.ConnectionId, UserGroup(userId.Value), Context.ConnectionAborted);
         await base.OnConnectedAsync();
     }

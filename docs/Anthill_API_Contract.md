@@ -265,7 +265,7 @@ Mock hiện tra ngược `mockQuestions` theo id lúc chấm — điều đó c�
 ### Tài khoản
 
 - Mật khẩu hash bằng **BCrypt** (work factor ≥ 11). FE hiện chấp nhận mọi mật khẩu không rỗng.
-- **`status = 'locked'` phải chặn đăng nhập** (403) và vô hiệu hoá JWT còn hạn qua `security_stamp`. Hiện nó chỉ là nhãn hiển thị.
+- **`status = 'locked'` chặn đăng nhập** (403) và vô hiệu hoá JWT còn hạn qua `security_stamp`. Khoá, đưa vào diện xoá, đổi mật khẩu và cấp lại mật khẩu đều xoay stamp; mở khoá không làm token cũ sống lại. Token của tài khoản không còn, stamp đã đổi, hoặc trạng thái khác `active` nhận **401** kèm `message` nói rõ lý do trên **mọi** endpoint và cả negotiate của hub — trừ `GET/PUT /api/auth/me` và `change-password`, nơi tài khoản bị khoá hay chờ xoá nhận **403** kèm lý do.
 - Unique index trên `email`, `username`, `code` — so sánh sau khi trim, không phân biệt hoa thường. Trả **409**, không phải 400. Khi sửa phải loại trừ chính bản ghi đang sửa.
 - **Trim mọi chuỗi trước khi lưu và trước khi so trùng**, nếu không `'HS1001 '` và `'HS1001'` cùng lọt qua unique index.
 - `createdAt` do server đặt = `DateTime.UtcNow`, không nhận từ client.

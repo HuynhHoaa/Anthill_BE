@@ -40,9 +40,10 @@ Giới hạn đã biết:
   token. Access token sống 120 phút (480 ở Development), đủ cho một bài 45–60 phút.
 - Ảnh câu hỏi ghi xuống đĩa của máy chạy API (`wwwroot/uploads`); nền tảng nào xoá đĩa khi khởi động
   lại thì cần một cài đặt `IFileService` khác.
-- `security_stamp` và trạng thái tài khoản mới được đối chiếu ở `GET/PUT /api/auth/me`, `change-password`
-  và lúc mở kết nối SignalR. Các endpoint còn lại (làm bài, kết quả, thông báo...) vẫn nhận token cũ của
-  tài khoản vừa bị khoá hay vừa đưa vào diện xoá cho tới khi token hết hạn.
+- Kết nối SignalR **đã mở** trước khi tài khoản bị khoá, đưa vào diện xoá hay đổi mật khẩu vẫn nhận sự
+  kiện đẩy cho tới khi nó ngắt: token chỉ được kiểm lúc negotiate và lúc mở kết nối. Mọi request REST
+  của phiên đó thì bị từ chối ngay (xem mục thu hồi phiên bên dưới), và frontend về trang đăng nhập ở
+  lời gọi REST đầu tiên, nên kết nối đó thường chết theo.
 - Lưu nháp sau khi hết giờ trả 410, nhưng nếu `AutoSubmitExpiredAttemptsService` đã chốt bài trước gói
   nháp thì trả 409 (lượt không còn ở trạng thái đang làm). Client phải xử lý cả hai mã như "hết giờ".
 
@@ -88,11 +89,17 @@ bị bỏ qua; hai request đua nhau thì index chặn request đến sau, và `
 của đồng nghiệp cùng môn — đang hiện trên màn hình nhưng không được sửa — trả 403 kèm lời giải thích,
 vì báo "không tìm thấy" ở đó chỉ khiến giáo viên tưởng hệ thống hỏng. (`QuestionService.LoadWritableAsync`)
 
-**Đổi trạng thái tài khoản thì phiên cũ bị cắt ở các cửa chính.** Mỗi JWT mang `security_stamp`; khoá,
-đổi mật khẩu, cấp lại mật khẩu và đưa vào diện xoá đều xoay giá trị này, còn mở khoá và đăng xuất cố ý
-không xoay. `GET/PUT /api/auth/me` và `change-password` đối chiếu stamp và trạng thái với database rồi
-trả 401/403; hub từ chối kết nối mới. Các endpoint khác chưa đối chiếu (xem giới hạn ở trên).
-(`AuthService.GuardAccountState`, `NotificationHub.OnConnectedAsync`)
+**Đổi trạng thái tài khoản thì phiên cũ bị cắt trên mọi endpoint.** Mỗi JWT mang `security_stamp`;
+khoá, đổi mật khẩu, cấp lại mật khẩu và đưa vào diện xoá đều xoay giá trị này, còn mở khoá và đăng xuất
+cố ý không xoay. Sau khi kiểm chữ ký, `OnTokenValidated` tra tài khoản theo khoá chính (chỉ Id, Status,
+SecurityStamp, không theo dõi thay đổi) và từ chối token khi tài khoản không còn, stamp đã đổi, hoặc
+trạng thái không phải Active — áp cho mọi request có token, kể cả negotiate và kết nối SignalR. Token
+bị từ chối nhận **401** kèm lý do cụ thể, vì 401 là thứ khiến frontend đưa người dùng về trang đăng
+nhập; mở khoá không làm token cũ sống lại. Riêng `GET/PUT /api/auth/me` và `change-password` giữ hợp
+đồng cũ: tài khoản bị khoá hay chờ xoá nhận 403 kèm câu nói rõ phải liên hệ ai. Đổi lại là thêm một
+truy vấn theo khoá chính trên mỗi request có token; cố ý không cache, vì cache có hạn là mở lại đúng
+khoảng trễ này. (`SessionValidation`, `AccountSessionReader`,
+`ServiceCollectionExtensions.OnTokenValidated`, `ReportsBlockedAccountAttribute`)
 
 Ngoài ra:
 

@@ -25,7 +25,6 @@ namespace Anthill.Application.Services;
 public sealed class AuthService : IAuthService
 {
     private const string InvalidCredentialsMessage = "Tên đăng nhập hoặc mật khẩu không đúng.";
-    private const string AccountLockedMessage = "Tài khoản đã bị khoá, liên hệ quản trị viên.";
     private const string SessionExpiredMessage = "Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.";
     private const string RoleMismatchMessage = "Tài khoản không thuộc vai trò đã chọn.";
 
@@ -401,14 +400,11 @@ public sealed class AuthService : IAuthService
     /// Người gọi tới được đây đã chứng minh biết mật khẩu, nên nói cụ thể không làm lộ tài khoản
     /// nào có thật nữa — và một câu chung chung sẽ khiến học sinh gọi lên hỏi mà tổng đài cũng
     /// không đoán được chuyện gì.
+    /// <para>
+    /// Câu chữ nằm ở <see cref="SessionValidation"/> vì phép kiểm phiên trên mọi endpoint cũng nói
+    /// đúng những câu này.
+    /// </para>
     /// </remarks>
-    private static string MessageForBlockedStatus(UserStatus status) => status switch
-    {
-        UserStatus.Locked => AccountLockedMessage,
-        UserStatus.PendingDeletion =>
-            "Tài khoản đang chờ xoá theo yêu cầu của quản trị viên. Liên hệ nhà trường nếu đây là nhầm lẫn.",
-        UserStatus.Deleted =>
-            "Tài khoản này không còn tồn tại.",
-        _ => AccountLockedMessage
-    };
+    private static string MessageForBlockedStatus(UserStatus status) =>
+        SessionValidation.BlockedStatusMessage(status);
 }

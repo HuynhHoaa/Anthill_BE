@@ -333,6 +333,7 @@ public static class ServiceCollectionExtensions
                 bearer.Events = new JwtBearerEvents
                 {
                     OnMessageReceived = OnMessageReceived,
+                    OnTokenValidated = OnTokenValidated,
                     OnChallenge = OnChallenge,
                     OnForbidden = OnForbidden
                 };
@@ -365,6 +366,65 @@ public static class ServiceCollectionExtensions
         return Task.CompletedTask;
     }
 
+    /// <summary>
+    /// Chữ ký và hạn dùng đã đạt; giờ đối chiếu token với tài khoản <b>hiện tại</b> trong database.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Khoá, đưa vào diện xoá, đổi hay cấp lại mật khẩu đều xoay <c>SecurityStamp</c>. Không có bước
+    /// này thì token cũ vẫn làm bài, xem kết quả, đọc thông báo tới khi hết hạn (120 phút) — trong khi
+    /// hộp thoại khoá tài khoản hứa với quản trị viên rằng em đó bị đăng xuất ngay.
+    /// </para>
+    /// <para>
+    /// Chạy cho mọi request có token, kể cả negotiate và request mở kết nối của SignalR (token đi qua
+    /// query, xem <see cref="OnMessageReceived"/>). Kết quả xác thực được nhớ trong request, nên dù
+    /// UseAuthentication và UseAuthorization cùng hỏi thì database cũng chỉ bị tra một lần.
+    /// </para>
+    /// <para>
+    /// Đánh đổi: thêm một truy vấn theo khoá chính trên mỗi request có token. Chấp nhận được ở quy mô
+    /// này; cache có hạn thì rẻ hơn nhưng mở lại đúng khoảng trễ mà bước này sinh ra để đóng (xem
+    /// <c>AccountSessionReader</c>). Database lỗi thì request lỗi theo — đóng cửa chứ không cho qua.
+    /// </para>
+    /// </remarks>
+    private static async Task OnTokenValidated(TokenValidatedContext context)
+    {
+        var principal = context.Principal;
+        var subject = principal?.FindFirst(CurrentUser.UserIdClaimType)?.Value;
+        var stamp = principal?.FindFirst(CurrentUser.SecurityStampClaimType)?.Value;
+
+        SessionVerdict verdict;
+        if (!SessionValidation.TryReadUserId(subject, out var userId))
+        {
+            verdict = SessionVerdict.MalformedToken;
+        }
+        else
+        {
+            var reader = context.HttpContext.RequestServices.GetRequiredService<IAccountSessionReader>();
+            var account = await reader.GetAsync(userId, context.HttpContext.RequestAborted);
+            verdict = SessionValidation.Evaluate(stamp, account);
+        }
+
+        if (verdict == SessionVerdict.Valid)
+        {
+            return;
+        }
+
+        // UseRouting đứng trước UseAuthentication nên endpoint đã được chọn ở thời điểm này.
+        if (SessionValidation.IsBlockedAccount(verdict)
+            && context.HttpContext.GetEndpoint()?.Metadata.GetMetadata<ReportsBlockedAccountAttribute>() is not null)
+        {
+            return;
+        }
+
+        context.Fail(new RevokedSessionException(SessionValidation.MessageFor(verdict)));
+    }
+
+    /// <summary>
+    /// Mang câu chữ của phép kiểm phiên từ <see cref="OnTokenValidated"/> sang <see cref="OnChallenge"/>,
+    /// để 401 nói được "tài khoản đã bị khoá" thay vì câu "hết hạn" chung chung.
+    /// </summary>
+    private sealed class RevokedSessionException(string message) : Exception(message);
+
     /// <summary>401 mặc định của JwtBearer có body rỗng; frontend đọc trường <c>message</c> (§1).</summary>
     private static async Task OnChallenge(JwtBearerChallengeContext context)
     {
@@ -375,8 +435,12 @@ public static class ServiceCollectionExtensions
             return;
         }
 
+        var message = context.AuthenticateFailure is RevokedSessionException revoked
+            ? revoked.Message
+            : "Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.";
+
         context.Response.StatusCode = StatusCodes.Status401Unauthorized;
-        await WriteMessageAsync(context.Response, "Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.");
+        await WriteMessageAsync(context.Response, message);
     }
 
     private static Task OnForbidden(ForbiddenContext context)

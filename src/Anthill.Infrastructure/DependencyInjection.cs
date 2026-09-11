@@ -130,6 +130,9 @@ public static class DependencyInjection
         services.AddSingleton<IPasswordHasher, PasswordHasher>();
         services.AddSingleton<IJwtTokenGenerator, JwtTokenGenerator>();
 
+        // Scoped chứ không Singleton như hai dòng trên: nó đọc qua AppDbContext của chính request.
+        services.AddScoped<IAccountSessionReader, AccountSessionReader>();
+
         return services;
     }
 

@@ -1,3 +1,4 @@
+using Anthill.Api.Security;
 using Anthill.Application.Common;
 using Anthill.Application.DTOs.Auth;
 using Anthill.Application.Interfaces.Services;
@@ -59,6 +60,11 @@ public sealed class AuthController : ApiControllerBase
         => FromResult(await _authService.RefreshAsync(request, cancellationToken));
 
     /// <summary>Hồ sơ của người đang đăng nhập, suy từ JWT.</summary>
+    /// <remarks>
+    /// Token của tài khoản bị khoá hay chờ xoá nhận <b>403</b> kèm lý do ở đây, trong khi mọi endpoint
+    /// nghiệp vụ trả 401 — xem <see cref="ReportsBlockedAccountAttribute"/>.
+    /// </remarks>
+    [ReportsBlockedAccount]
     [HttpGet("me")]
     [ProducesResponseType<UserProfileDto>(StatusCodes.Status200OK)]
     [ProducesResponseType<ApiErrorResponse>(StatusCodes.Status401Unauthorized)]
@@ -68,6 +74,7 @@ public sealed class AuthController : ApiControllerBase
 
     /// <summary>Cập nhật thông tin liên hệ của chính mình.</summary>
     /// <remarks>Email trùng tài khoản khác trả 409, không phải 400 (§5).</remarks>
+    [ReportsBlockedAccount]
     [HttpPut("me")]
     [ProducesResponseType<UserProfileDto>(StatusCodes.Status200OK)]
     [ProducesResponseType<ApiErrorResponse>(StatusCodes.Status400BadRequest)]
@@ -84,6 +91,7 @@ public sealed class AuthController : ApiControllerBase
     /// ngay — kể cả token client đang cầm. Frontend phải điều hướng về màn hình đăng nhập sau khi
     /// nhận 200 ở đây.
     /// </remarks>
+    [ReportsBlockedAccount]
     [HttpPost("change-password")]
     [ProducesResponseType<ApiMessageResponse>(StatusCodes.Status200OK)]
     [ProducesResponseType<ApiErrorResponse>(StatusCodes.Status400BadRequest)]
