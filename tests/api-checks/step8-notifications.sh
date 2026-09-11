@@ -8,8 +8,8 @@
 
 source "$(dirname "$0")/lib.sh"
 
-TEACHER=$(login "an.nv@eduquiz.vn" "eduquiz123")
-ADMIN=$(login "huy.pq@eduquiz.vn" "eduquiz123")
+TEACHER=$(login "an.nv@anthill.edu.vn" "anthill123")
+ADMIN=$(login "huy.pq@anthill.edu.vn" "anthill123")
 
 STAMP=$(date +%H%M%S)
 QUESTIONS=(); STUDENTS=(); EXAMS=(); GROUP_IDS=()
@@ -41,14 +41,14 @@ GROUP_IDS+=("$GROUP_ID")
 NEW_STUDENT_ID=""
 new_student() {
   local c; c=$(call POST /api/students "$ADMIN" \
-    "{\"fullName\":\"Hoc sinh $1\",\"email\":\"n$1@kiemthu.vn\",\"username\":\"n$1\",\"code\":\"N$1\",\"password\":\"eduquiz123\",\"groupId\":$GROUP_ID}")
+    "{\"fullName\":\"Hoc sinh $1\",\"email\":\"n$1@kiemthu.vn\",\"username\":\"n$1\",\"code\":\"N$1\",\"password\":\"anthill123\",\"groupId\":$GROUP_ID}")
   [[ "$c" != "200" ]] && fail_fast "tao hoc sinh: HTTP $c — $(body)"
   NEW_STUDENT_ID=$(json_field id); STUDENTS+=("$NEW_STUDENT_ID")
 }
 new_student "${STAMP}a"; S_A=$NEW_STUDENT_ID
 new_student "${STAMP}b"; S_B=$NEW_STUDENT_ID
-STUDENT_A=$(login "n${STAMP}a" "eduquiz123")
-STUDENT_B=$(login "n${STAMP}b" "eduquiz123")
+STUDENT_A=$(login "n${STAMP}a" "anthill123")
+STUDENT_B=$(login "n${STAMP}b" "anthill123")
 
 for pair in easy:1 easy:2 easy:3 easy:4 medium:1 medium:2 medium:3 hard:1 hard:2; do
   d="${pair%%:*}"; i="${pair##*:}"

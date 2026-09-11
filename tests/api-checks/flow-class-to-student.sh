@@ -12,8 +12,8 @@
 
 source "$(dirname "$0")/lib.sh"
 
-ADMIN=$(login "huy.pq@eduquiz.vn" "eduquiz123")
-TEACHER=$(login "an.nv@eduquiz.vn" "eduquiz123")
+ADMIN=$(login "huy.pq@anthill.edu.vn" "anthill123")
+TEACHER=$(login "an.nv@anthill.edu.vn" "anthill123")
 
 STAMP=$(date +%H%M%S)
 GROUP_IDS=(); EXAM_IDS=(); STUDENT_IDS=()
@@ -40,7 +40,7 @@ expect_status "tao lop → 200" 200 "$code"
 
 for i in 0 1 2; do
   c=$(call POST /api/students "$ADMIN" \
-    "{\"fullName\":\"Hoc sinh E2E $i\",\"email\":\"e2e$STAMP$i@kiemthu.vn\",\"username\":\"e2e$STAMP$i\",\"code\":\"E2E$STAMP$i\",\"password\":\"eduquiz123\",\"groupId\":$GID}")
+    "{\"fullName\":\"Hoc sinh E2E $i\",\"email\":\"e2e$STAMP$i@kiemthu.vn\",\"username\":\"e2e$STAMP$i\",\"code\":\"E2E$STAMP$i\",\"password\":\"anthill123\",\"groupId\":$GID}")
   [[ "$c" != "200" ]] && fail_fast "tao hoc sinh $i: HTTP $c — $(body)"
   STUDENT_IDS+=("$(json_field id)")
 done
@@ -73,7 +73,7 @@ expect_json   "  giao dung 3 em, tuc ca lop" assignedCount 3
 
 section "5. TUNG em trong lop deu thay bai"
 for i in 0 1 2; do
-  TOK=$(login "e2e$STAMP$i" "eduquiz123")
+  TOK=$(login "e2e$STAMP$i" "anthill123")
   expect_status "hoc sinh $i doc duoc danh sach bai → 200" 200 "$(call GET /api/my/exams "$TOK")"
   expect_status "  thay de vua duoc giao" true \
     "$(body | python -c "import json,sys;print(str(any(x['examId'] == $EID for x in json.load(sys.stdin))).lower())")"
@@ -82,11 +82,11 @@ for i in 0 1 2; do
 done
 
 section "6. Hoc sinh dau tien lam va nop bai"
-STUDENT=$(login "e2e${STAMP}0" "eduquiz123")
+STUDENT=$(login "e2e${STAMP}0" "anthill123")
 call GET /api/my/exams "$STUDENT" > /dev/null
 AID=$(body | python -c "import json,sys;print(next(x['assignmentId'] for x in json.load(sys.stdin) if x['examId'] == $EID))")
 expect_status "bat dau lam bai → 200" 200 "$(call POST /api/exam-attempts "$STUDENT" "{\"assignmentId\":$AID}")"
-SESSION=$(mktemp -t eduquiz-e2e.XXXXXX); cp "$BODY_FILE" "$SESSION"
+SESSION=$(mktemp -t anthill-e2e.XXXXXX); cp "$BODY_FILE" "$SESSION"
 SESSION_NATIVE=$(to_native_path "$SESSION")
 expect_status "  nhan du 9 cau" 9 "$(python -c "import json;print(len(json.load(open(r'''$SESSION_NATIVE''',encoding='utf-8'))['questions']))")"
 # §3 quy tac 1: dap an dung khong duoc roi server trong luc dang lam bai.
@@ -115,7 +115,7 @@ expect_status "  co it nhat mot luot da nop" true \
   "$(body | python -c "import json,sys;print(str(json.load(sys.stdin)['total'] >= 1).lower())")"
 
 section "8. Hoc sinh NGOAI lop khong thay gi"
-OUTSIDER=$(login "lan.tt" "eduquiz123")
+OUTSIDER=$(login "lan.tt" "anthill123")
 expect_status "danh sach cua em ngoai lop → 200" 200 "$(call GET /api/my/exams "$OUTSIDER")"
 expect_status "  khong chua de nay" true \
   "$(body | python -c "import json,sys;print(str(all(x['examId'] != $EID for x in json.load(sys.stdin))).lower())")"
