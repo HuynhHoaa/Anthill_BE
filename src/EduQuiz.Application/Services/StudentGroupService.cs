@@ -190,6 +190,10 @@ public sealed class StudentGroupService : IStudentGroupService
         // Khoá ngoại đặt OnDelete(SetNull) nên xoá nhóm còn người sẽ *chạy được* và âm thầm đẩy cả
         // lớp về "chưa phân nhóm". Chặn ở đây để việc đó phải là một quyết định có ý thức: giáo viên
         // chuyển học sinh đi trước, rồi mới xoá.
+        //
+        // Tài khoản chờ xoá không chặn việc xoá lớp: sĩ số không tính chúng, và bắt quản trị viên
+        // chờ 60 ngày chỉ vì một em đã rời trường là vô lý. Khoá ngoại đưa em đó về "chưa phân
+        // nhóm"; nếu sau này được khôi phục, em quay lại mà không có lớp — đúng, vì lớp không còn.
         if (count > 0)
         {
             return Result.Conflict(

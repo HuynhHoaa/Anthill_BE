@@ -64,15 +64,6 @@ public static class StudentMappingExtensions
     }
 
     /// <summary>
-    /// Đọc ngược chuỗi trạng thái do client gửi: <c>"active" | "locked"</c>.
-    /// </summary>
-    /// <remarks>
-    /// Cặp đôi của <see cref="UserMappingExtensions.ToStatusString"/>. Dùng
-    /// <see cref="Enum.TryParse{TEnum}(string, bool, out TEnum)"/> nên <c>"Active"</c> và
-    /// <c>"active"</c> đều qua, còn <c>Enum.IsDefined</c> chặn trường hợp client gửi số:
-    /// <c>"7"</c> parse thành công thành một <see cref="UserStatus"/> không tồn tại.
-    /// </remarks>
-    /// <summary>
     /// Đọc trạng thái mà quản trị viên được phép <b>đặt trực tiếp</b>: chỉ <c>active</c> và <c>locked</c>.
     /// </summary>
     /// <remarks>

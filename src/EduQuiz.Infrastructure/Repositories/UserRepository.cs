@@ -229,7 +229,12 @@ public class UserRepository : GenericRepository<User>, IUserRepository
     }
 
     public async Task<int> CountStudentsInGroupAsync(int groupId, CancellationToken cancellationToken = default) =>
-        await DbSet.CountAsync(u => u.Role == UserRole.Student && u.GroupId == groupId, cancellationToken);
+        await DbSet.CountAsync(
+            u => u.Role == UserRole.Student
+                 && u.GroupId == groupId
+                 && u.Status != UserStatus.PendingDeletion
+                 && u.Status != UserStatus.Deleted,
+            cancellationToken);
 
     public async Task<IReadOnlyDictionary<int, int>> CountStudentsByGroupAsync(
         IEnumerable<int> groupIds,
@@ -242,7 +247,11 @@ public class UserRepository : GenericRepository<User>, IUserRepository
         }
 
         var counts = await DbSet
-            .Where(u => u.Role == UserRole.Student && u.GroupId != null && ids.Contains(u.GroupId!.Value))
+            .Where(u => u.Role == UserRole.Student
+                        && u.GroupId != null
+                        && ids.Contains(u.GroupId!.Value)
+                        && u.Status != UserStatus.PendingDeletion
+                        && u.Status != UserStatus.Deleted)
             .GroupBy(u => u.GroupId!.Value)
             .Select(g => new { GroupId = g.Key, Count = g.Count() })
             .ToListAsync(cancellationToken);

@@ -19,16 +19,18 @@ TEACHER=$(login "an.nv@eduquiz.vn" "eduquiz123")
 
 STAMP=$(date +%H%M%S)
 SID=""; OTHER=""; GID=""
+CID=""; LEAVER=""; STAYER=""; LONE=""; LONE_GID=""; EID=""
 
 cleanup() {
   section "Don du lieu"
+  [[ -n "$EID" ]] && call DELETE "/api/exams/$EID" "$TEACHER" > /dev/null
   # Tai khoan cho xoa khong khoa duoc nua (dung la dieu bo kiem nay chung minh), nen khoi phuc truoc.
-  for id in $SID $OTHER; do
+  for id in $SID $OTHER $LEAVER $STAYER $LONE; do
     call POST "/api/students/$id/restore" "$ADMIN" > /dev/null
-    call DELETE "/api/student-groups/$GID/students/$id" "$ADMIN" > /dev/null
+    for gid in $GID $CID; do call DELETE "/api/student-groups/$gid/students/$id" "$ADMIN" > /dev/null; done
     call PATCH "/api/students/$id/status" "$ADMIN" '{"status":"locked"}' > /dev/null
   done
-  [[ -n "$GID" ]] && call DELETE "/api/student-groups/$GID" "$ADMIN" > /dev/null
+  for gid in $GID $CID $LONE_GID; do call DELETE "/api/student-groups/$gid" "$ADMIN" > /dev/null; done
   printf '  da don\n'
 }
 trap cleanup EXIT
@@ -65,6 +67,12 @@ elif mode == "days_between":
 elif mode == "contains_id":
     rows = data["items"] if isinstance(data, dict) else data
     print("yes" if any(row["id"] == int(sys.argv[3]) for row in rows) else "no")
+
+elif mode == "field_by_id":
+    # Mot truong cua dong co id cho truoc, trong danh sach co hoac khong phan trang.
+    rows = data["items"] if isinstance(data, dict) else data
+    match = next((row for row in rows if row["id"] == int(sys.argv[3])), None)
+    print("absent" if match is None else match.get(sys.argv[4]))
 PYHELPER
 HELPERS=$(to_native_path "$HELPERS")
 trap 'rm -f "$HELPERS"; cleanup' EXIT
@@ -72,6 +80,7 @@ trap 'rm -f "$HELPERS"; cleanup' EXIT
 has_field()    { python "$HELPERS" has "$(to_native_path "$BODY_FILE")" "$1"; }
 days_between() { python "$HELPERS" days_between "$(to_native_path "$BODY_FILE")" "$1" "$2"; }
 contains_id()  { python "$HELPERS" contains_id "$(to_native_path "$BODY_FILE")" "$1"; }
+field_by_id()  { python "$HELPERS" field_by_id "$(to_native_path "$BODY_FILE")" "$1" "$2"; }
 
 section "Dung du lieu nen"
 code=$(call POST /api/student-groups "$ADMIN" "{\"name\":\"Lop rao $STAMP\"}")
@@ -144,6 +153,59 @@ expect_status "loc status=pendingDeletion → 200" 200 \
   "$(call GET "/api/students?status=pendingDeletion&pageSize=200" "$ADMIN")"
 expect_status "  co tai khoan cho xoa" yes "$(contains_id "$SID")"
 expect_status "loc gia tri la → 400" 400 "$(call GET "/api/students?status=xyz" "$ADMIN")"
+
+section "Si so khong tinh tai khoan cho xoa"
+# Hai em vao lop khi con binh thuong, roi mot em roi truong. Em do van giu GroupId — khoi phuc la
+# ve dung lop cu — nhung khong con la si so: dem vao thi cau "giao bai cho N hoc sinh" sai ngay.
+CID=$(new_class "$ADMIN" "$TEACHER" "Siso$STAMP") || fail_fast "tao lop cong bo"
+new_student "${STAMP}c"; LEAVER=$NEW_ID
+new_student "${STAMP}d"; STAYER=$NEW_ID
+expect_status "xep hai em vao lop → 200" 200 \
+  "$(call POST "/api/student-groups/$CID/students" "$ADMIN" "{\"studentIds\":[$LEAVER,$STAYER]}")"
+expect_json   "  si so = 2" studentCount 2
+expect_status "mot em roi truong → 200" 200 \
+  "$(call POST "/api/students/$LEAVER/request-deletion" "$ADMIN" '{"reason":"Hoc sinh chuyen truong giua hoc ky."}')"
+expect_status "doc lop → 200" 200 "$(call GET "/api/student-groups/$CID" "$ADMIN")"
+expect_json   "  si so con 1" studentCount 1
+expect_status "danh sach lop cua quan tri vien → 200" 200 \
+  "$(call GET "/api/student-groups?search=Siso$STAMP&pageSize=100" "$ADMIN")"
+expect_status "  si so trong danh sach cung la 1" 1 "$(field_by_id "$CID" studentCount)"
+expect_status "danh sach lop cua giao vien → 200" 200 \
+  "$(call GET "/api/student-groups?search=Siso$STAMP&pageSize=100" "$TEACHER")"
+expect_status "  giao vien cung thay si so 1" 1 "$(field_by_id "$CID" studentCount)"
+# Van hien trong danh sach thanh vien: quan tri vien can thay em do de con khoi phuc duoc.
+expect_status "thanh vien lop → 200" 200 "$(call GET "/api/student-groups/$CID/students" "$ADMIN")"
+expect_status "  van liet ke em cho xoa" yes "$(contains_id "$LEAVER")"
+
+section "Giao bai theo lop bo qua tai khoan cho xoa"
+code=$(call POST /api/exams "$TEACHER" "$(cat <<JSON
+{
+  "title": "De rao $STAMP", "topic": "", "durationMinutes": 45, "totalQuestions": 9,
+  "easyPercentage": 45, "mediumPercentage": 33, "hardPercentage": 22, "pointPerQuestion": 1,
+  "shuffleQuestions": true, "shuffleAnswers": true, "showResultAfterSubmit": true,
+  "openAt": "2020-01-01T00:00:00Z", "closeAt": "2035-01-01T00:00:00Z"
+}
+JSON
+)")
+[[ "$code" != "200" ]] && fail_fast "tao de: HTTP $code — $(body)"
+EID=$(json_field id)
+expect_status "giao bai cho ca lop → 200" 200 \
+  "$(call POST "/api/exams/$EID/assignments" "$TEACHER" "{\"studentIds\":[],\"groupIds\":[$CID],\"notify\":false}")"
+expect_json   "  chi giao cho em con hoc" assignedCount 1
+expect_json   "  em cho xoa bi bo qua" skippedLocked 1
+
+section "Lop chi con tai khoan cho xoa thi xoa duoc"
+# Bat quan tri vien cho 60 ngay moi xoa duoc lop chi vi mot em da roi truong la vo ly.
+LONE_GID=$(new_class "$ADMIN" "$TEACHER" "Mot$STAMP") || fail_fast "tao lop thu hai"
+new_student "${STAMP}e"; LONE=$NEW_ID
+expect_status "xep em vao lop → 200" 200 \
+  "$(call POST "/api/student-groups/$LONE_GID/students" "$ADMIN" "{\"studentIds\":[$LONE]}")"
+expect_status "em roi truong → 200" 200 \
+  "$(call POST "/api/students/$LONE/request-deletion" "$ADMIN" '{"reason":"Hoc sinh chuyen truong giua hoc ky."}')"
+expect_status "xoa lop chi con em cho xoa → 200" 200 "$(call DELETE "/api/student-groups/$LONE_GID" "$ADMIN")"
+expect_status "doc lai em do → 200" 200 "$(call GET "/api/students/$LONE" "$ADMIN")"
+expect_json   "  ve chua phan nhom" groupId 0
+expect_json   "  van dang cho xoa" status pendingDeletion
 
 section "Khoi phuc la loi duy nhat, va xoa sach dau vet"
 expect_status "khoi phuc → 200" 200 "$(call POST "/api/students/$SID/restore" "$ADMIN")"
