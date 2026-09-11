@@ -90,12 +90,17 @@ public sealed class AuthController : ApiControllerBase
     /// Đổi thành công sẽ xoay <c>SecurityStamp</c>, nên <b>mọi</b> token đã cấp trước đó mất hiệu lực
     /// ngay — kể cả token client đang cầm. Frontend phải điều hướng về màn hình đăng nhập sau khi
     /// nhận 200 ở đây.
+    /// <para>
+    /// Sai mật khẩu hiện tại là <b>400</b> kèm <c>errors.currentPassword</c>. 401 chỉ dành cho phiên đã
+    /// chết, vì frontend đăng xuất người dùng ngay khi gặp nó.
+    /// </para>
     /// </remarks>
     [ReportsBlockedAccount]
     [HttpPost("change-password")]
     [ProducesResponseType<ApiMessageResponse>(StatusCodes.Status200OK)]
     [ProducesResponseType<ApiErrorResponse>(StatusCodes.Status400BadRequest)]
     [ProducesResponseType<ApiErrorResponse>(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType<ApiErrorResponse>(StatusCodes.Status403Forbidden)]
     public async Task<IActionResult> ChangePassword(
         [FromBody] ChangePasswordRequest request,
         CancellationToken cancellationToken)

@@ -5,6 +5,7 @@ using System.Text.Json.Serialization;
 using System.Text.Unicode;
 using Anthill.Api.BackgroundJobs;
 using Anthill.Api.Configuration;
+using Anthill.Api.Hubs;
 using Anthill.Api.Realtime;
 using Anthill.Api.Filters;
 using Anthill.Api.Security;
@@ -258,7 +259,18 @@ public static class ServiceCollectionExtensions
             // lộ tên kiểu và cấu trúc bên trong. Riêng HubException vẫn tới được client ở cả hai chế
             // độ, nên phần từ chối quyền trong NotificationHub vẫn nói rõ được lý do.
             options.EnableDetailedErrors = false;
+
+            // OnTokenValidated chỉ thấy request HTTP; lời gọi hub trên một WebSocket đã mở thì không.
+            // Bộ lọc này kiểm lại phiên ở từng lời gọi, xem SessionRevalidationHubFilter.
+            options.AddFilter<SessionRevalidationHubFilter>();
         });
+
+        // Không giữ trạng thái gì: một thể hiện cho cả tiến trình, IAccountSessionReader lấy từ scope
+        // của từng lời gọi hub.
+        services.AddSingleton<SessionRevalidationHubFilter>();
+
+        // Scoped có chủ đích: nó cắt kết nối lúc scope của lời gọi hub bị dispose, xem lớp đó.
+        services.AddScoped<RevokedConnectionCloser>();
 
         // Dạy SignalR biết Clients.User(id) tra theo claim "sub".
         services.AddSingleton<IUserIdProvider, SubClaimUserIdProvider>();
@@ -389,20 +401,15 @@ public static class ServiceCollectionExtensions
     private static async Task OnTokenValidated(TokenValidatedContext context)
     {
         var principal = context.Principal;
-        var subject = principal?.FindFirst(CurrentUser.UserIdClaimType)?.Value;
-        var stamp = principal?.FindFirst(CurrentUser.SecurityStampClaimType)?.Value;
+        var reader = context.HttpContext.RequestServices.GetRequiredService<IAccountSessionReader>();
 
-        SessionVerdict verdict;
-        if (!SessionValidation.TryReadUserId(subject, out var userId))
-        {
-            verdict = SessionVerdict.MalformedToken;
-        }
-        else
-        {
-            var reader = context.HttpContext.RequestServices.GetRequiredService<IAccountSessionReader>();
-            var account = await reader.GetAsync(userId, context.HttpContext.RequestAborted);
-            verdict = SessionValidation.Evaluate(stamp, account);
-        }
+        // Cùng một hàm với bộ lọc hub (SessionRevalidationHubFilter), để REST và hub không thể kết
+        // luận khác nhau về cùng một token.
+        var verdict = await SessionValidation.CheckAsync(
+            principal?.FindFirst(CurrentUser.UserIdClaimType)?.Value,
+            principal?.FindFirst(CurrentUser.SecurityStampClaimType)?.Value,
+            reader,
+            context.HttpContext.RequestAborted);
 
         if (verdict == SessionVerdict.Valid)
         {

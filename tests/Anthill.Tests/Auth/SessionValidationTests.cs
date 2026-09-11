@@ -1,4 +1,5 @@
 using Anthill.Application.Common;
+using Anthill.Application.Interfaces.Security;
 using Anthill.Domain.Enums;
 using FluentAssertions;
 
@@ -153,5 +154,107 @@ public class SessionValidationTests
         // Bộ kiểm HTTP step2 đối chiếu nguyên văn câu này ở /api/auth/me.
         SessionValidation.BlockedStatusMessage(UserStatus.Locked)
             .Should().Be("Tài khoản đã bị khoá, liên hệ quản trị viên.");
+    }
+
+    /// <summary>
+    /// Quản trị viên là người đưa tài khoản vào diện xoá và là người duy nhất khôi phục được, nên câu
+    /// chờ xoá chỉ về đúng người đó như câu bị khoá — không phải "nhà trường" chung chung.
+    /// </summary>
+    [Fact]
+    public void Cau_cho_xoa_chi_ve_quan_tri_vien_nhu_cau_khoa()
+    {
+        // Bộ kiểm HTTP session-revocation đối chiếu nguyên văn câu này.
+        SessionValidation.BlockedStatusMessage(UserStatus.PendingDeletion)
+            .Should().Be("Tài khoản đang chờ xoá, liên hệ quản trị viên nếu đây là nhầm lẫn.");
+    }
+
+    // ----- CheckAsync: cửa chung của OnTokenValidated và bộ lọc hub -----
+
+    /// <summary>Ghi lại id được tra, để kiểm token hỏng không tốn truy vấn nào.</summary>
+    private sealed class RecordingReader(AccountSessionState? account) : IAccountSessionReader
+    {
+        public List<int> RequestedIds { get; } = [];
+
+        public Task<AccountSessionState?> GetAsync(int userId, CancellationToken cancellationToken = default)
+        {
+            RequestedIds.Add(userId);
+            return Task.FromResult(account);
+        }
+    }
+
+    [Fact]
+    public async Task CheckAsync_tra_dung_id_trong_sub_va_ket_luan_hop_le()
+    {
+        var reader = new RecordingReader(Account());
+
+        var verdict = await SessionValidation.CheckAsync("42", Stamp, reader);
+
+        verdict.Should().Be(SessionVerdict.Valid);
+        reader.RequestedIds.Should().Equal(42);
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("abc")]
+    [InlineData("0")]
+    [InlineData("-1")]
+    public async Task CheckAsync_sub_hong_thi_tu_choi_ma_khong_tra_database(string? subject)
+    {
+        var reader = new RecordingReader(Account());
+
+        var verdict = await SessionValidation.CheckAsync(subject, Stamp, reader);
+
+        verdict.Should().Be(SessionVerdict.MalformedToken);
+        reader.RequestedIds.Should().BeEmpty();
+    }
+
+    [Theory]
+    [InlineData(null)]
+    [InlineData("")]
+    [InlineData("   ")]
+    public async Task CheckAsync_thieu_stamp_thi_tu_choi_ma_khong_tra_database(string? stamp)
+    {
+        var reader = new RecordingReader(Account());
+
+        var verdict = await SessionValidation.CheckAsync("42", stamp, reader);
+
+        verdict.Should().Be(SessionVerdict.MalformedToken);
+        reader.RequestedIds.Should().BeEmpty();
+    }
+
+    [Fact]
+    public async Task CheckAsync_tai_khoan_khong_con_thi_tu_choi()
+    {
+        var verdict = await SessionValidation.CheckAsync("42", Stamp, new RecordingReader(null));
+
+        verdict.Should().Be(SessionVerdict.AccountMissing);
+    }
+
+    /// <summary>
+    /// Kết nối hub mở trước lúc bị khoá vẫn mang stamp cũ; bộ lọc hub phải nhận đúng kết luận của
+    /// trạng thái để câu trả về nói "đã bị khoá" chứ không phải "đăng nhập lại".
+    /// </summary>
+    [Theory]
+    [InlineData(UserStatus.Locked, SessionVerdict.Locked)]
+    [InlineData(UserStatus.PendingDeletion, SessionVerdict.PendingDeletion)]
+    [InlineData(UserStatus.Deleted, SessionVerdict.Deleted)]
+    public async Task CheckAsync_tai_khoan_bi_chan_sau_khi_mo_ket_noi(UserStatus status, SessionVerdict expected)
+    {
+        var reader = new RecordingReader(Account(status, "ffffffffffffffffffffffffffffffff"));
+
+        var verdict = await SessionValidation.CheckAsync("42", Stamp, reader);
+
+        verdict.Should().Be(expected);
+    }
+
+    [Fact]
+    public async Task CheckAsync_stamp_da_xoay_thi_tu_choi()
+    {
+        var reader = new RecordingReader(Account(stamp: "0000000000000000000000000000000a"));
+
+        var verdict = await SessionValidation.CheckAsync("42", Stamp, reader);
+
+        verdict.Should().Be(SessionVerdict.StampChanged);
     }
 }

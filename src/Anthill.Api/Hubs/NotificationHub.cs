@@ -21,6 +21,19 @@ namespace Anthill.Api.Hubs;
 /// duyệt không cho đặt header khi mở WebSocket. Phần xử lý nằm ở <c>OnMessageReceived</c> trong
 /// <c>ServiceCollectionExtensions.AddJwtAuthentication</c>.
 /// </para>
+/// <para>
+/// Phiên bị thu hồi (khoá, đưa vào diện xoá, đổi hay cấp lại mật khẩu) bị chặn ở ba chỗ: negotiate và
+/// request mở kết nối nhận 401 từ <c>OnTokenValidated</c>; mỗi lời gọi phương thức hub trên một kết nối
+/// đã mở bị <see cref="SessionRevalidationHubFilter"/> từ chối và kết nối bị cắt; và kết nối tự đóng
+/// khi token của nó hết hạn (<c>CloseOnAuthenticationExpiration</c> ở <c>Program.cs</c>).
+/// </para>
+/// <para>
+/// <b>Khe hở còn lại:</b> sự kiện server đẩy xuống một kết nối mở <i>trước</i> lúc thu hồi không đi qua
+/// phương thức hub nào, nên không bị kiểm. Kết nối đó vẫn nhận sự kiện của group <c>user:{id}</c>
+/// (và <c>exam:{id}</c> nếu đã vào) cho tới khi client gọi một phương thức hub — lúc đó bộ lọc cắt nó —
+/// hoặc token hết hạn, lâu nhất là hết thời hạn token (120 phút). Đóng hẳn khe này cần ghi lại
+/// connectionId của từng tài khoản và cắt chúng ngay lúc xoay stamp.
+/// </para>
 /// </remarks>
 [Authorize]
 public sealed class NotificationHub : Hub
@@ -60,8 +73,8 @@ public sealed class NotificationHub : Hub
 
         // Không tra lại tài khoản ở đây. Token của tài khoản bị khoá, chờ xoá hay đã xoay stamp bị
         // OnTokenValidated (AddJwtAuthentication) chặn ngay ở request negotiate và request mở kết
-        // nối, trước khi hub được dựng — nên một phép tra ở đây không bao giờ còn gặp token cũ, mà
-        // bản trước đó lại chỉ biết mỗi trạng thái Locked.
+        // nối, trước khi hub được dựng — nên một phép tra ở đây không bao giờ còn gặp token cũ. Thu
+        // hồi xảy ra SAU lúc này thì do SessionRevalidationHubFilter lo, ở lời gọi hub kế tiếp.
         await Groups.AddToGroupAsync(Context.ConnectionId, UserGroup(userId.Value), Context.ConnectionAborted);
         await base.OnConnectedAsync();
     }

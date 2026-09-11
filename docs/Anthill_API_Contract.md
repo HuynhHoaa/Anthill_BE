@@ -85,7 +85,7 @@ Quy tắc: giáo viên sở hữu đề luôn xem được. Học sinh xem **đi
 | POST | `/api/auth/refresh` | — | Cấp lại access token. **Bổ sung** — cần thiết vì học sinh làm bài 45–60 phút, hết token giữa chừng là mất bài |
 | GET | `/api/auth/me` | tất cả | Hồ sơ người đang đăng nhập, suy từ JWT |
 | PUT | `/api/auth/me` | tất cả | Cập nhật thông tin liên hệ của chính mình |
-| POST | `/api/auth/change-password` | tất cả | Đổi mật khẩu, xác minh mật khẩu hiện tại |
+| POST | `/api/auth/change-password` | tất cả | Đổi mật khẩu, xác minh mật khẩu hiện tại. Sai mật khẩu hiện tại → **400** kèm `errors.currentPassword`; 401 chỉ khi phiên đã chết |
 | POST | `/api/auth/logout` | tất cả | Thu hồi phiên (chỉ cần khi dùng refresh token) |
 
 `LoginResponse`: `{ accessToken, tokenType: 'Bearer', expiresAt, refreshToken?, user: UserProfileDto }`
@@ -267,7 +267,8 @@ Mock hiện tra ngược `mockQuestions` theo id lúc chấm — điều đó c�
 ### Tài khoản
 
 - Mật khẩu hash bằng **BCrypt** (work factor ≥ 11). FE hiện chấp nhận mọi mật khẩu không rỗng.
-- **`status = 'locked'` chặn đăng nhập** (403) và vô hiệu hoá JWT còn hạn qua `security_stamp`. Khoá, đưa vào diện xoá, đổi mật khẩu và cấp lại mật khẩu đều xoay stamp; mở khoá không làm token cũ sống lại. Token của tài khoản không còn, stamp đã đổi, hoặc trạng thái khác `active` nhận **401** kèm `message` nói rõ lý do trên **mọi** endpoint và cả negotiate của hub — trừ `GET/PUT /api/auth/me` và `change-password`, nơi tài khoản bị khoá hay chờ xoá nhận **403** kèm lý do.
+- **`status = 'locked'` chặn đăng nhập** (403) và vô hiệu hoá JWT còn hạn qua `security_stamp`. Khoá, đưa vào diện xoá, đổi mật khẩu và cấp lại mật khẩu đều xoay stamp; mở khoá không làm token cũ sống lại. Token của tài khoản không còn, stamp đã đổi, hoặc trạng thái khác `active` nhận **401** kèm `message` nói rõ lý do trên **mọi** endpoint và cả negotiate của hub — trừ `GET/PUT /api/auth/me` và `change-password`, nơi tài khoản bị khoá hay chờ xoá nhận **403** kèm lý do. Kết nối hub mở trước lúc thu hồi bị cắt ở lần gọi phương thức hub kế tiếp (lỗi kèm cùng lý do), và mọi kết nối hub tự đóng khi token của nó hết hạn (xem §7).
+- **`change-password` sai mật khẩu hiện tại trả 400**, `errors: { currentPassword: ["Mật khẩu hiện tại không đúng."] }` — không phải 401. Client coi 401 trên request có token là phiên đã chết và đăng xuất người dùng; gõ sai một ô thì phiên vẫn còn nguyên.
 - Unique index trên `email`, `username`, `code` — so sánh sau khi trim, không phân biệt hoa thường. Trả **409**, không phải 400. Khi sửa phải loại trừ chính bản ghi đang sửa.
 - **Trim mọi chuỗi trước khi lưu và trước khi so trùng**, nếu không `'HS1001 '` và `'HS1001'` cùng lọt qua unique index.
 - `createdAt` do server đặt = `DateTime.UtcNow`, không nhận từ client.
@@ -355,6 +356,8 @@ Cờ `Visibility = 'Private'` để người tạo giữ lại phần đề thi 
 ## 7. SignalR — `/hubs/notifications`
 
 Hub phải `[Authorize]`, đọc JWT từ query string `access_token`. Mỗi kết nối tự vào group riêng của người dùng trong `OnConnectedAsync`. Kiểm tra quyền sở hữu exam trước khi cho giáo viên `JoinExamGroup(examId)`.
+
+Phiên bị thu hồi (§5 Tài khoản): negotiate và request mở kết nối nhận 401; trên kết nối đã mở, mỗi lần gọi phương thức hub kiểm lại phiên — hết hợp lệ thì lời gọi nhận lỗi kèm lý do và server cắt kết nối; kết nối tự đóng khi token hết hạn. **Chưa che:** sự kiện server đẩy xuống một kết nối mở trước lúc thu hồi vẫn tới được cho tới lần gọi hub kế tiếp hoặc tới khi token hết hạn.
 
 | Sự kiện | Ai nhận | Khi nào |
 |---|---|---|

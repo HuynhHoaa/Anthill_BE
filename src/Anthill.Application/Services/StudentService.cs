@@ -180,9 +180,9 @@ public sealed class StudentService : IStudentService
     {
         ArgumentNullException.ThrowIfNull(request);
 
-        // Đường ghi dùng GetByIdAsync để lấy entity trần do DbContext theo dõi — cùng lý do đã ghi
-        // ở AuthService.UpdateCurrentProfileAsync: nạp kèm navigation rồi Update sẽ đánh dấu
-        // Modified lên cả bảng nhóm lớp.
+        // Đường ghi dùng GetByIdAsync để lấy entity trần do DbContext theo dõi, nên SaveChanges chỉ
+        // ghi đúng các cột gán dưới đây (xem GenericRepository.Update) — một lần sửa hồ sơ chạy song
+        // song không đè mất mật khẩu vừa cấp lại hay stamp vừa xoay.
         var student = await _unitOfWork.Users.GetByIdAsync(id, cancellationToken);
         if (!IsStudent(student))
         {

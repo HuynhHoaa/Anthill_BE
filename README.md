@@ -41,9 +41,11 @@ Giới hạn đã biết:
 - Ảnh câu hỏi ghi xuống đĩa của máy chạy API (`wwwroot/uploads`); nền tảng nào xoá đĩa khi khởi động
   lại thì cần một cài đặt `IFileService` khác.
 - Kết nối SignalR **đã mở** trước khi tài khoản bị khoá, đưa vào diện xoá hay đổi mật khẩu vẫn nhận sự
-  kiện đẩy cho tới khi nó ngắt: token chỉ được kiểm lúc negotiate và lúc mở kết nối. Mọi request REST
-  của phiên đó thì bị từ chối ngay (xem mục thu hồi phiên bên dưới), và frontend về trang đăng nhập ở
-  lời gọi REST đầu tiên, nên kết nối đó thường chết theo.
+  kiện server đẩy xuống — thông báo của chính tài khoản đó, và tiến độ nộp bài nếu là giáo viên đang
+  theo dõi một đề — cho tới khi client gọi một phương thức hub (lúc đó `SessionRevalidationHubFilter`
+  trả lỗi kèm lý do và cắt kết nối) hoặc tới khi token hết hạn (server tự đóng kết nối nhờ
+  `CloseOnAuthenticationExpiration`). Negotiate, mở kết nối mới và mọi request REST của phiên đó thì bị
+  từ chối ngay. Đóng hẳn khe này cần ghi lại connectionId của từng tài khoản để cắt ngay lúc xoay stamp.
 - Lưu nháp sau khi hết giờ trả 410, nhưng nếu `AutoSubmitExpiredAttemptsService` đã chốt bài trước gói
   nháp thì trả 409 (lượt không còn ở trạng thái đang làm). Client phải xử lý cả hai mã như "hết giờ".
 
@@ -93,13 +95,23 @@ vì báo "không tìm thấy" ở đó chỉ khiến giáo viên tưởng hệ t
 khoá, đổi mật khẩu, cấp lại mật khẩu và đưa vào diện xoá đều xoay giá trị này, còn mở khoá và đăng xuất
 cố ý không xoay. Sau khi kiểm chữ ký, `OnTokenValidated` tra tài khoản theo khoá chính (chỉ Id, Status,
 SecurityStamp, không theo dõi thay đổi) và từ chối token khi tài khoản không còn, stamp đã đổi, hoặc
-trạng thái không phải Active — áp cho mọi request có token, kể cả negotiate và kết nối SignalR. Token
-bị từ chối nhận **401** kèm lý do cụ thể, vì 401 là thứ khiến frontend đưa người dùng về trang đăng
-nhập; mở khoá không làm token cũ sống lại. Riêng `GET/PUT /api/auth/me` và `change-password` giữ hợp
-đồng cũ: tài khoản bị khoá hay chờ xoá nhận 403 kèm câu nói rõ phải liên hệ ai. Đổi lại là thêm một
-truy vấn theo khoá chính trên mỗi request có token; cố ý không cache, vì cache có hạn là mở lại đúng
-khoảng trễ này. (`SessionValidation`, `AccountSessionReader`,
-`ServiceCollectionExtensions.OnTokenValidated`, `ReportsBlockedAccountAttribute`)
+trạng thái không phải Active — áp cho mọi request có token, kể cả negotiate và kết nối SignalR. Trên
+một WebSocket đã mở, bộ lọc hub kiểm lại phiên ở mỗi lời gọi phương thức và cắt kết nối kèm lý do, còn
+kết nối tự đóng khi token hết hạn. Token bị từ chối nhận **401** kèm lý do cụ thể, vì 401 là thứ khiến
+frontend đưa người dùng về trang đăng nhập; mở khoá không làm token cũ sống lại. Vì vậy 401 chỉ dành cho
+phiên đã chết: gõ sai mật khẩu hiện tại khi đổi mật khẩu là 400 gắn vào ô `currentPassword`. Riêng
+`GET/PUT /api/auth/me` và `change-password` giữ hợp đồng cũ: tài khoản bị khoá hay chờ xoá nhận 403 kèm
+câu nói rõ phải liên hệ ai. Đổi lại là thêm một truy vấn theo khoá chính trên mỗi request có token và
+mỗi lời gọi hub; cố ý không cache, vì cache có hạn là mở lại đúng khoảng trễ này. (`SessionValidation`,
+`AccountSessionReader`, `ServiceCollectionExtensions.OnTokenValidated`, `ReportsBlockedAccountAttribute`,
+`SessionRevalidationHubFilter`)
+
+**Lưu một entity chỉ ghi những cột thật sự đổi.** `GenericRepository.Update` không gọi `DbSet.Update`
+trên entity DbContext đang theo dõi: hàm đó đánh dấu mọi cột là Modified, tức là ghi lại nguyên bản đã
+đọc từ đầu request. Một lần `PUT /api/auth/me` nạp tài khoản ngay trước lúc quản trị viên bấm khoá từng
+ghi lại `Status`, `SecurityStamp` và `PasswordHash` cũ, làm lệnh khoá biến mất. `session-revocation.sh`
+bắn hàng loạt `PUT /api/auth/me` song song với lệnh khoá và lệnh cấp lại mật khẩu, lặp nhiều vòng, để
+giữ điều này. Hai request cùng sửa một cột thì bên ghi sau vẫn thắng; chưa có concurrency token.
 
 **Giáo viên chỉ thấy học sinh mình phụ trách.** `GET /api/students` của giáo viên chỉ trả các em ở lớp họ
 được phân công và lớp đã công bố — cùng tập với danh sách lớp của họ. Lọc theo lớp người khác, lớp nháp
@@ -196,7 +208,7 @@ trống, và được tự chuyển sang chuỗi kết nối Npgsql. Hai điều
 
 ## Kiểm thử
 
-**Unit test** — `tests/Anthill.Tests/`, 267 test:
+**Unit test** — `tests/Anthill.Tests/`, 282 test:
 
 ```bash
 dotnet test
@@ -204,23 +216,24 @@ dotnet test
 
 Chúng kiểm tra logic thuần, không cần database: chia blueprint, xáo đề có seed, vòng đời đề, hạn giờ và
 điều kiện bắt đầu làm bài, chấm điểm, lịch theo lớp, cổng xem đáp án, ẩn danh hoá, phạm vi học sinh của
-giáo viên, luật validator.
+giáo viên, kiểm phiên đăng nhập, luật validator.
 
-**Bộ kiểm HTTP** — `tests/api-checks/`, 14 script, 828 phép kiểm; chi tiết từng bộ ở
+**Bộ kiểm HTTP** — `tests/api-checks/`, 14 script, 916 phép kiểm; chi tiết từng bộ ở
 [tests/api-checks/README.md](tests/api-checks/README.md). Chúng chạy trên API thật để kiểm thứ unit test
 không với tới: 401/403/404, phân quyền theo vai trò, phạm vi dữ liệu, transaction. Có một bộ cho mỗi bước
-từ `step2` tới `step8`, và sáu bộ cho các phần thêm sau đó: lớp do quản trị viên lập, luồng từ lớp tới
-học sinh, lịch theo lớp, xoá mềm, trạng thái tài khoản, phạm vi học sinh của giáo viên.
+từ `step2` tới `step8`, và bảy bộ cho các phần thêm sau đó: lớp do quản trị viên lập, luồng từ lớp tới
+học sinh, lịch theo lớp, xoá mềm, trạng thái tài khoản, thu hồi phiên, phạm vi học sinh của giáo viên.
 
 Cần API đang chạy, database đã migrate và đã có tài khoản demo (script đăng nhập bằng chúng), cùng
-`bash`, `curl` và `python` (`lib.sh` dùng python để đọc JSON; trên Windows chạy trong Git Bash).
+`bash`, `curl` và `python` (`lib.sh` dùng python để đọc JSON, `session-revocation.sh` dùng nó làm một
+client WebSocket tối giản bằng thư viện chuẩn; trên Windows chạy trong Git Bash).
 Địa chỉ mặc định là `http://localhost:5002`, đổi bằng biến `HOST`:
 
 ```bash
 bash tests/api-checks/step6-attempts.sh
 HOST=http://localhost:8080 bash tests/api-checks/step6-attempts.sh
 
-# chạy cả 13 bộ
+# chạy cả 14 bộ
 for s in tests/api-checks/*.sh; do [ "$(basename "$s")" = lib.sh ] || bash "$s"; done
 ```
 

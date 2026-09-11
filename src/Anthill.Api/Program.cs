@@ -64,7 +64,12 @@ app.UseAuthorization();
 app.MapControllers();
 
 // Hub đọc token từ query string access_token, xem OnMessageReceived (§7).
-app.MapHub<NotificationHub>(NotificationHub.Route);
+// CloseOnAuthenticationExpiration: WebSocket chỉ xác thực một lần lúc mở rồi sống tiếp mà không hỏi
+// lại token. Bật cờ này thì server tự đóng kết nối khi token của nó hết hạn, thay vì để kết nối sống
+// lâu hơn chính token đã mở ra nó.
+app.MapHub<NotificationHub>(
+    NotificationHub.Route,
+    options => options.CloseOnAuthenticationExpiration = true);
 
 // Cho reverse proxy và dịch vụ hosting kiểm tra tiến trình còn sống; cũng là cách nhanh nhất để
 // đối chiếu đồng hồ server khi gỡ lỗi phần hạn giờ làm bài.

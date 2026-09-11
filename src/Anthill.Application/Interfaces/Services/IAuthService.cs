@@ -38,6 +38,8 @@ public interface IAuthService
     /// <summary>
     /// <c>POST /api/auth/change-password</c>. Đổi mật khẩu thành công phải sinh
     /// <c>SecurityStamp</c> mới và tắt cờ <c>MustChangePassword</c>.
+    /// Sai mật khẩu hiện tại là <see cref="ErrorCode.Validation"/> kèm lỗi của trường
+    /// <c>currentPassword</c>, không phải <see cref="ErrorCode.Unauthorized"/>: phiên vẫn còn sống.
     /// </summary>
     Task<Result> ChangePasswordAsync(
         ChangePasswordRequest request,

@@ -28,6 +28,10 @@ public sealed class AuthService : IAuthService
     private const string SessionExpiredMessage = "Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.";
     private const string RoleMismatchMessage = "Tài khoản không thuộc vai trò đã chọn.";
 
+    /// <summary>Tên hai trường của <see cref="ChangePasswordRequest"/> đúng như trong JSON.</summary>
+    private const string CurrentPasswordField = "currentPassword";
+    private const string NewPasswordField = "newPassword";
+
     /// <summary>
     /// Chuỗi băm hợp lệ nhưng không thuộc tài khoản nào, dùng để đốt đúng lượng thời gian mà một lần
     /// đối chiếu mật khẩu thật tiêu tốn. Không có nó, nhánh "tài khoản không tồn tại" trả lời sau vài
@@ -163,8 +167,10 @@ public sealed class AuthService : IAuthService
             return Result.Unauthorized<UserProfileDto>(SessionExpiredMessage);
         }
 
-        // Đường ghi dùng GetByIdAsync chứ không phải GetProfileAsync: cần entity trần do DbContext
-        // theo dõi. Nạp kèm Subject/Group rồi gọi Update sẽ đánh dấu Modified lên cả hai bảng đó.
+        // Đường ghi dùng GetByIdAsync: entity trần do DbContext theo dõi là đủ. Vì nó đang được theo
+        // dõi, SaveChanges chỉ ghi đúng các cột gán dưới đây (xem GenericRepository.Update) — lần lưu
+        // hồ sơ này không thể ghi đè Status, SecurityStamp hay PasswordHash mà quản trị viên vừa đổi
+        // trong lúc request đang chạy, tức là không thể làm một lệnh khoá biến mất.
         var user = await _unitOfWork.Users.GetByIdAsync(userId, cancellationToken);
 
         var guard = GuardAccountState(user);
@@ -249,20 +255,25 @@ public sealed class AuthService : IAuthService
 
         if (newPassword.Length < ValidationPatterns.MinPasswordLength)
         {
-            return Result.Failure(
+            return FieldFailure(
+                NewPasswordField,
                 $"Mật khẩu mới phải có ít nhất {ValidationPatterns.MinPasswordLength} ký tự.");
         }
 
         if (string.Equals(newPassword, currentPassword, StringComparison.Ordinal))
         {
-            return Result.Failure("Mật khẩu mới phải khác mật khẩu hiện tại.");
+            return FieldFailure(NewPasswordField, "Mật khẩu mới phải khác mật khẩu hiện tại.");
         }
 
         // Xác minh thật, bằng chuỗi băm trong database. Người gọi đã qua [Authorize] và đang đổi mật
         // khẩu của chính mình nên thông điệp cụ thể ở đây không làm lộ gì.
+        //
+        // 400 gắn vào ô currentPassword, KHÔNG phải 401: gõ sai một ô là lỗi nhập liệu, phiên vẫn còn
+        // nguyên. Frontend coi mọi 401 trên request có token là phiên đã chết — trả 401 ở đây thì
+        // người dùng bị đăng xuất và trang đăng nhập đưa "mật khẩu hiện tại không đúng" ra làm lý do.
         if (!_passwordHasher.Verify(currentPassword, account.PasswordHash))
         {
-            return Result.Unauthorized("Mật khẩu hiện tại không đúng.");
+            return FieldFailure(CurrentPasswordField, "Mật khẩu hiện tại không đúng.");
         }
 
         account.PasswordHash = _passwordHasher.Hash(newPassword);
@@ -378,6 +389,16 @@ public sealed class AuthService : IAuthService
     }
 
     private static string NewSecurityStamp() => Guid.NewGuid().ToString("N");
+
+    /// <summary>
+    /// Lỗi 400 gắn vào đúng một ô của form, cùng hình dạng <c>errors</c> mà <c>ValidationFilter</c> trả,
+    /// để frontend hiện thông báo ngay dưới ô đó thay vì một dòng chung phía trên form.
+    /// </summary>
+    private static Result FieldFailure(string field, string message) =>
+        Result.Failure(
+            message,
+            ErrorCode.Validation,
+            new Dictionary<string, string[]>(StringComparer.Ordinal) { [field] = [message] });
 
     /// <summary>
     /// Đối chiếu mật khẩu với một chuỗi băm giả để nhánh "không có tài khoản" tốn xấp xỉ cùng thời

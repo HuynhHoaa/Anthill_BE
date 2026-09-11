@@ -1,4 +1,5 @@
 using System.Globalization;
+using Anthill.Application.Interfaces.Security;
 using Anthill.Domain.Enums;
 
 namespace Anthill.Application.Common;
@@ -42,13 +43,39 @@ public enum SessionVerdict
 /// hết hạn.
 /// </para>
 /// <para>
-/// Là hàm thuần để kiểm được mọi nhánh bằng unit test; phần tra database nằm sau
-/// <c>IAccountSessionReader</c>, phần gắn vào pipeline nằm ở <c>OnTokenValidated</c> của tầng Api.
+/// <see cref="Evaluate"/> là hàm thuần để kiểm được mọi nhánh bằng unit test; phần tra database nằm sau
+/// <c>IAccountSessionReader</c>, và <see cref="CheckAsync"/> ghép hai thứ lại. Tầng Api gọi nó ở hai
+/// cửa: <c>OnTokenValidated</c> cho mọi request HTTP, và bộ lọc hub cho mỗi lần gọi phương thức trên
+/// một kết nối SignalR đã mở.
 /// </para>
 /// </remarks>
 public static class SessionValidation
 {
     private const string AccountLockedMessage = "Tài khoản đã bị khoá, liên hệ quản trị viên.";
+
+    /// <summary>Đọc hai claim của token, tra tài khoản, rồi kết luận.</summary>
+    /// <param name="subjectClaim">Giá trị claim <c>sub</c>.</param>
+    /// <param name="stampClaim">Giá trị claim <c>security_stamp</c>.</param>
+    /// <remarks>
+    /// Một hàm cho cả hai cửa để REST và hub không thể hiểu khác nhau về cùng một token. Claim hỏng hay
+    /// thiếu thì kết luận ngay, không tốn truy vấn nào: token như vậy chưa bao giờ do hệ thống cấp.
+    /// </remarks>
+    public static async Task<SessionVerdict> CheckAsync(
+        string? subjectClaim,
+        string? stampClaim,
+        IAccountSessionReader reader,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(reader);
+
+        if (!TryReadUserId(subjectClaim, out var userId) || string.IsNullOrWhiteSpace(stampClaim))
+        {
+            return SessionVerdict.MalformedToken;
+        }
+
+        var account = await reader.GetAsync(userId, cancellationToken);
+        return Evaluate(stampClaim, account);
+    }
 
     /// <summary>Đọc claim <c>sub</c>. Id không dương thì không trỏ tới dòng nào, coi như token hỏng.</summary>
     public static bool TryReadUserId(string? subjectClaim, out int userId) =>
@@ -125,8 +152,10 @@ public static class SessionValidation
     /// </summary>
     public static string BlockedStatusMessage(UserStatus status) => status switch
     {
+        // Cùng một người để liên hệ với câu của tài khoản bị khoá: chính quản trị viên là người đưa
+        // tài khoản vào diện xoá, và là người duy nhất khôi phục được.
         UserStatus.PendingDeletion =>
-            "Tài khoản đang chờ xoá theo yêu cầu của quản trị viên. Liên hệ nhà trường nếu đây là nhầm lẫn.",
+            "Tài khoản đang chờ xoá, liên hệ quản trị viên nếu đây là nhầm lẫn.",
         UserStatus.Deleted =>
             "Tài khoản này không còn tồn tại.",
         _ => AccountLockedMessage
