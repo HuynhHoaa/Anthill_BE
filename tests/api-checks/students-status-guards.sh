@@ -75,6 +75,12 @@ elif mode == "field_by_id":
     rows = data["items"] if isinstance(data, dict) else data
     match = next((row for row in rows if row["id"] == int(sys.argv[3])), None)
     print("absent" if match is None else match.get(sys.argv[4]))
+
+elif mode == "field_where":
+    # Nhu field_by_id nhung tim theo mot khoa bat ky — dong ket qua khong co "id", chi co studentId.
+    rows = data["items"] if isinstance(data, dict) else data
+    match = next((row for row in rows if row.get(sys.argv[3]) == int(sys.argv[4])), None)
+    print("absent" if match is None else match.get(sys.argv[5]))
 PYHELPER
 HELPERS=$(to_native_path "$HELPERS")
 trap 'rm -f "$HELPERS"; cleanup' EXIT
@@ -83,6 +89,7 @@ has_field()    { python "$HELPERS" has "$(to_native_path "$BODY_FILE")" "$1"; }
 days_between() { python "$HELPERS" days_between "$(to_native_path "$BODY_FILE")" "$1" "$2"; }
 contains_id()  { python "$HELPERS" contains_id "$(to_native_path "$BODY_FILE")" "$1"; }
 field_by_id()  { python "$HELPERS" field_by_id "$(to_native_path "$BODY_FILE")" "$1" "$2"; }
+field_where()  { python "$HELPERS" field_where "$(to_native_path "$BODY_FILE")" "$1" "$2" "$3"; }
 
 section "Dung du lieu nen"
 code=$(call POST /api/student-groups "$ADMIN" "{\"name\":\"Lop rao $STAMP\"}")
@@ -194,9 +201,31 @@ EID=$(json_field id)
 expect_status "giao bai cho ca lop → 200" 200 \
   "$(call POST "/api/exams/$EID/assignments" "$TEACHER" "{\"studentIds\":[],\"groupIds\":[$CID],\"notify\":false}")"
 expect_json   "  chi giao cho em con hoc" assignedCount 1
-# Em cho xoa hien duoc dem vao skippedLocked. Tach thanh skippedRetired la viec cua nhanh lich
-# rieng, vi nhanh do dang sua chinh doan gom hoc sinh nay.
-expect_json   "  em cho xoa bi bo qua" skippedLocked 1
+expect_json   "  em cho xoa dem la da roi truong" skippedRetired 1
+expect_json   "  khong bi bao nham la dang khoa" skippedLocked 0
+
+section "Giao vien thay trang thai tai khoan tren bang theo doi va bang ket qua"
+# Em con hoc vao lam bai, roi roi truong. Bai va diem giu nguyen, nhung dong cua em phai mang nhan —
+# khong thi giao vien doc no nhu mot em dang hoc binh thuong. De co luot lam bai thi khong xoa duoc,
+# nen lan chay nay de lai mot de (giong flow-class-to-student.sh).
+STAYER_TOKEN=$(login "g${STAMP}d" "anthill123")
+call GET /api/my/exams "$STAYER_TOKEN" > /dev/null
+AID=$(body | python -c "import json,sys;print(next(x['assignmentId'] for x in json.load(sys.stdin) if x['examId'] == $EID))")
+expect_status "em con hoc bat dau lam bai → 200" 200 \
+  "$(call POST /api/exam-attempts "$STAYER_TOKEN" "{\"assignmentId\":$AID}")"
+ATTEMPT=$(json_field attemptId)
+expect_status "bang theo doi khi em con hoc → 200" 200 "$(call GET "/api/exams/$EID/assignments" "$TEACHER")"
+expect_status "  studentStatus = active" active "$(field_where studentId "$STAYER" studentStatus)"
+expect_status "em do roi truong → 200" 200 \
+  "$(call POST "/api/students/$STAYER/request-deletion" "$ADMIN" '{"reason":"Hoc sinh chuyen truong sau khi thi."}')"
+expect_status "bang theo doi → 200" 200 "$(call GET "/api/exams/$EID/assignments" "$TEACHER")"
+expect_status "  dong cua em mang studentStatus = pendingDeletion" pendingDeletion \
+  "$(field_where studentId "$STAYER" studentStatus)"
+expect_status "bang ket qua cua de → 200" 200 "$(call GET "/api/results?examId=$EID" "$TEACHER")"
+expect_status "  dong ket qua mang studentStatus = pendingDeletion" pendingDeletion \
+  "$(field_where studentId "$STAYER" studentStatus)"
+expect_status "chi tiet bai lam → 200" 200 "$(call GET "/api/results/$ATTEMPT" "$TEACHER")"
+expect_json   "  studentStatus = pendingDeletion" studentStatus pendingDeletion
 
 section "Lop con tai khoan cho xoa thi phai go ra truoc khi xoa"
 # Si so khong tinh em cho xoa, nhung xoa lop van bi chan: de khoa ngoai go em ra thi khoi phuc

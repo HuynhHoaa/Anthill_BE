@@ -239,7 +239,7 @@ Mock hiện tra ngược `mockQuestions` theo id lúc chấm — điều đó c�
 - **Khử trùng lặp ở BE** bằng `HashSet`: `targets = distinct(studentIds hợp lệ ∪ học sinh của groupIds)`. FE có tính số hiển thị nhưng đó chỉ để hiện lên màn hình.
 - **Idempotent** theo cặp `(examId, studentId)` — unique index. Giao lại cho người đã có bài thì bỏ qua, giữ nguyên `status`/`attemptId`/`score`.
 - **Kiểm tra phạm vi:** học sinh phải thuộc nhóm do chính giáo viên đó quản lý. Không cho giáo viên A giao bài cho lớp của giáo viên B bằng cách đoán id.
-- **Học sinh bị khoá:** FE hiển thị nhãn "Đã khóa" nhưng vẫn cho chọn và vẫn tạo assignment. BE nên **bỏ qua** và trả `skippedLocked` để giáo viên biết.
+- **Học sinh bị khoá:** FE hiển thị nhãn "Đã khóa" nhưng vẫn cho chọn và vẫn tạo assignment. BE nên **bỏ qua** và trả `skippedLocked` để giáo viên biết. Tài khoản chờ xoá hoặc đã xoá cũng bị bỏ qua nhưng đếm riêng vào `skippedRetired` — em đã rời trường thì không có gì để mở khoá.
 - **Chặn giao đề đang là nháp.** FE hoàn toàn không kiểm điều này.
 
 ### Lưu nháp và nộp bài
@@ -259,6 +259,8 @@ Mock hiện tra ngược `mockQuestions` theo id lúc chấm — điều đó c�
 | `Student.averageScore` | AVG(score) trên các lượt `graded`, làm tròn 1 chữ số |
 | `Student.deletionScheduledAt` | `deletionRequestedAt` + 60 ngày, chỉ có khi `status = pendingDeletion`. Server tính sẵn — FE không tự cộng ngày |
 | `AddMembersResponse.skippedRetired` | Số tài khoản chờ xoá hoặc đã xoá bị bỏ qua, không đưa vào lớp |
+| `AssignExamResponse.skippedRetired` | Số tài khoản chờ xoá hoặc đã xoá bị bỏ qua khi giao bài — không tính vào `skippedLocked` |
+| `studentStatus` trên `ExamAssignment`, `ResultSummary`, `AttemptDetail` | Trạng thái tài khoản của em (`active` · `locked` · `pendingDeletion` · `deleted`), cùng chuỗi với `Student.status`. Tách khỏi `status` — trường đó là trạng thái lượt làm bài |
 | `StudentGroup.studentCount` | COUNT thành viên đang hoạt động hoặc đang khoá — không tính tài khoản chờ xoá |
 | `Student.group` (tên) | dữ liệu JOIN, **chỉ đọc** — client gửi lên thì bỏ qua |
 

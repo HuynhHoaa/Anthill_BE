@@ -212,6 +212,7 @@ public sealed class ResultService : IResultService
             StudentId = assignment.StudentId,
             StudentName = student?.FullName ?? string.Empty,
             StudentCode = student?.Code ?? string.Empty,
+            StudentStatus = (student?.Status ?? UserStatus.Active).ToStatusString(),
             Status = withAnswers.Status.ToAssignmentStatusString(),
             StartedAt = withAnswers.StartedAt.ToUtc(),
             SubmittedAt = withAnswers.SubmittedAt.ToUtc(),

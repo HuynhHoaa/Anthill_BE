@@ -24,6 +24,9 @@ public sealed record AttemptDetailDto
 
     public required string StudentCode { get; init; }
 
+    /// <summary>Trạng thái tài khoản của em, cùng chuỗi với <c>ResultSummaryDto.StudentStatus</c>.</summary>
+    public required string StudentStatus { get; init; }
+
     public required string Status { get; init; }
 
     public required DateTime StartedAt { get; init; }

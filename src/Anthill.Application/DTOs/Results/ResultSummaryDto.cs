@@ -26,6 +26,17 @@ public sealed record ResultSummaryDto
 
     public required string StudentCode { get; init; }
 
+    /// <summary>
+    /// Trạng thái tài khoản của em: <c>"active" | "locked" | "pendingDeletion" | "deleted"</c>, cùng
+    /// chuỗi với <c>StudentDto.Status</c>.
+    /// </summary>
+    /// <remarks>
+    /// Tên riêng vì <see cref="Status"/> đã là trạng thái lượt làm bài. Không có trường này thì một
+    /// dòng "Học sinh đã xoá" mang mã <c>deleted-N</c> trông như dữ liệu thật, và giáo viên không biết
+    /// em có điểm này đã rời trường hay đang bị khoá.
+    /// </remarks>
+    public required string StudentStatus { get; init; }
+
     /// <summary>Tên nhóm lớp, chuỗi rỗng khi em chưa được phân nhóm.</summary>
     public required string Group { get; init; }
 

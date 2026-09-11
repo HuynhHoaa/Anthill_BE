@@ -56,7 +56,7 @@ gì, và dọn trong `trap EXIT` kể cả khi hỏng giữa chừng. Dọn ch�
 | `per-class-schedule.sh` | một đề, nhiều lớp, mỗi lớp một khung giờ; đáp án giữ lại tới khi mọi lớp hết giờ |
 | `students-deletion.sh` | xoá mềm: lý do bắt buộc, chỉ quản trị viên, chặn đăng nhập, khôi phục |
 | `session-revocation.sh` | token cũ nhận 401 trên mọi endpoint và hub sau khi khoá, mở khoá, cấp lại hay tự đổi mật khẩu, đưa vào diện xoá, khôi phục; token giáo viên và quản trị viên không bị ảnh hưởng; gõ sai mật khẩu hiện tại là 400 và phiên còn sống; `PUT /api/auth/me` bắn song song với lệnh khoá (5 vòng) và cấp lại mật khẩu (3 vòng) không làm lệnh đó biến mất; WebSocket mở trước lúc khoá bị cắt kèm lý do ở lời gọi hub kế tiếp (client WebSocket tối giản viết bằng python thư viện chuẩn) |
-| `students-status-guards.sh` | chặn các lối vòng quanh trạng thái tài khoản học sinh (đặt thẳng `deleted`, sửa hay cấp lại mật khẩu cho tài khoản chờ xoá...) |
+| `students-status-guards.sh` | chặn các lối vòng quanh trạng thái tài khoản học sinh (đặt thẳng `deleted`, sửa hay cấp lại mật khẩu cho tài khoản chờ xoá...); giao bài đếm em chờ xoá vào `skippedRetired`, và bảng theo dõi, bảng kết quả, chi tiết bài làm mang `studentStatus` |
 | `teacher-student-scope.sh` | giáo viên chỉ thấy học sinh lớp mình dạy: lớp khác, lớp nháp, chưa phân lớp đều ngoài phạm vi; hồ sơ em đã nhận đề của mình vẫn mở được sau khi em chuyển lớp; quản trị viên thấy tất cả |
 
 `lib.sh` là khung dùng chung: `call`, `expect_status`, `expect_json`, `login`, `new_class`, `summary`.
