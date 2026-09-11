@@ -39,7 +39,8 @@ fail_fast() { echo "  Dung du lieu nen that bai: $1" >&2; exit 1; }
 
 section "Phan quyen — ai lam duoc gi (§4.2)"
 expect_status "hoc sinh goi /students → 403" 403 "$(call GET /api/students "$STUDENT")"
-expect_status "giao vien DOC duoc /students → 200" 200 "$(call GET /api/students "$TEACHER")"
+# Doc duoc, nhung chi trong pham vi lop minh day — ranh gioi do do teacher-student-scope.sh canh.
+expect_status "giao vien DOC duoc /students (lop minh day) → 200" 200 "$(call GET /api/students "$TEACHER")"
 expect_status "giao vien TAO tai khoan → 403" 403 \
   "$(call POST /api/students "$TEACHER" '{"fullName":"X","email":"x@x.vn","username":"xx","code":"XX1","password":"anthill123"}')"
 # DAO NGUOC so voi mo hinh cu: truoc day giao vien so huu lop con quan tri vien chi duoc doc.

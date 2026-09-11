@@ -85,7 +85,12 @@ public static class ExamMappingExtensions
         return now > closeAt.ToUtc() ? ExamLifecycle.Closed : ExamLifecycle.Open;
     }
 
-    public static ExamDto ToDto(this Exam exam, DateTime asOfUtc, int assignedCount, int submittedCount)
+    public static ExamDto ToDto(
+        this Exam exam,
+        DateTime asOfUtc,
+        int assignedCount,
+        int submittedCount,
+        int startedCount)
     {
         ArgumentNullException.ThrowIfNull(exam);
 
@@ -114,6 +119,11 @@ public static class ExamMappingExtensions
             Lifecycle = exam.ResolveLifecycle(asOfUtc).ToLifecycleString(),
             AssignedCount = assignedCount,
             SubmittedCount = submittedCount,
+            StartedCount = startedCount,
+
+            // Cùng một phép so với ExamEditPolicy: đã có lượt làm bài là khoá.
+            BlueprintFrozen = startedCount > 0,
+
             CreatedAt = exam.CreatedAt.ToUtc()
         };
     }

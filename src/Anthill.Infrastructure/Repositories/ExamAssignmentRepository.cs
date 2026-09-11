@@ -160,19 +160,34 @@ public class ExamAssignmentRepository : GenericRepository<ExamAssignment>, IExam
                        && (attempt.Status == AssignmentStatus.Submitted || attempt.Status == AssignmentStatus.Graded),
             cancellationToken);
 
+    public async Task<int> CountStartedByExamAsync(int examId, CancellationToken cancellationToken = default) =>
+        await Context.ExamAttempts.CountAsync(attempt => attempt.Assignment.ExamId == examId, cancellationToken);
+
+    /// <remarks>
+    /// Sắp theo <c>Id</c> để hai lần khoá cùng một đề luôn giành dòng theo cùng một thứ tự — khoá theo
+    /// thứ tự tuỳ ý là cách kinh điển để hai giao dịch chờ nhau mãi. Không nối thêm toán tử LINQ nào
+    /// phía sau, để EF gửi thẳng câu lệnh xuống thay vì bọc nó vào một truy vấn con.
+    /// </remarks>
+    public async Task<IReadOnlyList<ExamAssignment>> LockByExamAsync(
+        int examId,
+        CancellationToken cancellationToken = default) =>
+        await DbSet
+            .FromSql($"""SELECT * FROM "ExamAssignments" WHERE "ExamId" = {examId} ORDER BY "Id" FOR UPDATE""")
+            .ToListAsync(cancellationToken);
+
     /// <summary>
-    /// Hai con số dẫn xuất cho nhiều đề trong hai truy vấn cố định, thay cho 2×N lời gọi ở màn hình
-    /// danh sách đề. Cố ý tách làm hai lượt <c>GROUP BY</c> đơn giản thay vì một truy vấn có
-    /// <c>COUNT</c> điều kiện lồng qua navigation — hai lượt này chắc chắn dịch được sang SQL.
+    /// Ba con số dẫn xuất cho nhiều đề trong ba truy vấn cố định, thay cho 3×N lời gọi ở màn hình
+    /// danh sách đề. Cố ý tách làm ba lượt <c>GROUP BY</c> đơn giản thay vì một truy vấn có
+    /// <c>COUNT</c> điều kiện lồng qua navigation — ba lượt này chắc chắn dịch được sang SQL.
     /// </summary>
-    public async Task<IReadOnlyDictionary<int, (int Assigned, int Submitted)>> CountByExamsAsync(
+    public async Task<IReadOnlyDictionary<int, (int Assigned, int Submitted, int Started)>> CountByExamsAsync(
         IEnumerable<int> examIds,
         CancellationToken cancellationToken = default)
     {
         var ids = examIds.Distinct().ToList();
         if (ids.Count == 0)
         {
-            return new Dictionary<int, (int, int)>();
+            return new Dictionary<int, (int, int, int)>();
         }
 
         var assigned = await DbSet
@@ -190,15 +205,24 @@ public class ExamAssignmentRepository : GenericRepository<ExamAssignment>, IExam
             .Select(g => new { ExamId = g.Key, Count = g.Count() })
             .ToListAsync(cancellationToken);
 
+        var started = await Context.ExamAttempts
+            .AsNoTracking()
+            .Where(attempt => ids.Contains(attempt.Assignment.ExamId))
+            .GroupBy(attempt => attempt.Assignment.ExamId)
+            .Select(g => new { ExamId = g.Key, Count = g.Count() })
+            .ToListAsync(cancellationToken);
+
         var submittedByExam = submitted.ToDictionary(row => row.ExamId, row => row.Count);
         var assignedByExam = assigned.ToDictionary(row => row.ExamId, row => row.Count);
+        var startedByExam = started.ToDictionary(row => row.ExamId, row => row.Count);
 
-        // Đề chưa giao cho ai vẫn phải có mặt với (0, 0) — thiếu khoá là màn hình hiện ô trống.
+        // Đề chưa giao cho ai vẫn phải có mặt với (0, 0, 0) — thiếu khoá là màn hình hiện ô trống.
         return ids.ToDictionary(
             id => id,
             id => (
                 Assigned: assignedByExam.GetValueOrDefault(id),
-                Submitted: submittedByExam.GetValueOrDefault(id)));
+                Submitted: submittedByExam.GetValueOrDefault(id),
+                Started: startedByExam.GetValueOrDefault(id)));
     }
 
     public async Task RemoveByExamAsync(int examId, CancellationToken cancellationToken = default)

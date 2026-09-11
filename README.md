@@ -40,11 +40,16 @@ Giới hạn đã biết:
   token. Access token sống 120 phút (480 ở Development), đủ cho một bài 45–60 phút.
 - Ảnh câu hỏi ghi xuống đĩa của máy chạy API (`wwwroot/uploads`); nền tảng nào xoá đĩa khi khởi động
   lại thì cần một cài đặt `IFileService` khác.
-- `security_stamp` và trạng thái tài khoản mới được đối chiếu ở `GET/PUT /api/auth/me`, `change-password`
-  và lúc mở kết nối SignalR. Các endpoint còn lại (làm bài, kết quả, thông báo...) vẫn nhận token cũ của
-  tài khoản vừa bị khoá hay vừa đưa vào diện xoá cho tới khi token hết hạn.
-- Lưu nháp sau khi hết giờ trả 410, nhưng nếu `AutoSubmitExpiredAttemptsService` đã chốt bài trước gói
-  nháp thì trả 409 (lượt không còn ở trạng thái đang làm). Client phải xử lý cả hai mã như "hết giờ".
+- Kết nối SignalR **đã mở** trước khi tài khoản bị khoá, đưa vào diện xoá hay đổi mật khẩu vẫn nhận sự
+  kiện server đẩy xuống — thông báo của chính tài khoản đó, và tiến độ nộp bài nếu là giáo viên đang
+  theo dõi một đề — cho tới khi client gọi một phương thức hub (lúc đó `SessionRevalidationHubFilter`
+  trả lỗi kèm lý do và cắt kết nối) hoặc tới khi token hết hạn (server tự đóng kết nối nhờ
+  `CloseOnAuthenticationExpiration`). Negotiate, mở kết nối mới và mọi request REST của phiên đó thì bị
+  từ chối ngay. Đóng hẳn khe này cần ghi lại connectionId của từng tài khoản để cắt ngay lúc xoay stamp.
+- Lưu nháp và nạp lại phiên sau khi hết giờ luôn trả 410, dù `AutoSubmitExpiredAttemptsService` có chốt bài
+  trước hay không; 409 chỉ dành cho bài học sinh tự nộp trước giờ. Riêng `POST /api/exam-attempts` trên
+  lượt vừa hết giờ vẫn còn cuộc đua đó: 410 nếu chính lời gọi chốt bài, 409 "đã nộp rồi" nếu tiến trình nền
+  chốt trước.
 
 ## API
 
@@ -88,20 +93,45 @@ bị bỏ qua; hai request đua nhau thì index chặn request đến sau, và `
 của đồng nghiệp cùng môn — đang hiện trên màn hình nhưng không được sửa — trả 403 kèm lời giải thích,
 vì báo "không tìm thấy" ở đó chỉ khiến giáo viên tưởng hệ thống hỏng. (`QuestionService.LoadWritableAsync`)
 
-**Đổi trạng thái tài khoản thì phiên cũ bị cắt ở các cửa chính.** Mỗi JWT mang `security_stamp`; khoá,
-đổi mật khẩu, cấp lại mật khẩu và đưa vào diện xoá đều xoay giá trị này, còn mở khoá và đăng xuất cố ý
-không xoay. `GET/PUT /api/auth/me` và `change-password` đối chiếu stamp và trạng thái với database rồi
-trả 401/403; hub từ chối kết nối mới. Các endpoint khác chưa đối chiếu (xem giới hạn ở trên).
-(`AuthService.GuardAccountState`, `NotificationHub.OnConnectedAsync`)
+**Đổi trạng thái tài khoản thì phiên cũ bị cắt trên mọi endpoint.** Mỗi JWT mang `security_stamp`;
+khoá, đổi mật khẩu, cấp lại mật khẩu và đưa vào diện xoá đều xoay giá trị này, còn mở khoá và đăng xuất
+cố ý không xoay. Sau khi kiểm chữ ký, `OnTokenValidated` tra tài khoản theo khoá chính (chỉ Id, Status,
+SecurityStamp, không theo dõi thay đổi) và từ chối token khi tài khoản không còn, stamp đã đổi, hoặc
+trạng thái không phải Active — áp cho mọi request có token, kể cả negotiate và kết nối SignalR. Trên
+một WebSocket đã mở, bộ lọc hub kiểm lại phiên ở mỗi lời gọi phương thức và cắt kết nối kèm lý do, còn
+kết nối tự đóng khi token hết hạn. Token bị từ chối nhận **401** kèm lý do cụ thể, vì 401 là thứ khiến
+frontend đưa người dùng về trang đăng nhập; mở khoá không làm token cũ sống lại. Vì vậy 401 chỉ dành cho
+phiên đã chết: gõ sai mật khẩu hiện tại khi đổi mật khẩu là 400 gắn vào ô `currentPassword`. Riêng
+`GET/PUT /api/auth/me` và `change-password` giữ hợp đồng cũ: tài khoản bị khoá hay chờ xoá nhận 403 kèm
+câu nói rõ phải liên hệ ai. Đổi lại là thêm một truy vấn theo khoá chính trên mỗi request có token và
+mỗi lời gọi hub; cố ý không cache, vì cache có hạn là mở lại đúng khoảng trễ này. (`SessionValidation`,
+`AccountSessionReader`, `ServiceCollectionExtensions.OnTokenValidated`, `ReportsBlockedAccountAttribute`,
+`SessionRevalidationHubFilter`)
+
+**Lưu một entity chỉ ghi những cột thật sự đổi.** `GenericRepository.Update` không gọi `DbSet.Update`
+trên entity DbContext đang theo dõi: hàm đó đánh dấu mọi cột là Modified, tức là ghi lại nguyên bản đã
+đọc từ đầu request. Một lần `PUT /api/auth/me` nạp tài khoản ngay trước lúc quản trị viên bấm khoá từng
+ghi lại `Status`, `SecurityStamp` và `PasswordHash` cũ, làm lệnh khoá biến mất. `session-revocation.sh`
+bắn hàng loạt `PUT /api/auth/me` song song với lệnh khoá và lệnh cấp lại mật khẩu, lặp nhiều vòng, để
+giữ điều này. Hai request cùng sửa một cột thì bên ghi sau vẫn thắng; chưa có concurrency token.
+
+**Giáo viên chỉ thấy học sinh mình phụ trách.** `GET /api/students` của giáo viên chỉ trả các em ở lớp họ
+được phân công và lớp đã công bố — cùng tập với danh sách lớp của họ. Lọc theo lớp người khác, lớp nháp
+hay "chưa phân nhóm" ra trang rỗng chứ không báo lỗi. `GET /api/students/{id}` mở thêm cho em đã nhận
+một đề do chính giáo viên đó tạo, để liên kết từ trang kết quả vẫn mở được hồ sơ em đã chuyển lớp hoặc
+đã bị xoá dữ liệu cá nhân; ngoài hai trường hợp đó là 404. Quy tắc là một biểu thức duy nhất, ghép thẳng
+vào truy vấn EF nên lọc trong SQL, và unit test chạy chính biểu thức ấy. Quản trị viên vẫn thấy mọi tài
+khoản. (`TeacherStudentScope`, `UserRepository.GetStudentsPagedForTeacherAsync`)
 
 Ngoài ra:
 
 - Claim `role` sinh từ cột `User.Role`; trường `role` client gửi lúc đăng nhập chỉ để đối chiếu, sai
   là 403. (`AuthService.LoginAsync`)
 - Upload qua bốn lớp kiểm: giới hạn 4 MB, lọc phần mở rộng, đối chiếu magic bytes với phần mở rộng, và
-  tên file trên đĩa là GUID do server sinh. SVG cố ý bị loại vì chứa được `<script>`; ảnh được phục vụ
+  tên file trên đĩa là GUID do server sinh. Giới hạn dung lượng chặn ngay ở đầu vào, trước khi form được
+  đọc, và trả 400 kèm thông điệp. SVG cố ý bị loại vì chứa được `<script>`; ảnh được phục vụ
   với Content-Type lấy từ bảng khai sẵn theo phần mở rộng, kèm `X-Content-Type-Options: nosniff`.
-  (`LocalFileStorageService`, `ApplicationBuilderExtensions.UseUploadedFiles`)
+  (`UploadSizeLimitAttribute`, `LocalFileStorageService`, `ApplicationBuilderExtensions.UseUploadedFiles`)
 - Xoá mềm có lý do, ẩn danh sau 60 ngày. Chỉ quản trị viên yêu cầu xoá được, lý do từ 10 ký tự; tài
   khoản chờ xoá không đăng nhập được và khôi phục được trong 60 ngày. Hết hạn,
   `PurgeDeletedStudentsService` (quét sáu giờ một lần) gọi `StudentAnonymizer`: dữ liệu cá nhân bị thay
@@ -181,43 +211,42 @@ trống, và được tự chuyển sang chuỗi kết nối Npgsql. Hai điều
 
 ## Kiểm thử
 
-**Unit test** — `tests/Anthill.Tests/`, 221 test:
+**Unit test** — `tests/Anthill.Tests/`, 282 test:
 
 ```bash
 dotnet test
 ```
 
 Chúng kiểm tra logic thuần, không cần database: chia blueprint, xáo đề có seed, vòng đời đề, hạn giờ và
-điều kiện bắt đầu làm bài, chấm điểm, lịch theo lớp, cổng xem đáp án, ẩn danh hoá, luật validator.
+điều kiện bắt đầu làm bài, chấm điểm, lịch theo lớp, cổng xem đáp án, ẩn danh hoá, phạm vi học sinh của
+giáo viên, kiểm phiên đăng nhập, luật validator.
 
-**Bộ kiểm HTTP** — `tests/api-checks/`, 12 script, 676 phép kiểm; chi tiết từng bộ ở
+**Bộ kiểm HTTP** — `tests/api-checks/`, 14 script, 916 phép kiểm; chi tiết từng bộ ở
 [tests/api-checks/README.md](tests/api-checks/README.md). Chúng chạy trên API thật để kiểm thứ unit test
 không với tới: 401/403/404, phân quyền theo vai trò, phạm vi dữ liệu, transaction. Có một bộ cho mỗi bước
-từ `step2` tới `step8`, và năm bộ cho các phần thêm sau đó: lớp do quản trị viên lập, luồng từ lớp tới
-học sinh, lịch theo lớp, xoá mềm, trạng thái tài khoản.
+từ `step2` tới `step8`, và bảy bộ cho các phần thêm sau đó: lớp do quản trị viên lập, luồng từ lớp tới
+học sinh, lịch theo lớp, xoá mềm, trạng thái tài khoản, thu hồi phiên, phạm vi học sinh của giáo viên.
 
 Cần API đang chạy, database đã migrate và đã có tài khoản demo (script đăng nhập bằng chúng), cùng
-`bash`, `curl` và `python` (`lib.sh` dùng python để đọc JSON; trên Windows chạy trong Git Bash).
+`bash`, `curl` và `python` (`lib.sh` dùng python để đọc JSON, `session-revocation.sh` dùng nó làm một
+client WebSocket tối giản bằng thư viện chuẩn; trên Windows chạy trong Git Bash).
 Địa chỉ mặc định là `http://localhost:5002`, đổi bằng biến `HOST`:
 
 ```bash
 bash tests/api-checks/step6-attempts.sh
 HOST=http://localhost:8080 bash tests/api-checks/step6-attempts.sh
 
-# chạy cả 12 bộ
+# chạy cả 14 bộ
 for s in tests/api-checks/*.sh; do [ "$(basename "$s")" = lib.sh ] || bash "$s"; done
 ```
 
 Mỗi script tự dựng dữ liệu, dọn trong `trap EXIT` phần xoá được (đề đã có bài nộp được giữ lại, học
-sinh chỉ bị khoá), và thoát với mã khác 0 khi có phép kiểm hỏng. Riêng `step5` tới `step8` còn để lại
-lớp thử của chúng, vì bước dọn gỡ học sinh khỏi lớp và xoá lớp bằng token giáo viên, mà hai thao tác đó
-chỉ quản trị viên được làm.
+sinh chỉ bị khoá), và thoát với mã khác 0 khi có phép kiểm hỏng.
 
 `step6-attempts.sh` có một quãng chờ 30 giây thật và `per-class-schedule.sh` chờ tới mốc giờ thật, để
 chứng minh hạn giờ tính bằng đồng hồ server. Phép kiểm "lưu nháp sau khi hết giờ → 410" trong
-`step6-attempts.sh` chập chờn: tiến trình tự nộp bài chốt lượt trước gói nháp thì API trả 409 (xem giới
-hạn ở phần Trạng thái). Muốn chạy tất định thì bật API với `AutoSubmit__Enabled=false` hoặc profile
-`http-no-autosubmit`.
+`step6-attempts.sh` cho cùng kết quả dù tiến trình tự nộp bài có chốt lượt trước gói nháp hay không, nên
+không cần tắt tiến trình đó khi chạy script.
 
 ## Phát triển
 

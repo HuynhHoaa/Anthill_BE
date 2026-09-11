@@ -36,13 +36,11 @@ lúc này đổi lại là một tầng hạ tầng phải bảo trì để ki�
 
 Mỗi script **tự dựng dữ liệu của chính nó** nên không phụ thuộc vào việc database đang có sẵn những
 gì, và dọn trong `trap EXIT` kể cả khi hỏng giữa chừng. Dọn chỉ được phần xoá được: đề đã có bài nộp
-được giữ lại, học sinh chỉ bị khoá chứ không xoá. Riêng `step5` tới `step8` còn để lại lớp thử, vì
-bước dọn gỡ học sinh khỏi lớp và xoá lớp bằng token giáo viên, mà hai thao tác đó chỉ quản trị viên
-được làm.
+được giữ lại, học sinh chỉ bị khoá chứ không xoá.
 
 ## Các bộ hiện có
 
-12 script, tổng cộng 676 phép kiểm.
+15 script, tổng cộng 916 phép kiểm.
 
 | Script | Phủ |
 |---|---|
@@ -56,8 +54,11 @@ bước dọn gỡ học sinh khỏi lớp và xoá lớp bằng token giáo vi�
 | `classes-admin.sh` | lớp do quản trị viên lập, phân công giáo viên, công bố |
 | `flow-class-to-student.sh` | luồng xuyên suốt: lập lớp → phân công giáo viên → giao theo lớp → cả lớp làm được bài → giáo viên thấy kết quả |
 | `per-class-schedule.sh` | một đề, nhiều lớp, mỗi lớp một khung giờ; đáp án giữ lại tới khi mọi lớp hết giờ |
+| `exam-edit-rules.sh` | sửa đề đã giao: chưa ai làm thì sửa hết và bản đề được sinh lại; có em làm rồi thì cấu hình đề bị khoá (409), điểm đã chấm giữ nguyên; nhân bản đề. Cần `psql` để dựng một giáo viên thứ hai |
 | `students-deletion.sh` | xoá mềm: lý do bắt buộc, chỉ quản trị viên, chặn đăng nhập, khôi phục |
-| `students-status-guards.sh` | chặn các lối vòng quanh trạng thái tài khoản học sinh (đặt thẳng `deleted`, sửa hay cấp lại mật khẩu cho tài khoản chờ xoá...) |
+| `session-revocation.sh` | token cũ nhận 401 trên mọi endpoint và hub sau khi khoá, mở khoá, cấp lại hay tự đổi mật khẩu, đưa vào diện xoá, khôi phục; token giáo viên và quản trị viên không bị ảnh hưởng; gõ sai mật khẩu hiện tại là 400 và phiên còn sống; `PUT /api/auth/me` bắn song song với lệnh khoá (5 vòng) và cấp lại mật khẩu (3 vòng) không làm lệnh đó biến mất; WebSocket mở trước lúc khoá bị cắt kèm lý do ở lời gọi hub kế tiếp (client WebSocket tối giản viết bằng python thư viện chuẩn) |
+| `students-status-guards.sh` | chặn các lối vòng quanh trạng thái tài khoản học sinh (đặt thẳng `deleted`, sửa hay cấp lại mật khẩu cho tài khoản chờ xoá...); giao bài đếm em chờ xoá vào `skippedRetired`, và bảng theo dõi, bảng kết quả, chi tiết bài làm mang `studentStatus` |
+| `teacher-student-scope.sh` | giáo viên chỉ thấy học sinh lớp mình dạy: lớp khác, lớp nháp, chưa phân lớp đều ngoài phạm vi; hồ sơ em đã nhận đề của mình vẫn mở được sau khi em chuyển lớp; quản trị viên thấy tất cả |
 
 `lib.sh` là khung dùng chung: `call`, `expect_status`, `expect_json`, `login`, `new_class`, `summary`.
 
@@ -65,17 +66,10 @@ bước dọn gỡ học sinh khỏi lớp và xoá lớp bằng token giáo vi�
 hết giờ. `per-class-schedule.sh` cũng chờ tới mốc giờ thật. Không có quãng chờ đó thì không phép nào
 chứng minh được rằng hạn nộp tính bằng đồng hồ server — mà đó lại là quy tắc dễ cài sai nhất.
 
-## Một phép kiểm chập chờn
+## Phép kiểm hết giờ và tiến trình tự nộp bài
 
-API có một **tiến trình nền tự nộp bài** chạy mỗi 30 giây. Phép "lưu nháp sau khi hết giờ → 410"
-trong `step6-attempts.sh` hỏng khoảng một nửa số lần chạy trọn bộ: khi tiến trình nền chốt lượt làm
-bài trước gói nháp của script, API trả 409 (lượt không còn ở trạng thái đang làm) thay vì 410.
-
-Muốn chạy tất định thì tắt tiến trình đó khi khởi động API (hoặc dùng profile `http-no-autosubmit`):
-
-```bash
-AutoSubmit__Enabled=false dotnet run --project src/Anthill.Api
-```
-
-Tắt nó không làm hỏng phép nào khác: lượt quá hạn trong `step6-attempts.sh` được chốt ngay ở lời gọi
-lưu nháp, nên phép `autoSubmitted = true` vẫn đạt.
+API có một **tiến trình nền tự nộp bài** chạy mỗi 30 giây, nên lượt quá hạn trong `step6-attempts.sh`
+có thể bị chốt bởi tiến trình đó hoặc bởi chính gói nháp của script. Phép "lưu nháp sau khi hết giờ
+→ 410" từng chập chờn vì hai đường cho hai mã (410 và 409); giờ cả hai đường đều trả 410, và script
+gửi thêm một gói nháp thứ hai để lần nào cũng đi qua nhánh "đã bị chốt trước". Chạy với
+`AutoSubmit__Enabled=true` hay `false` (profile `http-no-autosubmit`) đều phải đạt.

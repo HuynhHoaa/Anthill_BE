@@ -8,7 +8,7 @@ using Microsoft.AspNetCore.Mvc;
 namespace Anthill.Api.Controllers;
 
 /// <summary>
-/// Chín endpoint quản lý bài kiểm tra và blueprint của §4.6.
+/// Mười endpoint quản lý bài kiểm tra và blueprint của §4.6.
 /// </summary>
 /// <remarks>
 /// <para>
@@ -103,13 +103,21 @@ public sealed class ExamsController : ApiControllerBase
         => FromResult(await _examService.CreateAsync(request, cancellationToken));
 
     /// <summary>Thay <b>toàn bộ</b> cấu hình của đề.</summary>
-    /// <remarks>Chỉ muốn dời lịch thì dùng <c>PATCH /{id}/schedule</c> — hẹp hơn nên an toàn hơn.</remarks>
+    /// <remarks>
+    /// <para>Chỉ muốn dời lịch thì dùng <c>PATCH /{id}/schedule</c> — hẹp hơn nên an toàn hơn.</para>
+    /// <para>
+    /// Chưa em nào bắt đầu làm thì sửa được mọi thứ, và bản đề đã sinh cho các lượt giao được sinh lại
+    /// theo cấu hình mới. Đã có em bắt đầu thì đổi cấu hình đề (số câu, tỷ lệ, chủ đề, điểm, thời lượng,
+    /// tuỳ chọn trộn) hay đưa đề về nháp trả <b>409</b>; tên, mô tả, lịch và cờ hiện điểm vẫn lưu được.
+    /// </para>
+    /// </remarks>
     [HttpPut("{id:int}")]
     [Authorize(Roles = SystemRoles.Teacher)]
     [ProducesResponseType<ExamDto>(StatusCodes.Status200OK)]
     [ProducesResponseType<ApiErrorResponse>(StatusCodes.Status400BadRequest)]
     [ProducesResponseType<ApiErrorResponse>(StatusCodes.Status403Forbidden)]
     [ProducesResponseType<ApiErrorResponse>(StatusCodes.Status404NotFound)]
+    [ProducesResponseType<ApiErrorResponse>(StatusCodes.Status409Conflict)]
     public async Task<IActionResult> Update(
         int id,
         [FromBody] SaveExamRequest request,
@@ -148,6 +156,20 @@ public sealed class ExamsController : ApiControllerBase
     [ProducesResponseType<ApiErrorResponse>(StatusCodes.Status409Conflict)]
     public async Task<IActionResult> Publish(int id, CancellationToken cancellationToken)
         => FromResult(await _examService.PublishAsync(id, cancellationToken));
+
+    /// <summary>Nhân bản đề thành một bản nháp mới, cùng cấu hình, chưa giao cho ai.</summary>
+    /// <remarks>
+    /// Lối ra khi cấu hình đề đã bị khoá vì có học sinh bắt đầu làm: muốn đổi số câu hay tỷ lệ thì sửa
+    /// trên bản sao rồi giao lại. Chỉ nhân bản được đề của chính mình; đề của giáo viên khác trả
+    /// <b>404</b> (§4.2).
+    /// </remarks>
+    [HttpPost("{id:int}/duplicate")]
+    [Authorize(Roles = SystemRoles.Teacher)]
+    [ProducesResponseType<ExamDto>(StatusCodes.Status200OK)]
+    [ProducesResponseType<ApiErrorResponse>(StatusCodes.Status403Forbidden)]
+    [ProducesResponseType<ApiErrorResponse>(StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> Duplicate(int id, CancellationToken cancellationToken)
+        => FromResult(await _examService.DuplicateAsync(id, cancellationToken));
 
     /// <summary>Xoá đề kèm mọi bản ghi giao bài và bản đề đã sinh.</summary>
     /// <remarks>

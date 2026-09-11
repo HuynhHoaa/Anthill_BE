@@ -94,6 +94,48 @@ public sealed class ExamGeneratorService : IExamGeneratorService
         return Result.Success(paper);
     }
 
+    /// <inheritdoc />
+    /// <remarks>
+    /// <para>
+    /// Sinh <b>ngay lúc giao</b> chứ không đợi tới lúc học sinh mở bài. Sinh muộn thì một đề thiếu
+    /// câu hỏi sẽ nổ ra trước mặt học sinh, giữa giờ kiểm tra, và người duy nhất sửa được lại
+    /// không có mặt ở đó. Sinh sớm khiến thao tác giao bài chậm hơn một chút, đổi lại lỗi rơi
+    /// đúng vào lúc giáo viên đang ngồi trước màn hình và còn sửa được. Sửa đề trước khi có em
+    /// vào thi cũng đi qua đây, vì cùng lý do đó.
+    /// </para>
+    /// <para>
+    /// Khi tắt <c>randomizePerStudent</c>, lượt đầu tiên tạo bản đề chung rồi những lượt sau nhận
+    /// lại chính nó — cả lớp một bộ câu, đúng như cờ đó hứa hẹn.
+    /// </para>
+    /// </remarks>
+    public async Task<Result> GeneratePapersAsync(
+        Exam exam,
+        IReadOnlyList<ExamAssignment> assignments,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(exam);
+        ArgumentNullException.ThrowIfNull(assignments);
+
+        foreach (var assignment in assignments)
+        {
+            var paper = await GetOrCreatePaperAsync(exam, assignment, cancellationToken);
+            if (paper.IsFailure)
+            {
+                return Result.Failure(paper.Error!, paper.ErrorCode);
+            }
+
+            // Bản đề chung dùng lại cho mọi em, nên chỉ cần sinh một lần. Ghi xuống ngay để lượt
+            // sau tìm thấy nó thay vì sinh thêm một bản nữa.
+            if (!exam.RandomizePerStudent)
+            {
+                await _unitOfWork.SaveChangesAsync(cancellationToken);
+                break;
+            }
+        }
+
+        return Result.Success();
+    }
+
     /// <summary>
     /// Bản đề đã có sẵn, nếu có: bản riêng của assignment khi bật cờ, bản chung của đề khi tắt.
     /// </summary>

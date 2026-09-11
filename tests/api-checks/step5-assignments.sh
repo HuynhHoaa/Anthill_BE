@@ -30,13 +30,15 @@ cleanup() {
   # Tài khoản học sinh cố ý KHÔNG có endpoint xoá (§4.2): khoá tài khoản chứ không xoá, để kết quả
   # các em đã làm vẫn tra cứu được. Nên bước dọn ở đây gỡ các em khỏi nhóm rồi khoá lại — nhóm mới
   # xoá được, còn tài khoản thì nằm im và không ảnh hưởng lần chạy sau.
+  # Gỡ khỏi lớp và xoá lớp dùng token QUẢN TRỊ VIÊN: lớp do quản trị viên lập, giáo viên gọi hai thao
+  # tác này thì nhận 403 và mỗi lần chạy lại để sót một lớp thử.
   for id in "${STUDENTS[@]}"; do
-    [[ "$(call DELETE "/api/student-groups/$GROUP_ID/students/$id" "$TEACHER")" == "200" ]] && members=$((members + 1))
+    [[ "$(call DELETE "/api/student-groups/$GROUP_ID/students/$id" "$ADMIN")" == "200" ]] && members=$((members + 1))
     [[ "$(call PATCH "/api/students/$id/status" "$ADMIN" '{"status":"locked"}')" == "200" ]] && locked=$((locked + 1))
   done
 
   for id in "${GROUP_IDS[@]}"; do
-    local groupCode; groupCode=$(call DELETE "/api/student-groups/$id" "$TEACHER")
+    local groupCode; groupCode=$(call DELETE "/api/student-groups/$id" "$ADMIN")
     if [[ "$groupCode" == "200" ]]; then
       groups=$((groups + 1))
     else

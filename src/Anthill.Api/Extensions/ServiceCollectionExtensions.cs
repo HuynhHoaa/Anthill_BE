@@ -5,6 +5,7 @@ using System.Text.Json.Serialization;
 using System.Text.Unicode;
 using Anthill.Api.BackgroundJobs;
 using Anthill.Api.Configuration;
+using Anthill.Api.Hubs;
 using Anthill.Api.Realtime;
 using Anthill.Api.Filters;
 using Anthill.Api.Security;
@@ -258,7 +259,18 @@ public static class ServiceCollectionExtensions
             // lộ tên kiểu và cấu trúc bên trong. Riêng HubException vẫn tới được client ở cả hai chế
             // độ, nên phần từ chối quyền trong NotificationHub vẫn nói rõ được lý do.
             options.EnableDetailedErrors = false;
+
+            // OnTokenValidated chỉ thấy request HTTP; lời gọi hub trên một WebSocket đã mở thì không.
+            // Bộ lọc này kiểm lại phiên ở từng lời gọi, xem SessionRevalidationHubFilter.
+            options.AddFilter<SessionRevalidationHubFilter>();
         });
+
+        // Không giữ trạng thái gì: một thể hiện cho cả tiến trình, IAccountSessionReader lấy từ scope
+        // của từng lời gọi hub.
+        services.AddSingleton<SessionRevalidationHubFilter>();
+
+        // Scoped có chủ đích: nó cắt kết nối lúc scope của lời gọi hub bị dispose, xem lớp đó.
+        services.AddScoped<RevokedConnectionCloser>();
 
         // Dạy SignalR biết Clients.User(id) tra theo claim "sub".
         services.AddSingleton<IUserIdProvider, SubClaimUserIdProvider>();
@@ -333,6 +345,7 @@ public static class ServiceCollectionExtensions
                 bearer.Events = new JwtBearerEvents
                 {
                     OnMessageReceived = OnMessageReceived,
+                    OnTokenValidated = OnTokenValidated,
                     OnChallenge = OnChallenge,
                     OnForbidden = OnForbidden
                 };
@@ -365,6 +378,60 @@ public static class ServiceCollectionExtensions
         return Task.CompletedTask;
     }
 
+    /// <summary>
+    /// Chữ ký và hạn dùng đã đạt; giờ đối chiếu token với tài khoản <b>hiện tại</b> trong database.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Khoá, đưa vào diện xoá, đổi hay cấp lại mật khẩu đều xoay <c>SecurityStamp</c>. Không có bước
+    /// này thì token cũ vẫn làm bài, xem kết quả, đọc thông báo tới khi hết hạn (120 phút) — trong khi
+    /// hộp thoại khoá tài khoản hứa với quản trị viên rằng em đó bị đăng xuất ngay.
+    /// </para>
+    /// <para>
+    /// Chạy cho mọi request có token, kể cả negotiate và request mở kết nối của SignalR (token đi qua
+    /// query, xem <see cref="OnMessageReceived"/>). Kết quả xác thực được nhớ trong request, nên dù
+    /// UseAuthentication và UseAuthorization cùng hỏi thì database cũng chỉ bị tra một lần.
+    /// </para>
+    /// <para>
+    /// Đánh đổi: thêm một truy vấn theo khoá chính trên mỗi request có token. Chấp nhận được ở quy mô
+    /// này; cache có hạn thì rẻ hơn nhưng mở lại đúng khoảng trễ mà bước này sinh ra để đóng (xem
+    /// <c>AccountSessionReader</c>). Database lỗi thì request lỗi theo — đóng cửa chứ không cho qua.
+    /// </para>
+    /// </remarks>
+    private static async Task OnTokenValidated(TokenValidatedContext context)
+    {
+        var principal = context.Principal;
+        var reader = context.HttpContext.RequestServices.GetRequiredService<IAccountSessionReader>();
+
+        // Cùng một hàm với bộ lọc hub (SessionRevalidationHubFilter), để REST và hub không thể kết
+        // luận khác nhau về cùng một token.
+        var verdict = await SessionValidation.CheckAsync(
+            principal?.FindFirst(CurrentUser.UserIdClaimType)?.Value,
+            principal?.FindFirst(CurrentUser.SecurityStampClaimType)?.Value,
+            reader,
+            context.HttpContext.RequestAborted);
+
+        if (verdict == SessionVerdict.Valid)
+        {
+            return;
+        }
+
+        // UseRouting đứng trước UseAuthentication nên endpoint đã được chọn ở thời điểm này.
+        if (SessionValidation.IsBlockedAccount(verdict)
+            && context.HttpContext.GetEndpoint()?.Metadata.GetMetadata<ReportsBlockedAccountAttribute>() is not null)
+        {
+            return;
+        }
+
+        context.Fail(new RevokedSessionException(SessionValidation.MessageFor(verdict)));
+    }
+
+    /// <summary>
+    /// Mang câu chữ của phép kiểm phiên từ <see cref="OnTokenValidated"/> sang <see cref="OnChallenge"/>,
+    /// để 401 nói được "tài khoản đã bị khoá" thay vì câu "hết hạn" chung chung.
+    /// </summary>
+    private sealed class RevokedSessionException(string message) : Exception(message);
+
     /// <summary>401 mặc định của JwtBearer có body rỗng; frontend đọc trường <c>message</c> (§1).</summary>
     private static async Task OnChallenge(JwtBearerChallengeContext context)
     {
@@ -375,8 +442,12 @@ public static class ServiceCollectionExtensions
             return;
         }
 
+        var message = context.AuthenticateFailure is RevokedSessionException revoked
+            ? revoked.Message
+            : "Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.";
+
         context.Response.StatusCode = StatusCodes.Status401Unauthorized;
-        await WriteMessageAsync(context.Response, "Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.");
+        await WriteMessageAsync(context.Response, message);
     }
 
     private static Task OnForbidden(ForbiddenContext context)

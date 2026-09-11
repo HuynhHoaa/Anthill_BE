@@ -41,15 +41,16 @@ cleanup() {
 
   # Tài khoản học sinh cố ý KHÔNG có endpoint xoá (§4.2): khoá chứ không xoá, để kết quả các em đã
   # làm vẫn tra cứu được. Gỡ khỏi nhóm rồi khoá lại — nhóm mới xoá được, còn tài khoản nằm im.
+  # Gỡ khỏi lớp và xoá lớp là việc của quản trị viên: token giáo viên nhận 403 và để sót lớp thử.
   for id in "${STUDENTS[@]}"; do
     if [[ -n "$GROUP_ID" ]]; then
-      [[ "$(call DELETE "/api/student-groups/$GROUP_ID/students/$id" "$TEACHER")" == "200" ]] && members=$((members + 1))
+      [[ "$(call DELETE "/api/student-groups/$GROUP_ID/students/$id" "$ADMIN")" == "200" ]] && members=$((members + 1))
     fi
     [[ "$(call PATCH "/api/students/$id/status" "$ADMIN" '{"status":"locked"}')" == "200" ]] && locked=$((locked + 1))
   done
 
   for id in "${GROUP_IDS[@]}"; do
-    [[ "$(call DELETE "/api/student-groups/$id" "$TEACHER")" == "200" ]] && groups=$((groups + 1))
+    [[ "$(call DELETE "/api/student-groups/$id" "$ADMIN")" == "200" ]] && groups=$((groups + 1))
   done
 
   rm -f "$SESSION_FILE"
@@ -436,7 +437,15 @@ sleep 30
 expect_status "lưu nháp sau khi hết giờ → 410" 410 \
   "$(call PUT "/api/exam-attempts/$SHORT_ATTEMPT/answers" "$STUDENT_B" '{"clientSeq":1,"answers":[]}')"
 
-# Lượt quá hạn đã bị chốt sổ ngay ở lời gọi trên, nên nộp lại chỉ đọc lại kết quả đã chấm.
+# Tới đây lượt chắc chắn đã bị chốt — ở lời gọi trên hoặc bởi tiến trình tự nộp bài chạy trước nó.
+# Hai lời gọi dưới đi qua nhánh "đã chốt rồi" ở mọi lần chạy, và vẫn phải nói "hết giờ" chứ không
+# phải "lượt đã kết thúc": trước đây nhánh đó trả 409 nên phép trên chập chờn theo lịch quét.
+expect_status "lưu nháp lần nữa trên lượt đã chốt vì hết giờ → 410" 410 \
+  "$(call PUT "/api/exam-attempts/$SHORT_ATTEMPT/answers" "$STUDENT_B" '{"clientSeq":2,"answers":[]}')"
+expect_status "nạp lại phiên đã chốt vì hết giờ → 410" 410 \
+  "$(call GET "/api/exam-attempts/$SHORT_ATTEMPT" "$STUDENT_B")"
+
+# Lượt quá hạn đã bị chốt sổ, nên nộp lại chỉ đọc lại kết quả đã chấm.
 expect_status "nộp sau khi hết giờ → 200, đọc lại bản đã chốt" 200 \
   "$(call POST "/api/exam-attempts/$SHORT_ATTEMPT/submit" "$STUDENT_B" '{"answers":[]}')"
 expect_json   "  status = graded"      status graded

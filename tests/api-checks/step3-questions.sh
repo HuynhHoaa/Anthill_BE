@@ -117,10 +117,40 @@ expect_status "file script doi duoi .png → 400" 400 "$(upload "$WORKDIR/gia.pn
 cp "$PNG" "$WORKDIR/that.gif"
 expect_status "PNG that doi duoi .gif → 400" 400 "$(upload "$WORKDIR/that.gif" "that.gif" "image/gif")"
 
-# Hang rao 1: dung luong chan truoc khi doc byte nao. Tran la 4 MB.
-head -c 5242880 /dev/urandom > "$WORKDIR/qua-lon.png"
-printf '\x89PNG\r\n\x1a\n' | cat - "$WORKDIR/qua-lon.png" > "$WORKDIR/qua-lon2.png"
-expect_status "file 5 MB vuot tran 4 MB → 400" 400 "$(upload "$WORKDIR/qua-lon2.png" "qua-lon.png")"
+# Hang rao 1: dung luong. Tran la 4 MB, chan o HAI cho: dau vao HTTP (truoc khi ASP.NET doc form,
+# UploadSizeLimitAttribute) va service (theo do dai file). Hai cho phai cung tra 400 kem cung mot
+# cau — truoc day file tren ~28 MB nhan ve 413 rong cua Kestrel, frontend khong co gi de hien.
+png_of_size() {
+  # $1 = duong dan, $2 = tong so byte (gom 8 byte chu ky PNG)
+  { printf '\x89PNG\r\n\x1a\n'; head -c $(($2 - 8)) /dev/zero; } > "$1"
+}
+# Doc thang byte UTF-8: stdin cua python tren Windows mac dinh la cp1252, vap ngay chu tieng Viet.
+says_too_large() {
+  python -c "import json,sys;m=json.loads(sys.stdin.buffer.read().decode('utf-8')).get('message','');print('co' if '4 MB' in m else 'khong: '+m.encode('ascii','replace').decode())" < "$BODY_FILE"
+}
+upload_chunked() {
+  curl -s -o "$BODY_FILE" -w '%{http_code}' -X POST "$HOST/api/uploads/images" \
+    -H "Authorization: Bearer $TEACHER" -H "Transfer-Encoding: chunked" \
+    -F "file=@$(to_native_path "$1");filename=$2;type=image/png"
+}
+
+# Vua qua tran 1 byte: than request van nam trong phan du cho vo multipart, nen toi duoc service.
+png_of_size "$WORKDIR/tran-cong-1.png" $((4 * 1024 * 1024 + 1))
+expect_status "file 4 MB + 1 byte → 400 (service chan)" 400 "$(upload "$WORKDIR/tran-cong-1.png" "tran.png")"
+expect_status "  thong diep neu tran 4 MB" co "$(says_too_large)"
+
+png_of_size "$WORKDIR/qua-lon.png" $((5 * 1024 * 1024))
+expect_status "file 5 MB → 400 ngay o dau vao" 400 "$(upload "$WORKDIR/qua-lon.png" "qua-lon.png")"
+expect_status "  cung mot thong diep voi service" co "$(says_too_large)"
+
+# Khong khai Content-Length: dau vao khong biet truoc, tran than request cua Kestrel cat giua chung.
+expect_status "file 5 MB gui chunked → 400" 400 "$(upload_chunked "$WORKDIR/qua-lon.png" "qua-lon.png")"
+expect_status "  van la JSON kem thong diep" co "$(says_too_large)"
+
+# Vuot ca tran mac dinh cua Kestrel (~28 MB): truoc day la 413 khong co body.
+png_of_size "$WORKDIR/rat-lon.png" $((40 * 1024 * 1024))
+expect_status "file 40 MB → 400, khong phai 413 rong" 400 "$(upload "$WORKDIR/rat-lon.png" "rat-lon.png")"
+expect_status "  van la JSON kem thong diep" co "$(says_too_large)"
 
 # Duong di hop le.
 expect_status "PNG that, duoi dung → 200" 200 "$(upload "$PNG" "anh-cua-toi.png")"

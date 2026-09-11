@@ -65,6 +65,10 @@ public static class ExamAssignmentMappingExtensions
             StudentId = assignment.StudentId,
             StudentName = assignment.Student?.FullName ?? string.Empty,
             StudentCode = assignment.Student?.Code ?? string.Empty,
+
+            // Repository luôn nạp kèm Student; vế dự phòng chỉ để dựng DTO được khi navigation vắng,
+            // cùng kiểu với hai trường tên và mã ngay trên — không có tài khoản thì không có gì để gắn nhãn.
+            StudentStatus = (assignment.Student?.Status ?? UserStatus.Active).ToStatusString(),
             Group = assignment.Student?.Group?.Name ?? string.Empty,
             Status = status.ToAssignmentStatusString(),
             AttemptId = attempt?.Id,

@@ -177,6 +177,7 @@ public sealed class ExamAssignmentService : IExamAssignmentService
             AssignedCount = newcomers.Count,
             SkippedAlreadyAssigned = alreadyAssigned.Count,
             SkippedLocked = targets.LockedCount,
+            SkippedRetired = targets.RetiredCount,
             SkippedNotFound = targets.NotFoundCount,
             SkippedOutOfScope = targets.OutOfScopeCount,
             SkippedOutOfScopeGroups = targets.OutOfScopeGroupCount,
@@ -244,7 +245,7 @@ public sealed class ExamAssignmentService : IExamAssignmentService
         // Cần id thật của assignment trước khi sinh đề: hạt giống của bản đề riêng dựng từ id đó.
         await _unitOfWork.SaveChangesAsync(cancellationToken);
 
-        var generated = await GeneratePapersAsync(exam, assignments, cancellationToken);
+        var generated = await _generator.GeneratePapersAsync(exam, assignments, cancellationToken);
         if (generated.IsFailure)
         {
             // Không sinh nổi đề thì không giao. Cuộn lại cả lô thay vì để lại những assignment
@@ -347,6 +348,9 @@ public sealed class ExamAssignmentService : IExamAssignmentService
 
         public required int LockedCount { get; init; }
 
+        /// <summary>Số em chờ xoá hoặc đã xoá — đếm riêng khỏi <see cref="LockedCount"/>.</summary>
+        public required int RetiredCount { get; init; }
+
         /// <summary>Số <b>học sinh</b> không thuộc nhóm nào của giáo viên này.</summary>
         public required int OutOfScopeCount { get; init; }
 
@@ -355,12 +359,12 @@ public sealed class ExamAssignmentService : IExamAssignmentService
     }
 
     /// <summary>
-    /// Gom học sinh chọn lẻ với học sinh của các nhóm đã chọn, khử trùng lặp, rồi sàng ba lớp.
+    /// Gom học sinh chọn lẻ với học sinh của các nhóm đã chọn, khử trùng lặp, rồi sàng bốn lớp.
     /// </summary>
     /// <remarks>
-    /// Thứ tự sàng có ý nghĩa: <b>không tồn tại</b> → <b>ngoài phạm vi</b> → <b>đang khoá</b>. Một
-    /// em vừa ngoài phạm vi vừa bị khoá thì chỉ được đếm một lần, ở lý do đầu tiên chạm tới — nếu
-    /// không, tổng các con số bỏ qua sẽ lớn hơn số em được chọn và bảng kết quả đọc vào vô nghĩa.
+    /// Thứ tự sàng có ý nghĩa: <b>không tồn tại</b> → <b>ngoài phạm vi</b> → <b>đã rời trường</b> →
+    /// <b>đang khoá</b>. Một em vừa ngoài phạm vi vừa bị khoá thì chỉ được đếm một lần, ở lý do đầu
+    /// tiên chạm tới — xem <see cref="AssignmentTargetFilter"/>.
     /// </remarks>
     private async Task<Targets> ResolveTargetsAsync(
         AssignExamRequest request,
@@ -413,6 +417,7 @@ public sealed class ExamAssignmentService : IExamAssignmentService
                 OwnedGroupIds = ownedGroups.Select(group => group.Id).ToList(),
                 NotFoundCount = 0,
                 LockedCount = 0,
+                RetiredCount = 0,
                 OutOfScopeCount = 0,
                 OutOfScopeGroupCount = outOfScopeGroups
             };
@@ -431,24 +436,25 @@ public sealed class ExamAssignmentService : IExamAssignmentService
         var inScope = new List<User>(students.Count);
         var outOfScope = 0;
         var locked = 0;
+        var retired = 0;
 
         foreach (var student in students)
         {
-            if (student.GroupId is null || !myGroupIds.Contains(student.GroupId.Value))
+            switch (AssignmentTargetFilter.Classify(student, myGroupIds))
             {
-                outOfScope++;
-                continue;
+                case AssignmentSkipReason.OutOfScope:
+                    outOfScope++;
+                    break;
+                case AssignmentSkipReason.Locked:
+                    locked++;
+                    break;
+                case AssignmentSkipReason.Retired:
+                    retired++;
+                    break;
+                default:
+                    inScope.Add(student);
+                    break;
             }
-
-            // Tài khoản khoá thì không đăng nhập được, nên tạo bài cho em cũng chỉ tạo ra một dòng
-            // không ai dùng tới. Frontend hiện vẫn cho chọn và vẫn tạo.
-            if (student.Status != UserStatus.Active)
-            {
-                locked++;
-                continue;
-            }
-
-            inScope.Add(student);
         }
 
         return new Targets
@@ -458,49 +464,10 @@ public sealed class ExamAssignmentService : IExamAssignmentService
             OwnedGroupIds = ownedGroups.Select(group => group.Id).ToList(),
             NotFoundCount = notFound,
             LockedCount = locked,
+            RetiredCount = retired,
             OutOfScopeCount = outOfScope,
             OutOfScopeGroupCount = outOfScopeGroups
         };
-    }
-
-    /// <summary>
-    /// Sinh bản đề cho những assignment vừa tạo.
-    /// </summary>
-    /// <remarks>
-    /// <para>
-    /// Sinh <b>ngay lúc giao</b> chứ không đợi tới lúc học sinh mở bài. Sinh muộn thì một đề thiếu
-    /// câu hỏi sẽ nổ ra trước mặt học sinh, giữa giờ kiểm tra, và người duy nhất sửa được lại
-    /// không có mặt ở đó. Sinh sớm khiến thao tác giao bài chậm hơn một chút, đổi lại lỗi rơi
-    /// đúng vào lúc giáo viên đang ngồi trước màn hình và còn sửa được.
-    /// </para>
-    /// <para>
-    /// Khi tắt <c>randomizePerStudent</c>, lượt đầu tiên tạo bản đề chung rồi những lượt sau nhận
-    /// lại chính nó — cả lớp một bộ câu, đúng như cờ đó hứa hẹn.
-    /// </para>
-    /// </remarks>
-    private async Task<Result> GeneratePapersAsync(
-        Exam exam,
-        IReadOnlyList<ExamAssignment> assignments,
-        CancellationToken cancellationToken)
-    {
-        foreach (var assignment in assignments)
-        {
-            var paper = await _generator.GetOrCreatePaperAsync(exam, assignment, cancellationToken);
-            if (paper.IsFailure)
-            {
-                return Result.Failure(paper.Error!, paper.ErrorCode);
-            }
-
-            // Bản đề chung dùng lại cho mọi em, nên chỉ cần sinh một lần. Ghi xuống ngay để lượt
-            // sau tìm thấy nó thay vì sinh thêm một bản nữa.
-            if (!exam.RandomizePerStudent)
-            {
-                await _unitOfWork.SaveChangesAsync(cancellationToken);
-                break;
-            }
-        }
-
-        return Result.Success();
     }
 
     /// <summary>Bắn sự kiện realtime cho từng em vừa được giao.</summary>

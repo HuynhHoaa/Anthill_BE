@@ -1,3 +1,4 @@
+using Anthill.Api.Filters;
 using Anthill.Application.Common;
 using Anthill.Application.DTOs.Files;
 using Anthill.Application.Interfaces.Services;
@@ -41,6 +42,7 @@ public sealed class UploadsController : ApiControllerBase
     /// SVG cố ý không nằm trong danh sách: nó chứa được thẻ <c>script</c>.
     /// </remarks>
     [HttpPost("images")]
+    [UploadSizeLimit]
     [ProducesResponseType<UploadedFileDto>(StatusCodes.Status200OK)]
     [ProducesResponseType<ApiErrorResponse>(StatusCodes.Status400BadRequest)]
     [ProducesResponseType<ApiErrorResponse>(StatusCodes.Status401Unauthorized)]

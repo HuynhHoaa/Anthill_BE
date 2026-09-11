@@ -40,7 +40,7 @@ Ngày lập: 06/09/2026 · Nguồn: 9 service, ~50 hàm · Kết quả: **68 end
 
 | Khu vực | admin | teacher | student |
 |---|:---:|:---:|:---:|
-| Tài khoản học sinh (tạo/sửa/khoá/reset mật khẩu) | ✅ | đọc | — |
+| Tài khoản học sinh (tạo/sửa/khoá/reset mật khẩu) | ✅ | đọc, chỉ học sinh mình phụ trách (§4.3) | — |
 | Nhóm lớp và thành viên | đọc | ✅ | — |
 | Ngân hàng câu hỏi | đọc | ✅ | — |
 | Bài kiểm tra, giao bài | — | ✅ | — |
@@ -85,7 +85,7 @@ Quy tắc: giáo viên sở hữu đề luôn xem được. Học sinh xem **đi
 | POST | `/api/auth/refresh` | — | Cấp lại access token. **Bổ sung** — cần thiết vì học sinh làm bài 45–60 phút, hết token giữa chừng là mất bài |
 | GET | `/api/auth/me` | tất cả | Hồ sơ người đang đăng nhập, suy từ JWT |
 | PUT | `/api/auth/me` | tất cả | Cập nhật thông tin liên hệ của chính mình |
-| POST | `/api/auth/change-password` | tất cả | Đổi mật khẩu, xác minh mật khẩu hiện tại |
+| POST | `/api/auth/change-password` | tất cả | Đổi mật khẩu, xác minh mật khẩu hiện tại. Sai mật khẩu hiện tại → **400** kèm `errors.currentPassword`; 401 chỉ khi phiên đã chết |
 | POST | `/api/auth/logout` | tất cả | Thu hồi phiên (chỉ cần khi dùng refresh token) |
 
 `LoginResponse`: `{ accessToken, tokenType: 'Bearer', expiresAt, refreshToken?, user: UserProfileDto }`
@@ -106,13 +106,15 @@ JWT claims tối thiểu: `sub` = userId, `role`, `name`, `subject_id` (giáo vi
 
 | Method | Path | Vai trò | Mô tả |
 |---|---|---|---|
-| GET | `/api/students` | admin, teacher | Danh sách có phân trang, lọc theo từ khoá / nhóm / trạng thái |
-| GET | `/api/students/{id}` | admin, teacher | Hồ sơ một học sinh |
+| GET | `/api/students` | admin, teacher | Danh sách có phân trang, lọc theo từ khoá / nhóm / trạng thái. Giáo viên chỉ nhận học sinh ở lớp đã công bố mà mình được phân công |
+| GET | `/api/students/{id}` | admin, teacher | Hồ sơ một học sinh. Giáo viên: học sinh lớp mình dạy, hoặc đã nhận một đề do chính mình tạo; ngoài ra 404 |
 | POST | `/api/students` | admin | Tạo tài khoản kèm mật khẩu ban đầu |
 | PUT | `/api/students/{id}` | admin | Cập nhật hồ sơ, nhóm, trạng thái. **Không nhận mật khẩu** |
 | PATCH | `/api/students/{id}/status` | admin | Khoá / mở khoá |
 | POST | `/api/students/{id}/reset-password` | admin | **Bổ sung** — cấp lại mật khẩu khi học sinh quên |
 | GET | `/api/students/availability` | admin | **Bổ sung** — kiểm tra email/username/code đã dùng chưa, thay cho việc FE tải 500 bản ghi về so sánh tại chỗ |
+
+> **Phạm vi đọc của giáo viên.** Danh sách là "lớp tôi đang dạy": học sinh có `GroupId` thuộc một lớp **đã công bố** mà giáo viên **được phân công** — đúng tập lớp `GET /api/student-groups` trả cho họ. Bộ lọc `groupId` / `status` / `search` chạy bên trong phạm vi đó: `groupId` của lớp khác hay lớp nháp, và `groupId=0` ("chưa phân nhóm"), đều ra trang rỗng, không lỗi. Hồ sơ rộng hơn danh sách một vế: mở được cả học sinh đã nhận một đề do chính giáo viên đó tạo, vì kết quả thuộc về đề chứ không thuộc về lớp hiện tại — em chuyển lớp hay đã bị xoá dữ liệu cá nhân thì liên kết từ bảng kết quả vẫn phải mở được. Ngoài phạm vi trả **404** cùng thông điệp với id không tồn tại. Admin không bị giới hạn.
 
 ### 4.4 Nhóm lớp
 
@@ -155,12 +157,13 @@ JWT claims tối thiểu: `sub` = userId, `role`, `name`, `subject_id` (giáo vi
 | GET | `/api/exams` | teacher, admin | Danh sách, tìm kiếm + lọc theo vòng đời |
 | GET | `/api/exams/{id}` | teacher, admin | Chi tiết một đề |
 | POST | `/api/exams` | teacher | Tạo đề theo blueprint. **Đề không chứa danh sách câu hỏi cụ thể** |
-| PUT | `/api/exams/{id}` | teacher | Sửa toàn bộ cấu hình |
+| PUT | `/api/exams/{id}` | teacher | Sửa toàn bộ cấu hình. Chưa em nào bắt đầu làm: sửa được mọi trường, bản đề đã sinh cho các lượt giao được **sinh lại** theo cấu hình mới (ngân hàng không đủ câu thì từ chối, không đổi gì). Đã có em bắt đầu (`blueprintFrozen`): đổi số câu, ba tỷ lệ, chủ đề, điểm mỗi câu, thời lượng, tuỳ chọn trộn hoặc đưa về nháp trả **409**; tên, mô tả, lịch và `showResultAfterSubmit` vẫn sửa được. Điểm đã chấm không bao giờ đổi |
 | PATCH | `/api/exams/{id}/schedule` | teacher | **Chỉ** đổi lịch mở/đóng — hẹp và an toàn hơn PUT |
 | DELETE | `/api/exams/{id}` | teacher | Xoá đề kèm toàn bộ bản ghi giao bài |
 | POST | `/api/exams/blueprint-preview` | teacher | **Trái tim của tính năng.** Nhận cấu hình đang gõ dở, trả số câu cần / số câu có / hợp lệ hay không |
 | GET | `/api/exams/{id}/blueprint` | teacher | Blueprint của đề đã lưu |
 | POST | `/api/exams/{id}/publish` | teacher | **Bổ sung** — chuyển nháp sang xuất bản. FE hiện làm việc này bằng cách gửi PUT với `lifecycle` bỏ trống |
+| POST | `/api/exams/{id}/duplicate` | teacher | **Bổ sung** — nhân bản đề của chính mình thành một bản **nháp** mới, cùng cấu hình, tên thêm " (bản sao)", chưa giao cho ai. Lối ra khi cấu hình đã khoá. Đề của giáo viên khác trả 404 |
 | GET | `/api/exams/{id}/assignments` | teacher | Danh sách học sinh đã giao kèm trạng thái làm bài. Mỗi dòng mang khung giờ thật của em (`openAt`, `closeAt`, `hasScheduleOverride`, `assignedViaGroupId`); `expired` tính theo khung giờ đó |
 | POST | `/api/exams/{id}/assignments` | teacher | Giao bài cho học sinh lẻ và/hoặc cả nhóm, tuỳ chọn kèm khung giờ riêng (`openAt` + `closeAt`, phải chứa trọn `durationMinutes`, nếu không 400). Gửi lại một lớp kèm khung giờ là sửa giờ cho em chưa bắt đầu (`scheduleUpdatedCount`, `scheduleKeptStartedCount`) |
 | DELETE | `/api/exams/{examId}/assignments/{assignmentId}` | teacher | **Bổ sung** — thu hồi bài đã giao. Giao nhầm lớp là chuyện thường, mà endpoint giao bài lại cố ý idempotent nên không có đường lùi |
@@ -237,7 +240,7 @@ Mock hiện tra ngược `mockQuestions` theo id lúc chấm — điều đó c�
 - **Khử trùng lặp ở BE** bằng `HashSet`: `targets = distinct(studentIds hợp lệ ∪ học sinh của groupIds)`. FE có tính số hiển thị nhưng đó chỉ để hiện lên màn hình.
 - **Idempotent** theo cặp `(examId, studentId)` — unique index. Giao lại cho người đã có bài thì bỏ qua, giữ nguyên `status`/`attemptId`/`score`.
 - **Kiểm tra phạm vi:** học sinh phải thuộc nhóm do chính giáo viên đó quản lý. Không cho giáo viên A giao bài cho lớp của giáo viên B bằng cách đoán id.
-- **Học sinh bị khoá:** FE hiển thị nhãn "Đã khóa" nhưng vẫn cho chọn và vẫn tạo assignment. BE nên **bỏ qua** và trả `skippedLocked` để giáo viên biết.
+- **Học sinh bị khoá:** FE hiển thị nhãn "Đã khóa" nhưng vẫn cho chọn và vẫn tạo assignment. BE nên **bỏ qua** và trả `skippedLocked` để giáo viên biết. Tài khoản chờ xoá hoặc đã xoá cũng bị bỏ qua nhưng đếm riêng vào `skippedRetired` — em đã rời trường thì không có gì để mở khoá.
 - **Chặn giao đề đang là nháp.** FE hoàn toàn không kiểm điều này.
 
 ### Lưu nháp và nộp bài
@@ -253,10 +256,14 @@ Mock hiện tra ngược `mockQuestions` theo id lúc chấm — điều đó c�
 |---|---|
 | `Exam.assignedCount` | số assignment của đề |
 | `Exam.submittedCount` | số assignment có status ∈ {submitted, graded} |
+| `Exam.startedCount` | số assignment đã có lượt làm bài, ở mọi trạng thái |
+| `Exam.blueprintFrozen` | `startedCount > 0` — cấu hình đề đã khoá, `PUT` chỉ còn đổi được tên, mô tả, lịch và `showResultAfterSubmit` |
 | `Student.completedExams` | COUNT lượt có status ∈ {submitted, graded} |
 | `Student.averageScore` | AVG(score) trên các lượt `graded`, làm tròn 1 chữ số |
 | `Student.deletionScheduledAt` | `deletionRequestedAt` + 60 ngày, chỉ có khi `status = pendingDeletion`. Server tính sẵn — FE không tự cộng ngày |
 | `AddMembersResponse.skippedRetired` | Số tài khoản chờ xoá hoặc đã xoá bị bỏ qua, không đưa vào lớp |
+| `AssignExamResponse.skippedRetired` | Số tài khoản chờ xoá hoặc đã xoá bị bỏ qua khi giao bài — không tính vào `skippedLocked` |
+| `studentStatus` trên `ExamAssignment`, `ResultSummary`, `AttemptDetail` | Trạng thái tài khoản của em (`active` · `locked` · `pendingDeletion` · `deleted`), cùng chuỗi với `Student.status`. Tách khỏi `status` — trường đó là trạng thái lượt làm bài |
 | `StudentGroup.studentCount` | COUNT thành viên đang hoạt động hoặc đang khoá — không tính tài khoản chờ xoá |
 | `Student.group` (tên) | dữ liệu JOIN, **chỉ đọc** — client gửi lên thì bỏ qua |
 
@@ -265,7 +272,8 @@ Mock hiện tra ngược `mockQuestions` theo id lúc chấm — điều đó c�
 ### Tài khoản
 
 - Mật khẩu hash bằng **BCrypt** (work factor ≥ 11). FE hiện chấp nhận mọi mật khẩu không rỗng.
-- **`status = 'locked'` phải chặn đăng nhập** (403) và vô hiệu hoá JWT còn hạn qua `security_stamp`. Hiện nó chỉ là nhãn hiển thị.
+- **`status = 'locked'` chặn đăng nhập** (403) và vô hiệu hoá JWT còn hạn qua `security_stamp`. Khoá, đưa vào diện xoá, đổi mật khẩu và cấp lại mật khẩu đều xoay stamp; mở khoá không làm token cũ sống lại. Token của tài khoản không còn, stamp đã đổi, hoặc trạng thái khác `active` nhận **401** kèm `message` nói rõ lý do trên **mọi** endpoint và cả negotiate của hub — trừ `GET/PUT /api/auth/me` và `change-password`, nơi tài khoản bị khoá hay chờ xoá nhận **403** kèm lý do. Kết nối hub mở trước lúc thu hồi bị cắt ở lần gọi phương thức hub kế tiếp (lỗi kèm cùng lý do), và mọi kết nối hub tự đóng khi token của nó hết hạn (xem §7).
+- **`change-password` sai mật khẩu hiện tại trả 400**, `errors: { currentPassword: ["Mật khẩu hiện tại không đúng."] }` — không phải 401. Client coi 401 trên request có token là phiên đã chết và đăng xuất người dùng; gõ sai một ô thì phiên vẫn còn nguyên.
 - Unique index trên `email`, `username`, `code` — so sánh sau khi trim, không phân biệt hoa thường. Trả **409**, không phải 400. Khi sửa phải loại trừ chính bản ghi đang sửa.
 - **Trim mọi chuỗi trước khi lưu và trước khi so trùng**, nếu không `'HS1001 '` và `'HS1001'` cùng lọt qua unique index.
 - `createdAt` do server đặt = `DateTime.UtcNow`, không nhận từ client.
@@ -353,6 +361,8 @@ Cờ `Visibility = 'Private'` để người tạo giữ lại phần đề thi 
 ## 7. SignalR — `/hubs/notifications`
 
 Hub phải `[Authorize]`, đọc JWT từ query string `access_token`. Mỗi kết nối tự vào group riêng của người dùng trong `OnConnectedAsync`. Kiểm tra quyền sở hữu exam trước khi cho giáo viên `JoinExamGroup(examId)`.
+
+Phiên bị thu hồi (§5 Tài khoản): negotiate và request mở kết nối nhận 401; trên kết nối đã mở, mỗi lần gọi phương thức hub kiểm lại phiên — hết hợp lệ thì lời gọi nhận lỗi kèm lý do và server cắt kết nối; kết nối tự đóng khi token hết hạn. **Chưa che:** sự kiện server đẩy xuống một kết nối mở trước lúc thu hồi vẫn tới được cho tới lần gọi hub kế tiếp hoặc tới khi token hết hạn.
 
 | Sự kiện | Ai nhận | Khi nào |
 |---|---|---|

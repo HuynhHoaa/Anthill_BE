@@ -383,8 +383,9 @@ expect_json   "  assignedCount = 1 (lan 400 khong tao dong nao)" assignedCount 1
 expect_status "sua gio lop da giao thanh 20 phut → 400" 400 "$(assign "$EID" "$G_SUA" 1 1.3333)"
 call GET /api/my/exams "$TOK_SUA" > /dev/null
 expect_status "  lan 400 khong doi khung gio nao" "$OPEN_B" "$(field_of_exam openAt "$EID")"
-# Chieu nguoc lai: tang thoi luong vuot khung rieng cua mot lop chua ai bat dau.
-expect_status "tang thoi luong len 150 phut → 400" 400 \
+# Chieu nguoc lai: tang thoi luong. De nay da co em lop chieu bat dau lam nen thoi luong da bi khoa
+# (409) truoc ca phep kiem khung gio; phep kiem khung gio tren de chua ai lam nam o exam-edit-rules.sh.
+expect_status "tang thoi luong len 150 phut → 409 (da khoa)" 409 \
   "$(call PUT "/api/exams/$EID" "$TEACHER" "$(exam_body "$EID_TITLE" "$EID_OPEN" "$EID_CLOSE" 150)")"
 expect_status "giu 45 phut → 200" 200 \
   "$(call PUT "/api/exams/$EID" "$TEACHER" "$(exam_body "$EID_TITLE" "$EID_OPEN" "$EID_CLOSE" 45)")"

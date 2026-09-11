@@ -102,8 +102,8 @@ public sealed class DashboardService : IDashboardService
 
             RecentExams = recent.Select(exam =>
             {
-                var counts = counters.TryGetValue(exam.Id, out var value) ? value : (Assigned: 0, Submitted: 0);
-                return exam.ToDto(now, counts.Assigned, counts.Submitted);
+                var counts = counters.TryGetValue(exam.Id, out var value) ? value : (Assigned: 0, Submitted: 0, Started: 0);
+                return exam.ToDto(now, counts.Assigned, counts.Submitted, counts.Started);
             }).ToList()
         });
     }

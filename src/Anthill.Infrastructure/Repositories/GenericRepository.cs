@@ -61,7 +61,36 @@ public class GenericRepository<T> : IGenericRepository<T> where T : BaseEntity
     public virtual async Task AddRangeAsync(IEnumerable<T> entities, CancellationToken cancellationToken = default) =>
         await DbSet.AddRangeAsync(entities, cancellationToken);
 
-    public virtual void Update(T entity) => DbSet.Update(entity);
+    /// <summary>
+    /// Báo cho change tracker rằng <paramref name="entity"/> sẽ được ghi ở lần <c>SaveChangesAsync</c> tới.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Chỉ gọi <c>DbSet.Update</c> khi entity đang <b>Detached</b> — tạo tay kèm khoá, hoặc đọc bằng
+    /// <c>AsNoTracking</c>. Entity nạp bằng <c>FindAsync</c> hay truy vấn có theo dõi thì DbContext đã
+    /// chụp sẵn giá trị gốc, và <c>SaveChanges</c> tự ghi đúng những cột thật sự đổi.
+    /// </para>
+    /// <para>
+    /// Gọi <c>DbSet.Update</c> trên entity đang được theo dõi thì ngược lại: nó đánh dấu <b>mọi</b> cột
+    /// (và cả những navigation đã Include) là Modified, tức là ghi lại nguyên bản đã đọc từ đầu request.
+    /// Mọi thứ request khác commit trong lúc đó bị đè mất mà không ai biết. Ví dụ đã gặp: một lần
+    /// <c>PUT /api/auth/me</c> nạp tài khoản ngay trước khi quản trị viên bấm khoá, lưu xong thì
+    /// <c>Status</c>, <c>SecurityStamp</c> và <c>PasswordHash</c> quay về bản cũ — lệnh khoá biến mất và
+    /// token cũ sống lại. Cấp lại mật khẩu, đưa vào diện xoá hay tự đổi mật khẩu cũng mất theo cùng
+    /// một cách.
+    /// </para>
+    /// <para>
+    /// Hai request cùng sửa <b>một</b> cột thì bên ghi sau vẫn thắng. Đóng nốt khe đó cần concurrency
+    /// token trên bảng, không phải việc của hàm này.
+    /// </para>
+    /// </remarks>
+    public virtual void Update(T entity)
+    {
+        if (Context.Entry(entity).State == EntityState.Detached)
+        {
+            DbSet.Update(entity);
+        }
+    }
 
     public virtual void Remove(T entity) => DbSet.Remove(entity);
 

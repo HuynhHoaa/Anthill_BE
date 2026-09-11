@@ -70,5 +70,18 @@ public sealed record ExamDto
     /// <summary>Số assignment đã ở trạng thái <c>submitted</c> hoặc <c>graded</c>.</summary>
     public required int SubmittedCount { get; init; }
 
+    /// <summary>
+    /// Số assignment đã có lượt làm bài — đang làm, đã nộp hay đã hết giờ đều tính. Luôn
+    /// <c>≥ SubmittedCount</c>.
+    /// </summary>
+    public required int StartedCount { get; init; }
+
+    /// <summary>
+    /// <c>true</c> khi đã có em bắt đầu làm bài (<see cref="StartedCount"/> &gt; 0). Từ lúc đó số câu,
+    /// ba tỷ lệ, chủ đề, điểm mỗi câu, thời lượng và hai tuỳ chọn trộn không đổi được nữa — muốn khác
+    /// thì nhân bản đề. Server tính sẵn để giao diện không phải tự suy lại luật khoá.
+    /// </summary>
+    public required bool BlueprintFrozen { get; init; }
+
     public required DateTime CreatedAt { get; init; }
 }

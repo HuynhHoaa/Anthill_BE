@@ -41,6 +41,37 @@ public interface IUserRepository : IGenericRepository<User>
         PaginationParams pagination,
         CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// Danh sách học sinh <b>trong phạm vi một giáo viên</b>: chỉ các em ở lớp giáo viên đó được phân
+    /// công và lớp đã công bố (<see cref="TeacherStudentScope.InTaughtClass"/>).
+    /// </summary>
+    /// <remarks>
+    /// Tách hẳn khỏi <see cref="GetStudentsPagedAsync"/> thay vì thêm một tham số "phạm vi" có thể
+    /// NULL: một ngày nào đó truyền nhầm NULL là giáo viên đọc được tài khoản của cả trường. Bộ lọc
+    /// <paramref name="groupId"/>, <paramref name="status"/>, <paramref name="search"/> chạy <b>bên
+    /// trong</b> phạm vi, nên lọc theo lớp của người khác chỉ ra trang rỗng — không lỗi, không rò.
+    /// </remarks>
+    Task<PagedResult<User>> GetStudentsPagedForTeacherAsync(
+        int teacherId,
+        string? search,
+        int? groupId,
+        UserStatus? status,
+        PaginationParams pagination,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Hồ sơ một học sinh (nạp kèm Group) nếu giáo viên được phép xem, ngược lại NULL
+    /// (<see cref="TeacherStudentScope.CanReadProfile"/>).
+    /// </summary>
+    /// <remarks>
+    /// Không phân biệt "không có" với "không được xem" — chỗ gọi biến cả hai thành 404, để giáo viên
+    /// không dò ra được id nào là học sinh có thật.
+    /// </remarks>
+    Task<User?> GetStudentProfileForTeacherAsync(
+        int studentId,
+        int teacherId,
+        CancellationToken cancellationToken = default);
+
     Task<IReadOnlyList<User>> GetStudentsByGroupAsync(int groupId, CancellationToken cancellationToken = default);
 
     /// <summary>Chỉ trả về id thật sự tồn tại và đúng vai trò Student — dùng khi giao bài (§5).</summary>

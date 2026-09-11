@@ -16,6 +16,16 @@ public sealed record ExamAssignmentDto
     /// <summary>Mã học sinh. Chuỗi rỗng nếu tài khoản chưa được cấp mã.</summary>
     public required string StudentCode { get; init; }
 
+    /// <summary>
+    /// Trạng thái tài khoản của em: <c>"active" | "locked" | "pendingDeletion" | "deleted"</c>, cùng
+    /// chuỗi với <c>StudentDto.Status</c>.
+    /// </summary>
+    /// <remarks>
+    /// Bảng theo dõi giữ nguyên dòng của em đã rời trường — bài và điểm không bị xoá — nên thiếu trường
+    /// này thì một em chờ xoá hiện ra y hệt em "chưa làm", và giáo viên đi nhắc một người không còn học.
+    /// </remarks>
+    public required string StudentStatus { get; init; }
+
     /// <summary>Tên nhóm lớp, hoặc chuỗi rỗng khi em chưa được phân nhóm.</summary>
     public required string Group { get; init; }
 

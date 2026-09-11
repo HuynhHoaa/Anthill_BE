@@ -19,11 +19,27 @@ cleanup() {
   section "Don du lieu"
   for id in "${EXAMS[@]}";     do call DELETE "/api/exams/$id" "$TEACHER" > /dev/null; done
   for id in "${QUESTIONS[@]}"; do call DELETE "/api/questions/$id" "$TEACHER" > /dev/null; done
+  # Go khoi lop va xoa lop la viec cua quan tri vien: token giao vien nhan 403 va de sot lop thu.
+  # Dem va in ma loi: buoc don nay tung im lang nuot 403, nen lop thu nam lai ma khong ai hay.
+  local members=0 groups=0 code
   for id in "${STUDENTS[@]}"; do
-    call DELETE "/api/student-groups/$GROUP_ID/students/$id" "$TEACHER" > /dev/null
+    code=$(call DELETE "/api/student-groups/$GROUP_ID/students/$id" "$ADMIN")
+    if [[ "$code" == "200" ]]; then
+      members=$((members + 1))
+    else
+      printf '  khong go duoc hoc sinh %s khoi lop: HTTP %s — %s\n' "$id" "$code" "$(body | head -c 160)"
+    fi
     call PATCH "/api/students/$id/status" "$ADMIN" '{"status":"locked"}' > /dev/null
   done
-  for id in "${GROUP_IDS[@]}"; do call DELETE "/api/student-groups/$id" "$TEACHER" > /dev/null; done
+  for id in "${GROUP_IDS[@]}"; do
+    code=$(call DELETE "/api/student-groups/$id" "$ADMIN")
+    if [[ "$code" == "200" ]]; then
+      groups=$((groups + 1))
+    else
+      printf '  khong xoa duoc lop %s: HTTP %s — %s\n' "$id" "$code" "$(body | head -c 160)"
+    fi
+  done
+  printf '  go khoi lop %d/%d hoc sinh · xoa %d/%d lop\n' "$members" "${#STUDENTS[@]}" "$groups" "${#GROUP_IDS[@]}"
   printf '  da don (de co bai nop thi giu lai — dung thiet ke)\n'
 }
 trap cleanup EXIT
