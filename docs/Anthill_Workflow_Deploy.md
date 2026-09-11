@@ -156,7 +156,7 @@ Khuyến nghị: **làm Render trước cho có demo chạy sớm**, khi rảnh 
 ## 5. Trạng Thái Hiện Tại
 
 - FE: đã nối API thật, không còn tầng mock.
-- BE: **chưa viết code**, mới có thiết kế ở `Anthill_BE_Tech_Structure.md`.
+- BE: **đã xong** — đủ luồng từ lập lớp tới làm bài, chấm ở server, kết quả và thông báo thời gian thực, có unit test và bộ kiểm HTTP chạy trên API thật. Chưa deploy.
 - Deploy: chưa bắt đầu, phương án đã chốt ở mục 2.
 
-**Việc tiếp theo:** hoàn thiện nốt UI các page còn thiếu, đồng thời refactor mock hiện tại sang tầng service có delay giả lập (mục Giai đoạn 1).
+**Việc tiếp theo:** deploy theo mục 2 và 3 (Vercel + Render + Neon), kèm các việc ở checklist mục 4 — trước hết là chuyển ảnh câu hỏi khỏi đĩa của máy chạy API.

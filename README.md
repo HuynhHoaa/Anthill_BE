@@ -46,10 +46,10 @@ Giới hạn đã biết:
   trả lỗi kèm lý do và cắt kết nối) hoặc tới khi token hết hạn (server tự đóng kết nối nhờ
   `CloseOnAuthenticationExpiration`). Negotiate, mở kết nối mới và mọi request REST của phiên đó thì bị
   từ chối ngay. Đóng hẳn khe này cần ghi lại connectionId của từng tài khoản để cắt ngay lúc xoay stamp.
-- Lưu nháp và nạp lại phiên sau khi hết giờ luôn trả 410, dù `AutoSubmitExpiredAttemptsService` có chốt bài
-  trước hay không; 409 chỉ dành cho bài học sinh tự nộp trước giờ. Riêng `POST /api/exam-attempts` trên
-  lượt vừa hết giờ vẫn còn cuộc đua đó: 410 nếu chính lời gọi chốt bài, 409 "đã nộp rồi" nếu tiến trình nền
-  chốt trước.
+- Lưu nháp, nạp lại phiên và vào lại bài (`POST /api/exam-attempts`) sau khi hết giờ đều trả 410, dù
+  `AutoSubmitExpiredAttemptsService` có chốt bài trước hay không; 409 chỉ dành cho bài học sinh tự nộp
+  trước giờ. Chỗ còn để ngỏ là khung giờ đồng hồ: hai instance API lệch nhau vài mili giây thì một lời gọi
+  đúng sát `ExpiresAt` có thể nhận 409 thay vì 410 (`AttemptClosure`).
 
 ## API
 
@@ -211,32 +211,42 @@ trống, và được tự chuyển sang chuỗi kết nối Npgsql. Hai điều
 
 ## Kiểm thử
 
-**Unit test** — `tests/Anthill.Tests/`, 282 test:
+**Unit test** — `tests/Anthill.Tests/`, 361 test:
 
 ```bash
 dotnet test
 ```
 
-Chúng kiểm tra logic thuần, không cần database: chia blueprint, xáo đề có seed, vòng đời đề, hạn giờ và
-điều kiện bắt đầu làm bài, chấm điểm, lịch theo lớp, cổng xem đáp án, ẩn danh hoá, phạm vi học sinh của
-giáo viên, kiểm phiên đăng nhập, luật validator.
+Chúng kiểm tra logic thuần, không cần database: chia blueprint, xáo đề có seed, vòng đời đề, luật sửa đề,
+hạn giờ và điều kiện bắt đầu làm bài, chấm điểm, lịch theo lớp, cổng xem đáp án, ẩn danh hoá, phạm vi học
+sinh của giáo viên, kiểm phiên đăng nhập, luật validator.
 
-**Bộ kiểm HTTP** — `tests/api-checks/`, 14 script, 916 phép kiểm; chi tiết từng bộ ở
+**Bộ kiểm HTTP** — `tests/api-checks/`, 15 script, 1049 phép kiểm; chi tiết từng bộ ở
 [tests/api-checks/README.md](tests/api-checks/README.md). Chúng chạy trên API thật để kiểm thứ unit test
 không với tới: 401/403/404, phân quyền theo vai trò, phạm vi dữ liệu, transaction. Có một bộ cho mỗi bước
-từ `step2` tới `step8`, và bảy bộ cho các phần thêm sau đó: lớp do quản trị viên lập, luồng từ lớp tới
-học sinh, lịch theo lớp, xoá mềm, trạng thái tài khoản, thu hồi phiên, phạm vi học sinh của giáo viên.
+từ `step2` tới `step8`, và tám bộ cho các phần thêm sau đó: lớp do quản trị viên lập, luồng từ lớp tới
+học sinh, lịch theo lớp, luật sửa đề, xoá mềm, trạng thái tài khoản, thu hồi phiên, phạm vi học sinh của
+giáo viên.
 
 Cần API đang chạy, database đã migrate và đã có tài khoản demo (script đăng nhập bằng chúng), cùng
 `bash`, `curl` và `python` (`lib.sh` dùng python để đọc JSON, `session-revocation.sh` dùng nó làm một
 client WebSocket tối giản bằng thư viện chuẩn; trên Windows chạy trong Git Bash).
+
+Riêng `exam-edit-rules.sh` cần thêm `psql`: hệ thống không có endpoint tạo giáo viên, nên script chép
+tài khoản giáo viên demo thẳng trong database để có một đồng nghiệp cùng môn và một giáo viên chưa gán
+môn. Script tìm `psql` trong `PATH`, không có thì lấy bản đứng cuối theo tên thư mục ở
+`C:\Program Files\PostgreSQL\*\bin`.
+Thông tin kết nối lấy từ `PGHOST`/`PGPORT`/`PGDATABASE`/`PGUSER`/`PGPASSWORD` nếu `PGPASSWORD` đã đặt;
+không thì đọc `ConnectionStrings:DefaultConnection` trong user-secrets của `src/Anthill.Api`
+(`dotnet user-secrets list`). Thiếu cả hai thì phép kiểm đó báo hỏng chứ không lặng lẽ bỏ qua.
+
 Địa chỉ mặc định là `http://localhost:5002`, đổi bằng biến `HOST`:
 
 ```bash
 bash tests/api-checks/step6-attempts.sh
 HOST=http://localhost:8080 bash tests/api-checks/step6-attempts.sh
 
-# chạy cả 14 bộ
+# chạy cả 15 bộ
 for s in tests/api-checks/*.sh; do [ "$(basename "$s")" = lib.sh ] || bash "$s"; done
 ```
 
@@ -269,5 +279,4 @@ không cần tắt tiến trình đó khi chạy script.
 | [docs/Anthill_Requirement.md](docs/Anthill_Requirement.md) | Đặc tả nghiệp vụ |
 | [docs/Anthill_Workflow_Deploy.md](docs/Anthill_Workflow_Deploy.md) | Quy trình làm việc và phương án deploy |
 
-Đặc tả nghiệp vụ viết từ trước khi có vai trò quản trị viên nên chỉ mô tả hai vai trò giáo viên và học
-sinh. Hành vi hiện tại lấy code và hợp đồng API làm chuẩn.
+Chỗ nào tài liệu lệch với code thì code là chuẩn.

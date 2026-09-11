@@ -85,6 +85,27 @@ public interface IExamAssignmentRepository : IGenericRepository<ExamAssignment>
     /// </remarks>
     Task<IReadOnlyList<ExamAssignment>> LockByExamAsync(int examId, CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// Khoá chia sẻ (<c>FOR SHARE</c>) một dòng giao bài trước khi tạo lượt làm bài, rồi trả về nó cùng đề
+    /// và lượt làm bài đọc <b>sau</b> khi đã cầm khoá.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Khoá này xung đột với <see cref="LockByExamAsync"/>: một lần sửa đề đang sinh lại bản đề thì em
+    /// phải chờ nó commit rồi mới đọc đề và bản đề; ngược lại em cầm khoá trước thì lần sửa phải chờ lượt
+    /// của em được ghi xong, và phép đếm "đã có em làm" của nó sẽ thấy lượt đó. Hai em khác nhau, hay hai
+    /// tab của cùng một em, không chặn nhau vì hai khoá chia sẻ không loại trừ nhau.
+    /// </para>
+    /// <para>
+    /// Đề, dòng giao bài và lượt làm bài (nếu đã có) đều được đọc lại, kể cả khi chúng đã nằm trong change
+    /// tracker từ lần đọc kiểm quyền: EF giữ nguyên giá trị của lần đọc trước cho thực thể đã theo dõi,
+    /// tức là ảnh chụp từ trước lúc phải chờ khoá. Bản đề riêng đã nạp kèm cũng được đọc lại — nếu lần sửa
+    /// vừa xoá nó thì nó rời change tracker, không còn đứng chắn bản đề mới của cùng lượt giao.
+    /// </para>
+    /// <para>Trả NULL khi dòng giao bài đã bị thu hồi trong lúc chờ. Phải gọi bên trong transaction.</para>
+    /// </remarks>
+    Task<ExamAssignment?> LockForStartAsync(int assignmentId, CancellationToken cancellationToken = default);
+
     /// <summary>Ba con số dẫn xuất cho nhiều đề cùng lúc, tránh N+1 ở màn hình danh sách đề.</summary>
     Task<IReadOnlyDictionary<int, (int Assigned, int Submitted, int Started)>> CountByExamsAsync(
         IEnumerable<int> examIds,

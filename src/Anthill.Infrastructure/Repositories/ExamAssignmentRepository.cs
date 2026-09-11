@@ -175,6 +175,63 @@ public class ExamAssignmentRepository : GenericRepository<ExamAssignment>, IExam
             .FromSql($"""SELECT * FROM "ExamAssignments" WHERE "ExamId" = {examId} ORDER BY "Id" FOR UPDATE""")
             .ToListAsync(cancellationToken);
 
+    /// <inheritdoc />
+    public async Task<ExamAssignment?> LockForStartAsync(
+        int assignmentId,
+        CancellationToken cancellationToken = default)
+    {
+        var trackedBefore = Context.ChangeTracker
+            .Entries<ExamAssignment>()
+            .Any(entry => entry.Entity.Id == assignmentId);
+
+        var rows = await DbSet
+            .FromSql($"""SELECT * FROM "ExamAssignments" WHERE "Id" = {assignmentId} FOR SHARE""")
+            .ToListAsync(cancellationToken);
+
+        if (rows.Count == 0)
+        {
+            return null;
+        }
+
+        var assignment = rows[0];
+
+        // Mọi lần đọc dưới đây là câu lệnh mới sau khi đã cầm khoá, nên ở mức READ COMMITTED chúng thấy
+        // mọi thứ lần sửa đề vừa commit. Chỉ thực thể đã theo dõi từ trước là cần đọc lại tường minh.
+        if (trackedBefore)
+        {
+            // Khung giờ riêng của lượt giao có thể vừa được sửa bằng một lần giao lại.
+            await Context.Entry(assignment).ReloadAsync(cancellationToken);
+        }
+
+        var examEntry = Context.Entry(assignment).Reference(a => a.Exam);
+        if (assignment.Exam is not null)
+        {
+            await Context.Entry(assignment.Exam).ReloadAsync(cancellationToken);
+        }
+        else
+        {
+            await examEntry.LoadAsync(cancellationToken);
+        }
+
+        if (assignment.Attempt is not null)
+        {
+            await Context.Entry(assignment.Attempt).ReloadAsync(cancellationToken);
+        }
+        else
+        {
+            // Tab thứ hai của cùng em có thể vừa tạo lượt trong lúc lượt này chờ khoá.
+            await Context.Entry(assignment).Reference(a => a.Attempt).LoadAsync(cancellationToken);
+        }
+
+        if (assignment.Paper is not null)
+        {
+            // Bản đề đã bị xoá thì ReloadAsync gỡ nó khỏi change tracker thay vì ném lỗi.
+            await Context.Entry(assignment.Paper).ReloadAsync(cancellationToken);
+        }
+
+        return assignment;
+    }
+
     /// <summary>
     /// Ba con số dẫn xuất cho nhiều đề trong ba truy vấn cố định, thay cho 3×N lời gọi ở màn hình
     /// danh sách đề. Cố ý tách làm ba lượt <c>GROUP BY</c> đơn giản thay vì một truy vấn có

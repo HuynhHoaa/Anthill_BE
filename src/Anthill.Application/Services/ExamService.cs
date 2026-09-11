@@ -205,10 +205,21 @@ public sealed class ExamService : IExamService
         var exam = found.ValueOrThrow;
         var isDraft = IsDraftRequest(request);
 
-        // Mọi thứ từ đây tới lúc ghi nằm trong một transaction, bắt đầu bằng khoá ghi trên các dòng giao
-        // bài. Không có khoá thì một em có thể bấm "Vào thi" đúng lúc giữa phép đếm bên dưới và lần sinh
-        // lại bản đề: phép đếm nói "chưa ai làm", em nhận bản đề cũ, rồi bản đề đó bị xoá dưới tay em.
+        // Mọi thứ từ đây tới lúc ghi nằm trong một transaction mở đầu bằng hai khoá, theo đúng thứ tự này:
+        //  1. Dòng đề. Hai lần sửa, hoặc một lần sửa và một lần giao bài, trên cùng một đề xếp hàng tại đây
+        //     (giao bài khoá cùng dòng này). Không có nó thì lần giao có thể sinh bản đề từ cấu hình cũ đúng
+        //     lúc lần sửa xoá bản đề và sinh lại theo cấu hình mới. Khoá xong thì đề được đọc lại, nên mọi
+        //     phép so bên dưới là so với cấu hình thật chứ không với lần đọc kiểm quyền ở trên.
+        //  2. Các dòng giao bài. Em bấm "Vào thi" phải cầm khoá chia sẻ trên dòng giao bài của mình trước khi
+        //     đọc đề hay bản đề (ExamAttemptService.CreateAttemptAsync), nên hoặc em vào trước và phép đếm
+        //     bên dưới thấy lượt của em, hoặc em phải chờ lần sửa này commit rồi đọc bản đề mới. Không có nó
+        //     thì phép đếm nói "chưa ai làm", em nhận bản đề cũ, rồi bản đề đó bị xoá dưới tay em.
         await using var transaction = await _unitOfWork.BeginTransactionAsync(cancellationToken);
+
+        if (await _unitOfWork.Exams.LockForEditAsync(exam.Id, cancellationToken) is null)
+        {
+            return Result.NotFound<ExamDto>(NotFoundMessage);
+        }
 
         var assignments = await _unitOfWork.ExamAssignments.LockByExamAsync(exam.Id, cancellationToken);
         var startedCount = assignments.Count == 0
@@ -305,6 +316,12 @@ public sealed class ExamService : IExamService
                 await transaction.RollbackAsync(cancellationToken);
                 return Result.Failure<ExamDto>(regenerated.Error!, regenerated.ErrorCode);
             }
+        }
+        else if (plan.Decision == ExamEditDecision.ApplyAndDiscardPapers)
+        {
+            // Không sinh gì: chưa có em nào để sinh cho. Lần giao sau không tìm thấy bản đề nào nên sinh
+            // mới theo cấu hình vừa lưu. Cùng lần ghi với cấu hình, nên hỏng thì cả hai cùng cuộn lại.
+            await _unitOfWork.Exams.RemovePapersAsync(exam.Id, cancellationToken);
         }
 
         await _unitOfWork.SaveChangesAsync(cancellationToken);
@@ -513,6 +530,15 @@ public sealed class ExamService : IExamService
     /// </remarks>
     public async Task<Result<ExamDto>> DuplicateAsync(int id, CancellationToken cancellationToken = default)
     {
+        // Cùng cổng với tạo đề: nhân bản là tạo một đề mới, chỉ khác là cấu hình chép từ đề cũ. Giáo viên đã
+        // bị gỡ môn thì không còn ngân hàng nào để ra đề, và bản sao của họ chỉ là một bản nháp không bao giờ
+        // xuất bản được. Kiểm trước khi tìm đề nên câu trả lời không để lộ id đề nào có thật.
+        var scope = ResolveWriteScope();
+        if (scope.IsFailure)
+        {
+            return Result.Failure<ExamDto>(scope.Error!, scope.ErrorCode);
+        }
+
         var found = await FindOwnedAsync(id, cancellationToken);
         if (found.IsFailure)
         {

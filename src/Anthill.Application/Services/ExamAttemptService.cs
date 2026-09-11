@@ -143,17 +143,26 @@ public sealed class ExamAttemptService : IExamAttemptService
         }
 
         var assignment = found.ValueOrThrow;
-        var attempt = assignment.Attempt;
         var now = UtcNow();
+        var decision = DecideStart(assignment, now);
 
-        // Vòng đời theo lịch của BẢN GHI GIAO BÀI. Đọc lịch chung của đề ở đây là chặn đúng những
-        // em đang trong giờ của lớp mình, hoặc mở cho những em chưa tới giờ — cả hai đều hỏng ngay
-        // giữa buổi kiểm tra.
-        var decision = AttemptStartPolicy.Decide(
-            assignment.ResolveLifecycle(now),
-            attempt?.Status,
-            attempt?.ExpiresAt,
-            now);
+        if (decision == AttemptStartDecision.CreateNew)
+        {
+            // Quyết định trên chỉ dựa vào một lần đọc không khoá. CreateAttemptAsync khoá dòng giao bài,
+            // đọc lại rồi quyết định lần nữa; NULL nghĩa là lần quyết định sau khoá khác lần này.
+            var created = await CreateAttemptAsync(assignment, now, cancellationToken);
+            if (created is not null)
+            {
+                return created;
+            }
+
+            // Transaction của lần tạo đã đóng lại, còn assignment giữ giá trị vừa đọc dưới khoá. Đi tiếp
+            // theo quyết định mới — thường là Resume vì tab kia của chính em vừa tạo lượt. Các nhánh
+            // Finalise tự mở transaction riêng nên không được chạy lồng trong transaction vừa rồi.
+            decision = DecideStart(assignment, now);
+        }
+
+        var attempt = assignment.Attempt;
 
         switch (decision)
         {
@@ -164,7 +173,12 @@ public sealed class ExamAttemptService : IExamAttemptService
                 return Result.Gone<AttemptSessionDto>(ClosedMessage);
 
             case AttemptStartDecision.AlreadyFinished:
-                return Result.Conflict<AttemptSessionDto>(AlreadyFinishedMessage);
+                // Bài bị chốt vì hết giờ thì vào lại nhận đúng câu "hết giờ" như lưu nháp và nạp lại
+                // phiên — không phụ thuộc tiến trình nền hay chính em đã chốt trước. 409 "đã nộp rồi"
+                // chỉ dành cho bài em tự nộp trước giờ.
+                return AttemptClosure.ClosedByDeadline(attempt!.Status, attempt.AutoSubmitted, attempt.ExpiresAt, now)
+                    ? Result.Gone<AttemptSessionDto>(ExpiredMessage)
+                    : Result.Conflict<AttemptSessionDto>(AlreadyFinishedMessage);
 
             case AttemptStartDecision.Finalise:
             {
@@ -183,9 +197,25 @@ public sealed class ExamAttemptService : IExamAttemptService
                 return await BuildSessionAsync(attempt!, now, cancellationToken);
 
             default:
-                return await CreateAttemptAsync(assignment, now, cancellationToken);
+                // Không tới được: CreateNew đã được xử lý và quyết định lại ở trên, và lần quyết định sau
+                // khoá chỉ trả NULL khi nó khác CreateNew. Vẫn trả một câu có nghĩa thay vì ném lỗi 500.
+                return Result.Conflict<AttemptSessionDto>(PaperMissingMessage);
         }
     }
+
+    /// <summary>
+    /// Vòng đời theo lịch của BẢN GHI GIAO BÀI, cộng trạng thái lượt đã có.
+    /// </summary>
+    /// <remarks>
+    /// Đọc lịch chung của đề ở đây là chặn đúng những em đang trong giờ của lớp mình, hoặc mở cho những
+    /// em chưa tới giờ — cả hai đều hỏng ngay giữa buổi kiểm tra.
+    /// </remarks>
+    private static AttemptStartDecision DecideStart(ExamAssignment assignment, DateTime now) =>
+        AttemptStartPolicy.Decide(
+            assignment.ResolveLifecycle(now),
+            assignment.Attempt?.Status,
+            assignment.Attempt?.ExpiresAt,
+            now);
 
     /// <inheritdoc />
     public async Task<Result<AttemptSessionDto>> GetSessionAsync(
@@ -579,21 +609,50 @@ public sealed class ExamAttemptService : IExamAttemptService
 
     /// <summary>Tạo lượt mới: sinh đề nếu chưa có, chốt đồng hồ, chốt thang điểm.</summary>
     /// <remarks>
+    /// <para>
     /// Cả ba việc nằm trong một transaction. Tách ra thì có lúc tồn tại một lượt làm bài trỏ vào một
     /// bản đề không có thật — học sinh mở bài ra và thấy một trang trắng, giữa giờ kiểm tra.
+    /// </para>
+    /// <para>
+    /// Câu lệnh <b>đầu tiên</b> của transaction là khoá dòng giao bài, trước mọi lần đọc đề hay bản đề.
+    /// <c>ExamService.UpdateAsync</c> khoá ghi đúng các dòng này rồi mới đếm lượt làm bài và sinh lại
+    /// bản đề. Trước đây hàm này đọc đề và bản đề không khoá, chỉ lần INSERT lượt làm bài mới phải chờ
+    /// (khoá khoá ngoại): em đọc bản đề cũ, lần sửa xoá nó và commit, rồi lượt của em vẫn được ghi — trỏ
+    /// vào một bản đề không còn, trong khi màn hình em đang hiện đúng bộ câu đã bị xoá. Giờ thì hoặc lần
+    /// sửa commit trước và em đọc đề, bản đề của cấu hình mới; hoặc em ghi lượt xong trước và lần sửa thấy
+    /// "đã có em làm" nên khoá cấu hình (409).
+    /// </para>
+    /// <para>
+    /// Trả NULL khi, đọc lại dưới khoá, việc phải làm không còn là tạo lượt mới (tab kia vừa tạo lượt, lần
+    /// sửa vừa rút đề về nháp, lịch vừa đổi): người gọi quyết định lại trên chính bản vừa đọc.
+    /// </para>
     /// </remarks>
-    private async Task<Result<AttemptSessionDto>> CreateAttemptAsync(
+    private async Task<Result<AttemptSessionDto>?> CreateAttemptAsync(
         ExamAssignment assignment,
         DateTime now,
         CancellationToken cancellationToken)
     {
-        var exam = assignment.Exam;
-
         await using var transaction = await _unitOfWork.BeginTransactionAsync(cancellationToken);
+
+        var locked = await _unitOfWork.ExamAssignments.LockForStartAsync(assignment.Id, cancellationToken);
+        if (locked is null || locked.StudentId != CurrentStudentId)
+        {
+            // Giáo viên thu hồi bài trong lúc em chờ khoá.
+            return Result.NotFound<AttemptSessionDto>(AssignmentNotFoundMessage);
+        }
+
+        if (DecideStart(locked, now) != AttemptStartDecision.CreateNew)
+        {
+            return null;
+        }
+
+        // Đọc SAU khi đã cầm khoá: thời lượng cho ExpiresAt và cấu hình cho bộ sinh đề phải là của đề như
+        // nó đang nằm trong database, không phải của lần đọc kiểm quyền ở đầu request.
+        var exam = locked.Exam;
 
         // Bản đề thường đã có sẵn từ lúc giao bài; hàm này chỉ thật sự sinh khi nó vắng mặt — ví dụ
         // đề chung của cả lớp bị xoá theo một assignment nào đó rồi cần dựng lại.
-        var generated = await _generator.GetOrCreatePaperAsync(exam, assignment, cancellationToken);
+        var generated = await _generator.GetOrCreatePaperAsync(exam, locked, cancellationToken);
         if (generated.IsFailure)
         {
             await transaction.RollbackAsync(cancellationToken);
@@ -613,14 +672,14 @@ public sealed class ExamAttemptService : IExamAttemptService
 
         var attempt = new ExamAttempt
         {
-            AssignmentId = assignment.Id,
+            AssignmentId = locked.Id,
             StartedAt = now,
             // Hạn giờ chặn theo mốc đóng bài THẬT của em này: lớp chiều làm bài lúc lớp sáng đã
             // đóng từ lâu, và lấy mốc chung sẽ cắt bài của lớp chiều ngay khi vừa bắt đầu.
             ExpiresAt = AttemptDeadline.Resolve(
                 now,
                 exam.DurationMinutes,
-                AssignmentSchedule.Resolve(assignment).CloseAt),
+                AssignmentSchedule.Resolve(locked).CloseAt),
             Status = AssignmentStatus.InProgress,
 
             // Thang điểm chốt ngay lúc bắt đầu và đọc từ bản đề, không nhân TotalQuestions với
@@ -642,7 +701,7 @@ public sealed class ExamAttemptService : IExamAttemptService
 
         // Navigation này chưa được gán vì attempt vừa dựng bằng tay; BuildSession cần nó để đọc
         // tiêu đề và thời lượng của đề.
-        attempt.Assignment = assignment;
+        attempt.Assignment = locked;
 
         return Result.Success(BuildSession(attempt, paper, new Dictionary<int, int>(), now));
     }

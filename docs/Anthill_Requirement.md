@@ -232,6 +232,13 @@ Vòng đời bài kiểm tra:
 - Teacher không xóa được bài kiểm tra đã có Student nộp bài.
 - Teacher chỉ thấy và quản lý bài kiểm tra do chính mình tạo. Admin xem được mọi bài kiểm tra nhưng không tạo hay sửa bài kiểm tra.
 
+Sửa bài kiểm tra đã xuất bản — mốc phân chia là **lượt làm bài đầu tiên**, không phải lúc giao hay lúc xuất bản:
+
+- Chưa Student nào bắt đầu làm: Teacher sửa được mọi trường. Đề đã sinh cho các Student được giao sẽ được sinh lại theo cấu hình mới; ngân hàng không đủ câu cho cấu hình mới thì hệ thống từ chối và giữ nguyên cấu hình cũ. Bài kiểm tra đã thu hồi hết các lượt giao thì đề cũ bị bỏ, lần giao sau sinh theo cấu hình mới.
+- Đã có Student bắt đầu làm: cấu hình đề bị khóa — số câu, ba tỷ lệ độ khó, chủ đề, điểm mỗi câu, thời gian làm bài và hai tùy chọn trộn không đổi được nữa, và không đưa bài kiểm tra về bản nháp được. Tên, mô tả, lịch mở/đóng và tùy chọn cho xem điểm ngay vẫn sửa được. Hệ thống báo rõ trường nào bị khóa.
+- Muốn dùng cấu hình khác cho một bài đã khóa, Teacher nhân bản bài kiểm tra: bản sao là một bản nháp mới cùng cấu hình, chưa giao cho ai, sửa được thoải mái. Teacher chưa được gán môn không nhân bản được, giống như không tạo được bài kiểm tra.
+- Điểm đã chấm không bao giờ thay đổi vì bất kỳ lần sửa nào: bài làm được chấm trên bản đề đã chụp lúc sinh đề.
+
 ---
 
 ### Stage 6: Assign Exam to Class / Student
@@ -243,9 +250,9 @@ Chức năng chính:
 - Teacher chọn bài kiểm tra cần giao. Chỉ giao được bài đã xuất bản.
 - Teacher chọn lớp và/hoặc từng Student, chỉ trong những lớp đã công bố và được phân công cho mình.
 - Hệ thống tạo bài làm cho từng Student dựa trên Exam Blueprint.
-- Mỗi Student có thể nhận bộ câu hỏi giống nhau hoặc được random khác nhau tùy cấu hình. Lựa chọn này áp dụng cho cả bài kiểm tra; đổi lựa chọn sau khi đã giao không sinh lại các đề đã phát.
+- Mỗi Student có thể nhận bộ câu hỏi giống nhau hoặc được random khác nhau tùy cấu hình. Lựa chọn này áp dụng cho cả bài kiểm tra và bị khóa từ lần giao đầu tiên: bài kiểm tra đã có lượt giao thì server từ chối đổi lựa chọn (409). Muốn đổi, Teacher thu hồi hết rồi giao lại.
 - Giao bài có tính idempotent: giao lại cho Student đã được giao không tạo bài trùng và không ảnh hưởng tới bài Student đã làm.
-- Hệ thống báo rõ số Student được giao mới và số bị bỏ qua theo từng lý do: đã được giao, tài khoản đang khóa, không thuộc lớp của Teacher, không tồn tại.
+- Hệ thống báo rõ số Student được giao mới và số bị bỏ qua theo từng lý do: đã được giao, tài khoản đang khóa, đã rời trường (tài khoản đang chờ xóa), không thuộc lớp của Teacher, không tồn tại. "Đang khóa" và "đã rời trường" được đếm riêng vì dẫn tới hai việc khác nhau: mở khóa rồi giao lại, hoặc không cần làm gì. Tài khoản đã xóa hẳn không còn thuộc lớp nào nên được tính là không thuộc lớp của Teacher.
 - Student mới được giao nhận thông báo trong ứng dụng.
 - Teacher có thể thu hồi bài đã giao cho một Student khi Student đó chưa bắt đầu làm bài.
 - Teacher theo dõi trạng thái làm bài của từng Student, kèm khung giờ làm bài thực tế của Student đó.

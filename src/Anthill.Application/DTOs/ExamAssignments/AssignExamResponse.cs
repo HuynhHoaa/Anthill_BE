@@ -26,11 +26,14 @@ public sealed record AssignExamResponse
     /// <summary>Tài khoản đang bị khoá — bỏ qua, vì các em không đăng nhập được để làm bài.</summary>
     public required int SkippedLocked { get; init; }
 
-    /// <summary>Tài khoản chờ xoá hoặc đã xoá — em đã rời trường nên bỏ qua.</summary>
+    /// <summary>Tài khoản đang chờ xoá — em đã rời trường nên bỏ qua.</summary>
     /// <remarks>
     /// Đếm riêng khỏi <see cref="SkippedLocked"/>: "đang khoá" gợi ý giáo viên đi nhờ mở khoá rồi giao
     /// lại, còn với em đã rời trường thì không có việc gì để làm. Cùng tên với trường của
     /// <c>AddMembersResponse</c> vì cùng một nghĩa.
+    ///
+    /// Tài khoản đã xoá hẳn không nằm trong con số này: ẩn danh hoá gỡ em khỏi lớp, nên em được đếm vào
+    /// <see cref="SkippedOutOfScope"/> — phạm vi luôn được xét trước trạng thái tài khoản.
     /// </remarks>
     public required int SkippedRetired { get; init; }
 

@@ -10,12 +10,14 @@
 #   3. Da co em bat dau: so cau, ty le, chu de, diem, thoi luong, hai tuy chon tron bi khoa (409); ten,
 #      mo ta, lich va co hien diem van luu duoc, va KHONG sinh lai ban de.
 #   4. Diem da cham giu nguyen sau moi lan sua duoc phep.
-#   5. Nhan ban: ban nhap, cung cau hinh, khong luot giao; giao vien khac nhan 404.
+#   5. Giao, thu hoi het, doi cau hinh, giao lai: ban de chung cu khong duoc dung lai.
+#   6. Nhan ban: ban nhap, cung cau hinh, khong luot giao; giao vien khac nhan 404; giao vien chua gan
+#      mon nhan 403 nhu khi tao de.
 #
-# Giao vien thu hai: he thong chi seed mot giao vien va khong co endpoint tao giao vien, nen script
-# chep dong cua giao vien demo thang trong database bang psql (cung mat khau, cung mon — mot dong
-# nghiep cung to la phep thu kho nhat cho ranh gioi "de cua minh"). Thong tin ket noi lay tu
-# PGHOST/PGPORT/PGDATABASE/PGUSER/PGPASSWORD neu co, khong thi tu user-secrets cua Anthill.Api.
+# Giao vien thu hai va thu ba: he thong chi seed mot giao vien va khong co endpoint tao giao vien, nen
+# script chep dong cua giao vien demo thang trong database bang psql — mot dong nghiep cung mon (phep
+# thu kho nhat cho ranh gioi "de cua minh") va mot giao vien chua duoc gan mon. Thong tin ket noi lay
+# tu PGHOST/PGPORT/PGDATABASE/PGUSER/PGPASSWORD neu co, khong thi tu user-secrets cua Anthill.Api.
 
 source "$(dirname "$0")/lib.sh"
 
@@ -59,6 +61,7 @@ PHRASES = {
     "nhan_ban": "nhân bản",
     "nhap": "bản nháp",
     "ban_sao": " (bản sao)",
+    "chua_gan_mon": "chưa được gán môn",
 }
 
 
@@ -113,6 +116,10 @@ elif mode == "qids":
     # Tap id cau hoi cua mot phien, da sap — hai phien cung mot ban de thi hai chuoi nay bang nhau.
     print(",".join(str(q["id"]) for q in sorted(load(sys.argv[2])["questions"], key=lambda q: q["id"])))
 
+elif mode == "ids":
+    # Id cua moi dong trong mot danh sach, cach nhau bang dau cach.
+    print(" ".join(str(row["id"]) for row in load(sys.argv[2])))
+
 elif mode == "assignment":
     # assignmentId cua de $3 trong danh sach bai cua hoc sinh.
     rows = load(sys.argv[2])
@@ -144,9 +151,26 @@ if [[ -n "$CONN" ]]; then
 fi
 sql() { "$PSQL" -q -At -v ON_ERROR_STOP=1 -c "$1"; }
 
+# Chep dong cua giao vien demo thanh mot giao vien moi, in id. $1 ho ten, $2 email (cung la ten dang
+# nhap), $3 bieu thuc SQL cho cot SubjectId — '"SubjectId"' de giu mon, NULL de bo mon.
+clone_teacher() {
+  sql "INSERT INTO \"Users\" (\"FullName\",\"Email\",\"Username\",\"PasswordHash\",\"SecurityStamp\",\"Role\",\"Status\",\"SubjectId\",\"School\",\"AvatarColor\",\"MustChangePassword\",\"CreatedAt\")
+    SELECT '$1', '$2', '$2', \"PasswordHash\", md5(random()::text), \"Role\", \"Status\", $3, \"School\", \"AvatarColor\", false, now()
+    FROM \"Users\" WHERE \"Email\" = 'an.nv@anthill.edu.vn' RETURNING \"Id\";" | tr -d '\r'
+}
+
+NOSUBJECT_ID=""
+
 cleanup() {
   section "Don du lieu"
-  local member
+  local member returned
+  if [[ -n "$NOSUBJECT_ID" ]]; then
+    # Tra moi de dang dung ten giao vien chua gan mon ve giao vien demo: de con tro toi dong cua ho thi
+    # khoa ngoai giu dong do lai, va giao vien demo moi xoa duoc de. Ke ca ban sao lot ra neu mot lan
+    # chay cu con cho nhan ban.
+    returned=$(sql "UPDATE \"Exams\" SET \"CreatedByUserId\" = $TEACHER_ID WHERE \"CreatedByUserId\" = $NOSUBJECT_ID RETURNING \"Id\";" 2>/dev/null | tr -d '\r')
+    for id in $returned; do [[ " ${EXAM_IDS[*]} " == *" $id "* ]] || EXAM_IDS+=("$id"); done
+  fi
   for id in "${EXAM_IDS[@]}"; do call DELETE "/api/exams/$id" "$TEACHER" > /dev/null; done
   for id in "${QUESTION_IDS[@]}"; do call DELETE "/api/questions/$id" "$TEACHER" > /dev/null; done
   # Go hoc sinh khoi lop truoc: lop con thanh vien thi khong xoa duoc (409).
@@ -155,12 +179,12 @@ cleanup() {
   done
   for id in "${STUDENT_IDS[@]}"; do call PATCH "/api/students/$id/status" "$ADMIN" '{"status":"locked"}' > /dev/null; done
   for id in "${GROUP_IDS[@]}";   do call DELETE "/api/student-groups/$id" "$ADMIN" > /dev/null; done
-  if [[ -n "$FOREIGN_ID" ]]; then
-    # Giao vien nay khong tao de, cau hoi hay lop nao nen khong khoa ngoai RESTRICT nao giu dong cua ho;
-    # thong bao (neu co) di theo nho CASCADE.
-    sql "DELETE FROM \"Users\" WHERE \"Id\" = $FOREIGN_ID;" \
-      > /dev/null 2>&1 || printf '  khong xoa duoc giao vien thu hai %s\n' "$FOREIGN_ID"
-  fi
+  # Hai giao vien nay khong con de, cau hoi hay lop nao nen khong khoa ngoai RESTRICT nao giu dong cua
+  # ho; thong bao (neu co) di theo nho CASCADE.
+  for id in $FOREIGN_ID $NOSUBJECT_ID; do
+    sql "DELETE FROM \"Users\" WHERE \"Id\" = $id;" \
+      > /dev/null 2>&1 || printf '  khong xoa duoc giao vien kiem thu %s\n' "$id"
+  done
   printf '  da don (de da co bai nop thi khong xoa duoc — dung thiet ke, khong phai loi don dep)\n'
 }
 trap 'rm -f "$HELPERS" "$SESSION_A"; cleanup' EXIT
@@ -370,7 +394,30 @@ expect_status "em B bat dau → 200" 200 "$(start_exam "$TOK_B" "$E3")"
 expect_json   "  10 cau" totalQuestions 10
 expect_status "  hai em hai ban de khac nhau" false "$(same "$(qids_of "$BODY_FILE")" "$QIDS_RIENG_A")"
 
-# ── 5. Nhan ban ─────────────────────────────────────────────────────────────────────────────────
+# ── 5. Thu hoi het roi sua ──────────────────────────────────────────────────────────────────────
+section "Thu hoi het, doi cau hinh, giao lai: ban de theo cau hinh MOI"
+# Ban de chung khong gan voi luot giao nao, nen thu hoi het cac em khong xoa no. Truoc day lan sua luc
+# khong con luot giao nao cung khong dong toi no, va lan giao sau phat lai dung bo 4 cau cu.
+new_exam title="De thu hoi $STAMP" total=4 easy=50 medium=50 hard=0 point=1; E4=$NEW_EID
+expect_status "giao cho lop (de chung) → 200" 200 "$(assign_class "$E4")"
+expect_json   "  assignedCount = 2" assignedCount 2
+expect_status "danh sach giao bai → 200" 200 "$(call GET "/api/exams/$E4/assignments" "$TEACHER")"
+REVOKED=0
+for aid in $(python "$HELPERS" ids "$(to_native_path "$BODY_FILE")" | tr -d '\r'); do
+  [[ "$(call DELETE "/api/exams/$E4/assignments/$aid" "$TEACHER")" == "200" ]] && REVOKED=$((REVOKED + 1))
+done
+expect_status "thu hoi ca hai em" 2 "$REVOKED"
+expect_status "doc de → 200" 200 "$(call GET "/api/exams/$E4" "$TEACHER")"
+expect_json   "  assignedCount = 0" assignedCount 0
+expect_status "doi sang 6 cau luc khong con luot giao → 200" 200 \
+  "$(put_exam "$E4" title="De thu hoi $STAMP" total=6 easy=50 medium=50 hard=0 point=1)"
+expect_status "giao lai cho lop → 200" 200 "$(assign_class "$E4")"
+expect_json   "  assignedCount = 2" assignedCount 2
+expect_status "em A bat dau → 200" 200 "$(start_exam "$TOK_A" "$E4")"
+expect_json   "  6 cau (khong phai 4 cua ban de truoc khi thu hoi)" totalQuestions 6
+expect_status "  thang diem 6 = 6 cau x 1 diem" 6 "$(num_field maxScore)"
+
+# ── 6. Nhan ban ─────────────────────────────────────────────────────────────────────────────────
 section "Nhan ban de da khoa"
 expect_status "nhan ban → 200" 200 "$(call POST "/api/exams/$E1/duplicate" "$TEACHER")"
 COPY=$(json_field id); [[ -n "$COPY" ]] && EXAM_IDS+=("$COPY")
@@ -403,9 +450,7 @@ if [[ -z "$PSQL" || -z "${PGPASSWORD:-}" ]]; then
   expect_status "dung giao vien thu hai (can psql va thong tin ket noi)" ok "thieu"
 else
   FOREIGN_EMAIL="gv$STAMP@kiemthu.vn"
-  FOREIGN_ID=$(sql "INSERT INTO \"Users\" (\"FullName\",\"Email\",\"Username\",\"PasswordHash\",\"SecurityStamp\",\"Role\",\"Status\",\"SubjectId\",\"School\",\"AvatarColor\",\"MustChangePassword\",\"CreatedAt\")
-    SELECT 'GV kiem thu $STAMP', '$FOREIGN_EMAIL', '$FOREIGN_EMAIL', \"PasswordHash\", md5(random()::text), \"Role\", \"Status\", \"SubjectId\", \"School\", \"AvatarColor\", false, now()
-    FROM \"Users\" WHERE \"Email\" = 'an.nv@anthill.edu.vn' RETURNING \"Id\";" | tr -d '\r')
+  FOREIGN_ID=$(clone_teacher "GV kiem thu $STAMP" "$FOREIGN_EMAIL" '"SubjectId"')
   if [[ -z "$FOREIGN_ID" ]]; then
     expect_status "dung giao vien thu hai qua psql" ok "hong"
   else
@@ -413,6 +458,26 @@ else
     expect_status "giao vien khac nhan ban de → 404" 404 "$(call POST "/api/exams/$E1/duplicate" "$FOREIGN")"
     expect_status "giao vien khac sua de → 404"      404 "$(call PUT "/api/exams/$E1" "$FOREIGN" "$(exam_json)")"
     expect_status "giao vien khac doc de → 404"      404 "$(call GET "/api/exams/$E1" "$FOREIGN")"
+  fi
+
+  section "Nhan ban: giao vien chua duoc gan mon bi chan nhu khi tao de"
+  # Giao vien chua gan mon khong tao duoc de nao, nen de "cua ho" phai dung bang cach chuyen chu mot de
+  # nhap cua giao vien demo sang ho. Truoc day nhan ban bo qua cong nay: ho nhan duoc mot ban nhap moi
+  # ma khong bao gio xuat ban duoc.
+  NOSUBJECT_EMAIL="gvkm$STAMP@kiemthu.vn"
+  NOSUBJECT_ID=$(clone_teacher "GV chua gan mon $STAMP" "$NOSUBJECT_EMAIL" NULL)
+  if [[ -z "$NOSUBJECT_ID" ]]; then
+    expect_status "dung giao vien chua gan mon qua psql" ok "hong"
+  else
+    new_exam title="De cua GV chua gan mon $STAMP" lifecycle=draft; E5=$NEW_EID
+    sql "UPDATE \"Exams\" SET \"CreatedByUserId\" = $NOSUBJECT_ID WHERE \"Id\" = $E5;" > /dev/null
+    NOSUBJECT=$(login "$NOSUBJECT_EMAIL" "anthill123")
+    expect_status "doc de cua chinh minh → 200 (chi doc thi khong can mon)" 200 "$(call GET "/api/exams/$E5" "$NOSUBJECT")"
+    expect_status "nhan ban de cua chinh minh → 403" 403 "$(call POST "/api/exams/$E5/duplicate" "$NOSUBJECT")"
+    expect_status "  loi noi ro 'chua duoc gan mon'" yes "$(body_says chua_gan_mon)"
+    expect_status "danh sach de cua ho → 200" 200 "$(call GET /api/exams "$NOSUBJECT")"
+    expect_json   "  van chi mot de, khong co ban sao" total 1
+    sql "UPDATE \"Exams\" SET \"CreatedByUserId\" = $TEACHER_ID WHERE \"Id\" = $E5;" > /dev/null
   fi
 fi
 
