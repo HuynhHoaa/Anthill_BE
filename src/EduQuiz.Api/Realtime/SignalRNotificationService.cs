@@ -83,17 +83,14 @@ public sealed class SignalRNotificationService : IRealtimeNotificationService
 
     /// <inheritdoc />
     public Task DeadlineSoonAsync(
-        IEnumerable<int> studentUserIds,
+        int studentUserId,
         int teacherUserId,
         DeadlineSoonEvent payload,
         CancellationToken cancellationToken = default) =>
         SafeAsync("DeadlineSoon", async () =>
         {
-            foreach (var studentId in studentUserIds.Distinct())
-            {
-                await _hub.Clients.Group(NotificationHub.UserGroup(studentId))
-                    .SendAsync("DeadlineSoon", payload, cancellationToken);
-            }
+            await _hub.Clients.Group(NotificationHub.UserGroup(studentUserId))
+                .SendAsync("DeadlineSoon", payload, cancellationToken);
 
             await _hub.Clients.Group(NotificationHub.UserGroup(teacherUserId))
                 .SendAsync("DeadlineSoon", payload, cancellationToken);
@@ -101,10 +98,10 @@ public sealed class SignalRNotificationService : IRealtimeNotificationService
 
     /// <inheritdoc />
     public Task ExamUpdatedAsync(
-        IEnumerable<int> studentUserIds,
+        int studentUserId,
         ExamUpdatedEvent payload,
         CancellationToken cancellationToken = default) =>
-        SendToUsersAsync(studentUserIds, nameof(ExamUpdatedEvent), "ExamUpdated", payload, cancellationToken);
+        SendToUsersAsync([studentUserId], nameof(ExamUpdatedEvent), "ExamUpdated", payload, cancellationToken);
 
     /// <inheritdoc />
     public Task UnreadCountChangedAsync(

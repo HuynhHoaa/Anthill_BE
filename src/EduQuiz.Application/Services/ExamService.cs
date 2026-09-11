@@ -200,6 +200,17 @@ public sealed class ExamService : IExamService
             return Result.Failure<ExamDto>(check.Error!, check.ErrorCode);
         }
 
+        // Validator chỉ so thời lượng với lịch chung của đề. Những lớp có khung giờ riêng thì nó không
+        // nhìn thấy, mà tăng thời lượng vượt khung của một lớp là để AttemptDeadline cắt bài cả lớp đó
+        // giữa chừng. Em đã bắt đầu thì bỏ qua: hạn nộp của các em đã chốt lúc vào thi.
+        var pendingWindows = await _unitOfWork.ExamAssignments.GetPendingOverrideWindowsAsync(exam.Id, cancellationToken);
+        if (pendingWindows.Any(window => !AssignmentSchedule.FitsDuration(window.OpenAt, window.CloseAt, request.DurationMinutes)))
+        {
+            return Result.Failure<ExamDto>(
+                $"Có lớp được đặt khung giờ riêng ngắn hơn {request.DurationMinutes} phút. "
+                + "Hãy nới khung giờ của lớp đó trước, hoặc giữ thời lượng làm bài cũ.");
+        }
+
         var now = DateTime.UtcNow;
 
         exam.Title = request.Title.Trim();

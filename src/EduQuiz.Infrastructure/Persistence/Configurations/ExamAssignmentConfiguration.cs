@@ -8,7 +8,18 @@ public class ExamAssignmentConfiguration : IEntityTypeConfiguration<ExamAssignme
 {
     public void Configure(EntityTypeBuilder<ExamAssignment> builder)
     {
-        builder.ToTable("ExamAssignments");
+        // Validator của request giao bài chỉ canh đúng một cửa vào. Hai ràng buộc này canh mọi cửa còn
+        // lại — một đường ghi mới về sau, hay một lần sửa tay dưới database: cặp giờ riêng có đủ hai
+        // nửa hoặc không có gì, và giờ đóng luôn sau giờ mở.
+        builder.ToTable("ExamAssignments", table =>
+        {
+            table.HasCheckConstraint(
+                "CK_ExamAssignments_SchedulePair",
+                "(\"OpenAt\" IS NULL) = (\"CloseAt\" IS NULL)");
+            table.HasCheckConstraint(
+                "CK_ExamAssignments_ScheduleOrder",
+                "\"OpenAt\" IS NULL OR \"OpenAt\" < \"CloseAt\"");
+        });
 
         builder.HasKey(a => a.Id);
 
@@ -24,6 +35,18 @@ public class ExamAssignmentConfiguration : IEntityTypeConfiguration<ExamAssignme
             .WithMany(u => u.Assignments)
             .HasForeignKey(a => a.StudentId)
             .OnDelete(DeleteBehavior.Restrict);
+
+        // Xoá một lớp chỉ gỡ dấu "giao qua lớp nào", không xoá bài và không đụng khung giờ riêng đã đặt —
+        // cùng tinh thần với User.GroupId. Restrict thì lớp đã từng được giao bài không bao giờ xoá được.
+        builder.HasOne(a => a.AssignedViaGroup)
+            .WithMany()
+            .HasForeignKey(a => a.AssignedViaGroupId)
+            .OnDelete(DeleteBehavior.SetNull);
+
+        // Gửi lại một lớp để sửa khung giờ tra theo cột này, và khoá ngoại SET NULL cũng quét theo nó
+        // mỗi lần xoá lớp.
+        builder.HasIndex(a => a.AssignedViaGroupId)
+            .HasDatabaseName("IX_ExamAssignments_AssignedViaGroupId");
 
         // Đây chính là thứ làm cho việc giao bài idempotent (§5): giao lại cho học sinh đã có
         // bài thì bỏ qua, không tạo bản ghi thứ hai — kể cả khi hai request tới cùng lúc.

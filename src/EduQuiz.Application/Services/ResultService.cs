@@ -17,7 +17,8 @@ namespace EduQuiz.Application.Services;
 /// <list type="number">
 /// <item><b>Cùng một endpoint, hai mức chi tiết.</b> Giáo viên và học sinh gọi chung
 /// <c>GET /api/results/{attemptId}</c>, nhưng thứ trả về khác nhau: quyền xem đáp án tính ở server
-/// rồi <b>cắt hẳn</b> khỏi JSON, không phải gửi đi rồi nhờ giao diện giấu hộ (§3 ⑥).</item>
+/// rồi <b>cắt hẳn</b> khỏi JSON, không phải gửi đi rồi nhờ giao diện giấu hộ (§3 ⑥). Với học sinh,
+/// điểm và đáp án mở ở hai thời điểm: điểm ngay khi chấm, đáp án khi mọi lớp đã hết giờ.</item>
 /// <item><b>Bài của người khác trả <c>NotFound</c>, không phải <c>Forbidden</c></b> — 403 là xác
 /// nhận id đó có thật (§4.2).</item>
 /// <item><b>Chi tiết bài làm đọc từ bản đề, không từ ngân hàng câu hỏi.</b> Câu học sinh bỏ trống
@@ -177,7 +178,15 @@ public sealed class ResultService : IResultService
                 "Không tìm thấy bản đề của bài làm này.", ErrorCode.Conflict);
         }
 
-        var canSeeAnswers = attempt.CanRevealScore(isOwningTeacher);
+        var canSeeScore = attempt.CanRevealScore(isOwningTeacher);
+
+        // Mốc mở đáp án là giờ đóng muộn nhất trong MỌI lượt giao của đề, không phải giờ đóng của lớp
+        // em này: lớp làm muộn nhất chưa xong thì đáp án chưa được rời server. Vế dự phòng chỉ để giữ
+        // kiểu không NULL — chính lượt giao của em đã là một dòng trong phép MAX.
+        var releaseAt = await _unitOfWork.ExamAssignments.GetAnswersReleaseAtAsync(
+                            attempt.Assignment.ExamId, cancellationToken)
+                        ?? AssignmentSchedule.Resolve(attempt.Assignment).CloseAt;
+        var answers = attempt.ResolveAnswerVisibility(isOwningTeacher, releaseAt, DateTime.UtcNow);
 
         // Tra cứu theo câu, không duyệt theo câu trả lời: câu học sinh bỏ trống không có dòng nào
         // trong bảng StudentAnswer, nên duyệt theo đó thì đề 40 câu mà em làm 30 sẽ hiện ra thành
@@ -188,7 +197,7 @@ public sealed class ResultService : IResultService
 
         var questions = paper.Questions
             .OrderBy(question => question.Ordinal)
-            .Select(question => ToDetailQuestion(question, selections, canSeeAnswers))
+            .Select(question => ToDetailQuestion(question, selections, answers.CanSee))
             .ToList();
 
         var assignment = withAnswers.Assignment;
@@ -212,10 +221,12 @@ public sealed class ResultService : IResultService
                 ? (int)Math.Round((submittedAt - withAnswers.StartedAt).TotalMinutes, MidpointRounding.AwayFromZero)
                 : null,
 
-            Score = canSeeAnswers ? withAnswers.Score : null,
-            MaxScore = canSeeAnswers ? withAnswers.MaxScore : null,
-            CorrectCount = canSeeAnswers ? withAnswers.CorrectCount : null,
-            CanSeeAnswers = canSeeAnswers,
+            // Điểm và đáp án đi hai cổng khác nhau: điểm mở ngay khi chấm, đáp án chờ lớp cuối cùng.
+            Score = canSeeScore ? withAnswers.Score : null,
+            MaxScore = canSeeScore ? withAnswers.MaxScore : null,
+            CorrectCount = canSeeScore ? withAnswers.CorrectCount : null,
+            CanSeeAnswers = answers.CanSee,
+            AnswersVisibleAt = answers.VisibleAt,
             Questions = questions
         });
     }

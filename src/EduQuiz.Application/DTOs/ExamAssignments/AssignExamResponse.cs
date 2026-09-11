@@ -48,4 +48,20 @@ public sealed record AssignExamResponse
     /// một em gặp vấn đề.
     /// </remarks>
     public required int SkippedOutOfScopeGroups { get; init; }
+
+    /// <summary>Số bản ghi <b>đã có từ trước</b> vừa được đổi sang khung giờ gửi kèm.</summary>
+    /// <remarks>
+    /// Gửi lại một lớp kèm khung giờ là cách sửa giờ cho lớp đó. Không có con số này thì lần sửa trả
+    /// về toàn số không y hệt một lần bấm nhầm, và giáo viên không biết giờ mới đã vào hay chưa. Chỉ
+    /// tính những em được giao QUA lớp đã chọn, chưa bắt đầu làm bài, và thật sự đổi giờ. Gửi lại mà
+    /// không kèm khung giờ thì luôn là 0 — không khung giờ nào bị xoá.
+    /// </remarks>
+    public required int ScheduleUpdatedCount { get; init; }
+
+    /// <summary>Số em được giao qua lớp đã chọn nhưng đã bắt đầu làm bài nên vẫn giữ khung giờ cũ.</summary>
+    /// <remarks>
+    /// Hạn nộp của các em đã chốt lúc bấm "Vào thi". Đếm ra để giáo viên biết vì sao vài em không
+    /// theo giờ mới.
+    /// </remarks>
+    public required int ScheduleKeptStartedCount { get; init; }
 }

@@ -35,8 +35,8 @@ public sealed class MyExamsController : ApiControllerBase
     /// <summary>Bài kiểm tra được giao cho chính mình, mới giao trước.</summary>
     /// <remarks>
     /// Không phân trang: một học sinh có nhiều nhất vài chục bài trong một học kỳ. Trạng thái từng
-    /// dòng là dữ liệu dẫn xuất — chưa có lượt làm bài thì <c>assigned</c>, đề đã đóng mà chưa từng
-    /// bắt đầu thì <c>expired</c>.
+    /// dòng là dữ liệu dẫn xuất — chưa có lượt làm bài thì <c>assigned</c>, khung giờ của em đã đóng
+    /// (lịch riêng của lớp nếu có) mà chưa từng bắt đầu thì <c>expired</c>.
     /// </remarks>
     [HttpGet]
     [ProducesResponseType<IReadOnlyList<StudentExamItemDto>>(StatusCodes.Status200OK)]

@@ -39,6 +39,20 @@ public sealed class AssignExamRequestValidator : AbstractValidator<AssignExamReq
             .WithName(nameof(AssignExamRequest.StudentIds))
             .WithMessage("Hãy chọn ít nhất một học sinh hoặc một nhóm lớp.");
 
+        // Hai mốc đi cùng cặp. Gửi một nửa là trạng thái không ai có ý định tạo ra, và im lặng
+        // ghép nửa gửi lên với nửa lấy từ đề sẽ sinh ra một khung giờ chẳng giống ý ai cả. Thời lượng
+        // so với khung giờ được kiểm ở ExamAssignmentService vì cần DurationMinutes của đề.
+        RuleFor(request => request)
+            .Must(request => request.OpenAt.HasValue == request.CloseAt.HasValue)
+            .WithName(nameof(AssignExamRequest.OpenAt))
+            .WithMessage("Đặt giờ riêng thì phải có đủ cả giờ mở và giờ đóng.");
+
+        RuleFor(request => request)
+            .Must(request => request.OpenAt < request.CloseAt)
+            .WithName(nameof(AssignExamRequest.CloseAt))
+            .WithMessage("Giờ đóng bài phải sau giờ mở bài.")
+            .When(request => request.OpenAt.HasValue && request.CloseAt.HasValue);
+
         RuleFor(request => request.StudentIds)
             .Must(ids => ids!.Count <= MaxTargetsPerRequest)
             .WithMessage($"Mỗi lần chỉ chọn được tối đa {MaxTargetsPerRequest} học sinh.")

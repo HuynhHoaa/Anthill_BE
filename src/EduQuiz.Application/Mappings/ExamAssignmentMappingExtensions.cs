@@ -1,4 +1,6 @@
+using EduQuiz.Application.Common;
 using EduQuiz.Application.DTOs.ExamAssignments;
+using EduQuiz.Application.Interfaces.Realtime;
 using EduQuiz.Domain.Entities;
 using EduQuiz.Domain.Enums;
 
@@ -11,20 +13,21 @@ namespace EduQuiz.Application.Mappings;
 public static class ExamAssignmentMappingExtensions
 {
     /// <summary>
-    /// Suy trạng thái từ lượt làm bài và lịch của đề.
+    /// Suy trạng thái từ lượt làm bài và lịch CÓ HIỆU LỰC của bản ghi giao bài.
     /// </summary>
     /// <remarks>
     /// <para>
     /// Không có cột nào lưu giá trị này. Đã có lượt làm bài thì trạng thái của lượt đó là câu trả
-    /// lời; chưa có thì còn tuỳ đề đã đóng hay chưa.
+    /// lời; chưa có thì còn tuỳ khung giờ của em đã đóng hay chưa.
     /// </para>
     /// <para>
-    /// Nhánh <c>Expired</c> là chỗ đáng nói: một em chưa từng bắt đầu, sau khi đề đóng, nếu vẫn
-    /// báo <c>assigned</c> thì bảng theo dõi đọc như thể em còn cơ hội làm bài. Giáo viên cần phân
-    /// biệt "chưa làm nhưng còn kịp" với "hết giờ mà không vào thi" — đó là hai tình huống dẫn tới
-    /// hai hành động khác nhau.
+    /// Nhánh <c>Expired</c> là chỗ đáng nói: một em chưa từng bắt đầu, sau khi khung giờ của em đóng
+    /// — lịch riêng của lớp nếu có, ngược lại lịch chung của đề — nếu vẫn báo <c>assigned</c> thì bảng
+    /// theo dõi đọc như thể em còn cơ hội làm bài. Giáo viên cần phân biệt "chưa làm nhưng còn kịp"
+    /// với "hết giờ mà không vào thi" — đó là hai tình huống dẫn tới hai hành động khác nhau.
     /// </para>
     /// </remarks>
+    /// <exception cref="InvalidOperationException">Chưa có lượt làm bài mà Exam chưa được nạp.</exception>
     public static AssignmentStatus ResolveStatus(this ExamAssignment assignment, DateTime asOfUtc)
     {
         ArgumentNullException.ThrowIfNull(assignment);
@@ -34,21 +37,26 @@ public static class ExamAssignmentMappingExtensions
             return assignment.Attempt.Status;
         }
 
-        // Đề còn là nháp thì chưa nói chuyện hết hạn được: nháp không có lịch nào đang chạy.
-        if (assignment.Exam is { IsDraft: false } exam && asOfUtc.ToUtc() > exam.CloseAt.ToUtc())
-        {
-            return AssignmentStatus.Expired;
-        }
-
-        return AssignmentStatus.Assigned;
+        // Hết hạn theo khung giờ CỦA EM NÀY — cùng một phép tính với Lifecycle nằm ngay cạnh trên
+        // cùng DTO. Đọc exam.CloseAt ở đây là để hai trường đó nói hai điều ngược nhau: lớp chiều
+        // đang trong giờ lại báo "expired" vì lịch chung đã đóng, còn lớp sáng lỡ giờ vẫn báo
+        // "assigned" vì lịch chung còn mở. Nháp không bao giờ ra Closed nên nhánh nháp tự đúng theo.
+        return assignment.ResolveLifecycle(asOfUtc) == ExamLifecycle.Closed
+            ? AssignmentStatus.Expired
+            : AssignmentStatus.Assigned;
     }
 
+    /// <remarks>
+    /// <paramref name="assignment"/> phải được nạp kèm <c>Exam</c> (repository của bảng theo dõi đã
+    /// Include): cả trạng thái lẫn khung giờ đều cần lịch chung của đề làm mặc định.
+    /// </remarks>
     public static ExamAssignmentDto ToDto(this ExamAssignment assignment, DateTime asOfUtc)
     {
         ArgumentNullException.ThrowIfNull(assignment);
 
         var attempt = assignment.Attempt;
         var status = assignment.ResolveStatus(asOfUtc);
+        var (openAt, closeAt) = AssignmentSchedule.Resolve(assignment);
 
         return new ExamAssignmentDto
         {
@@ -67,7 +75,61 @@ public static class ExamAssignmentMappingExtensions
 
             StartedAt = attempt?.StartedAt.ToUtc(),
             SubmittedAt = attempt?.SubmittedAt.ToUtc(),
-            AssignedAt = assignment.AssignedAt.ToUtc()
+            AssignedAt = assignment.AssignedAt.ToUtc(),
+            OpenAt = openAt.ToUtc(),
+            CloseAt = closeAt.ToUtc(),
+            HasScheduleOverride = AssignmentSchedule.HasOverride(assignment),
+            AssignedViaGroupId = assignment.AssignedViaGroupId
+        };
+    }
+
+    /// <summary>Sự kiện realtime báo cho MỘT em rằng em vừa được giao bài.</summary>
+    /// <remarks>
+    /// Giờ mở/đóng là giờ của chính bản ghi này — lịch riêng của lớp nếu có, ngược lại mới là lịch
+    /// chung — tức đúng hai mốc mà <c>GET /api/my/exams</c> trả về. Lấy lịch của đề thì thông báo hứa
+    /// "còn một tuần" trong khi thẻ bài của em đếm ngược ba tiếng.
+    /// </remarks>
+    public static ExamAssignedEvent ToAssignedEvent(this ExamAssignment assignment, Exam exam, string teacherName)
+    {
+        ArgumentNullException.ThrowIfNull(assignment);
+        ArgumentNullException.ThrowIfNull(exam);
+
+        var (openAt, closeAt) = AssignmentSchedule.Resolve(assignment, exam);
+
+        return new ExamAssignedEvent
+        {
+            ExamId = exam.Id,
+            AssignmentId = assignment.Id,
+            ExamTitle = exam.Title,
+            TeacherName = teacherName,
+            DurationMinutes = exam.DurationMinutes,
+            OpenAt = openAt.ToUtc(),
+            CloseAt = closeAt.ToUtc()
+        };
+    }
+
+    /// <summary>Sự kiện realtime báo cho MỘT em rằng đề em được giao vừa đổi lịch hoặc thời lượng.</summary>
+    /// <remarks>
+    /// Dựng theo từng bản ghi vì mỗi em có thể theo một khung giờ khác. Sửa lịch chung của đề chỉ dời
+    /// những em KHÔNG có giờ riêng; gửi một payload mang lịch đề cho cả danh sách là báo cho lớp có giờ
+    /// riêng rằng giờ của họ đã đổi trong khi thực tế không đổi. Người gọi dùng
+    /// <see cref="AssignmentSchedule.HasOverride"/> để bỏ qua những em không bị ảnh hưởng.
+    /// </remarks>
+    public static ExamUpdatedEvent ToUpdatedEvent(this ExamAssignment assignment, Exam exam)
+    {
+        ArgumentNullException.ThrowIfNull(assignment);
+        ArgumentNullException.ThrowIfNull(exam);
+
+        var (openAt, closeAt) = AssignmentSchedule.Resolve(assignment, exam);
+
+        return new ExamUpdatedEvent
+        {
+            ExamId = exam.Id,
+            AssignmentId = assignment.Id,
+            ExamTitle = exam.Title,
+            DurationMinutes = exam.DurationMinutes,
+            OpenAt = openAt.ToUtc(),
+            CloseAt = closeAt.ToUtc()
         };
     }
 

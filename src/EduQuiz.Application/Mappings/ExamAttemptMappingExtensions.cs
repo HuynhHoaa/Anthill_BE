@@ -80,7 +80,10 @@ public static class ExamAttemptMappingExtensions
 
         var exam = assignment.Exam;
         var attempt = assignment.Attempt;
-        var lifecycle = exam.ResolveLifecycle(asOfUtc);
+        // Theo lịch của BẢN GHI GIAO BÀI, không theo lịch của đề: lớp này có thể được đặt một
+        // khung giờ riêng, và đọc lịch chung sẽ mở bài sai giờ cho đúng những em cần nó nhất.
+        var lifecycle = assignment.ResolveLifecycle(asOfUtc);
+        var (effectiveOpenAt, effectiveCloseAt) = AssignmentSchedule.Resolve(assignment);
         var status = assignment.ResolveStatus(asOfUtc);
 
         // Cho xem điểm khi hội đủ ba điều kiện của §3 quy tắc ⑥ — bài của chính em (đã kiểm ở
@@ -107,8 +110,10 @@ public static class ExamAttemptMappingExtensions
 
             DurationMinutes = exam.DurationMinutes,
             TotalQuestions = totalQuestions,
-            OpenAt = exam.OpenAt.ToUtc(),
-            CloseAt = exam.CloseAt.ToUtc(),
+            // Hai mốc này là thứ học sinh nhìn thấy trên thẻ bài và dùng để đếm ngược, nên phải là
+            // giờ THẬT của em đó — tức lịch riêng của lớp nếu có, ngược lại mới là lịch chung.
+            OpenAt = effectiveOpenAt.ToUtc(),
+            CloseAt = effectiveCloseAt.ToUtc(),
             TeacherName = exam.CreatedBy?.FullName ?? string.Empty,
             Lifecycle = lifecycle.ToLifecycleString(),
             Status = status.ToAssignmentStatusString(),

@@ -158,11 +158,20 @@ namespace EduQuiz.Infrastructure.Persistence.Migrations
                     b.Property<DateTime>("AssignedAt")
                         .HasColumnType("timestamp with time zone");
 
+                    b.Property<int?>("AssignedViaGroupId")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTime?>("CloseAt")
+                        .HasColumnType("timestamp with time zone");
+
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
 
                     b.Property<int>("ExamId")
                         .HasColumnType("integer");
+
+                    b.Property<DateTime?>("OpenAt")
+                        .HasColumnType("timestamp with time zone");
 
                     b.Property<int>("StudentId")
                         .HasColumnType("integer");
@@ -172,6 +181,9 @@ namespace EduQuiz.Infrastructure.Persistence.Migrations
 
                     b.HasKey("Id");
 
+                    b.HasIndex("AssignedViaGroupId")
+                        .HasDatabaseName("IX_ExamAssignments_AssignedViaGroupId");
+
                     b.HasIndex("StudentId")
                         .HasDatabaseName("IX_ExamAssignments_StudentId");
 
@@ -179,7 +191,12 @@ namespace EduQuiz.Infrastructure.Persistence.Migrations
                         .IsUnique()
                         .HasDatabaseName("IX_ExamAssignments_Exam_Student");
 
-                    b.ToTable("ExamAssignments", (string)null);
+                    b.ToTable("ExamAssignments", null, t =>
+                        {
+                            t.HasCheckConstraint("CK_ExamAssignments_ScheduleOrder", "\"OpenAt\" IS NULL OR \"OpenAt\" < \"CloseAt\"");
+
+                            t.HasCheckConstraint("CK_ExamAssignments_SchedulePair", "(\"OpenAt\" IS NULL) = (\"CloseAt\" IS NULL)");
+                        });
                 });
 
             modelBuilder.Entity("EduQuiz.Domain.Entities.ExamAttempt", b =>
@@ -773,6 +790,11 @@ namespace EduQuiz.Infrastructure.Persistence.Migrations
 
             modelBuilder.Entity("EduQuiz.Domain.Entities.ExamAssignment", b =>
                 {
+                    b.HasOne("EduQuiz.Domain.Entities.StudentGroup", "AssignedViaGroup")
+                        .WithMany()
+                        .HasForeignKey("AssignedViaGroupId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
                     b.HasOne("EduQuiz.Domain.Entities.Exam", "Exam")
                         .WithMany("Assignments")
                         .HasForeignKey("ExamId")
@@ -784,6 +806,8 @@ namespace EduQuiz.Infrastructure.Persistence.Migrations
                         .HasForeignKey("StudentId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
+
+                    b.Navigation("AssignedViaGroup");
 
                     b.Navigation("Exam");
 

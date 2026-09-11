@@ -30,7 +30,8 @@ public sealed class ExamAssignmentsController : ApiControllerBase
     /// <summary>Danh sách học sinh đã giao, kèm tiến trình làm bài của từng em.</summary>
     /// <remarks>
     /// Trạng thái từng em là dữ liệu dẫn xuất: chưa có lượt làm bài thì <c>assigned</c>, có rồi thì
-    /// lấy trạng thái của lượt đó, còn đề đã đóng mà em chưa từng bắt đầu thì <c>expired</c>.
+    /// lấy trạng thái của lượt đó, còn khung giờ của em đã đóng (lịch riêng của lớp nếu có) mà em
+    /// chưa từng bắt đầu thì <c>expired</c>. Mỗi dòng mang kèm khung giờ thật của em đó.
     /// </remarks>
     [HttpGet]
     [ProducesResponseType<IReadOnlyList<ExamAssignmentDto>>(StatusCodes.Status200OK)]
@@ -51,7 +52,15 @@ public sealed class ExamAssignmentsController : ApiControllerBase
     /// trả về — tài khoản đang khoá, học sinh không thuộc lớp của mình, id không tồn tại. Im lặng
     /// ở đây nghĩa là tới hôm thi mới phát hiện thiếu bài.
     /// </para>
-    /// <para>Trả <b>409</b> khi đề còn là bản nháp; frontend hoàn toàn không kiểm điều này.</para>
+    /// <para>
+    /// Gửi lại một lớp đã giao kèm khung giờ là cách sửa giờ cho lớp đó: những em được giao qua lớp
+    /// ấy mà chưa bắt đầu làm bài được đổi sang khung mới (<c>scheduleUpdatedCount</c>). Bỏ trống
+    /// khung giờ thì không khung giờ nào bị xoá.
+    /// </para>
+    /// <para>
+    /// Trả <b>400</b> khi khung giờ riêng ngắn hơn thời lượng làm bài, <b>409</b> khi đề còn là bản
+    /// nháp; frontend hoàn toàn không kiểm điều này.
+    /// </para>
     /// </remarks>
     [HttpPost]
     [Authorize(Roles = SystemRoles.Teacher)]

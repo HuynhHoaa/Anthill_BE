@@ -47,6 +47,11 @@ public sealed record StudentExamItemDto
     /// <summary>
     /// <c>"assigned"</c> · <c>"inprogress"</c> · <c>"submitted"</c> · <c>"graded"</c> · <c>"expired"</c>.
     /// </summary>
+    /// <remarks>
+    /// <c>expired</c> tính theo đúng khung giờ của <see cref="Lifecycle"/>, <see cref="OpenAt"/> và
+    /// <see cref="CloseAt"/> — lịch riêng của lớp nếu có — nên không bao giờ có chuyện thẻ bài vừa
+    /// "đang mở" vừa "hết hạn".
+    /// </remarks>
     public required string Status { get; init; }
 
     /// <summary>

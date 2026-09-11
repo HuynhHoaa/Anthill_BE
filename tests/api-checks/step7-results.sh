@@ -40,6 +40,14 @@ print('present' if sys.argv[1] in json.load(sys.stdin) else 'absent')
 " "$1" < "$BODY_FILE"
 }
 
+# Cau dau tien trong chi tiet bai lam co mang truong $1 hay khong.
+q0_has() {
+  python -c "
+import json,sys
+print('present' if sys.argv[1] in json.load(sys.stdin)['questions'][0] else 'absent')
+" "$1" < "$BODY_FILE"
+}
+
 section "Dung du lieu nen"
 
 GROUP_ID=$(new_class "$ADMIN" "$TEACHER" "KT7 $STAMP" "Nhom kiem thu buoc 7")   || fail_fast "khong dung duoc lop nen"
@@ -164,18 +172,30 @@ expect_status "  co completionRate" present "$(has_field completionRate)"
 
 section "Diem khong roi server khi chua duoc phep xem (§3 quy tac 6)"
 
-# De MO: giao vien bat showResultAfterSubmit nen A duoc xem diem cua chinh minh.
+# De MO: giao vien bat showResultAfterSubmit nen A duoc xem DIEM cua chinh minh ngay. Nhung dap an
+# tung cau con cho toi khi moi luot giao cua de het gio — de nay mo toi 2035. Mot em nop som khong
+# duoc cam dap an de chuyen cho ban chua lam.
 expect_status "A xem bai cua chinh minh, de mo → 200" 200 "$(call GET "/api/results/$ATTEMPT_A_OPEN" "$STUDENT_A")"
-expect_json   "  canSeeAnswers = true" canSeeAnswers true
+expect_json   "  canSeeAnswers = false (de chua dong)" canSeeAnswers false
 expect_status "  co score"             present "$(has_field score)"
-expect_status "  cau dau co correctAnswerId" present \
-  "$(body | python -c "import json,sys;print('present' if 'correctAnswerId' in json.load(sys.stdin)['questions'][0] else 'absent')")"
+expect_status "  co correctCount"      present "$(has_field correctCount)"
+expect_status "  cau dau KHONG co correctAnswerId" absent "$(q0_has correctAnswerId)"
+expect_status "  cau dau KHONG co isCorrect"       absent "$(q0_has isCorrect)"
+expect_json   "  answersVisibleAt = gio dong de" answersVisibleAt 2035-01-01T00:00:00Z
+
+# Giao vien so huu de thi luon thay dap an, va khong co moc hen nao.
+expect_status "giao vien xem bai do → 200" 200 "$(call GET "/api/results/$ATTEMPT_A_OPEN" "$TEACHER")"
+expect_json   "  canSeeAnswers = true voi giao vien" canSeeAnswers true
+expect_status "  cau dau co correctAnswerId" present "$(q0_has correctAnswerId)"
+expect_status "  answersVisibleAt vang mat"  absent  "$(has_field answersVisibleAt)"
 
 # De KIN: cung mot hoc sinh, cung mot endpoint, nhung khong duoc xem gi.
 expect_status "A xem bai cua chinh minh, de kin → 200" 200 "$(call GET "/api/results/$ATTEMPT_A_HIDDEN" "$STUDENT_A")"
 expect_json   "  canSeeAnswers = false" canSeeAnswers false
 expect_status "  score VANG MAT khoi JSON"        absent "$(has_field score)"
 expect_status "  correctCount VANG MAT"           absent "$(has_field correctCount)"
+# De kin thi dap an khong tu mo vao luc nao ca, nen cung khong hua mot moc gio.
+expect_status "  answersVisibleAt VANG MAT"       absent "$(has_field answersVisibleAt)"
 expect_status "  cau dau KHONG co correctAnswerId" absent \
   "$(body | python -c "import json,sys;print('present' if 'correctAnswerId' in json.load(sys.stdin)['questions'][0] else 'absent')")"
 expect_status "  cau dau KHONG co isCorrect" absent \

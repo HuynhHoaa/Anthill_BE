@@ -21,7 +21,8 @@ namespace EduQuiz.Application.Services;
 /// chín em kia. Đổi lại, những gì bị bỏ qua phải được <b>đếm và trả về</b>, vì im lặng ở đây
 /// nghĩa là tới hôm thi mới phát hiện thiếu bài.</item>
 /// <item><b>Idempotent theo cặp (đề, học sinh).</b> Bấm giao hai lần không tạo ra hai bài, và
-/// quan trọng hơn: không xoá mất lượt làm bài hay điểm của em đã làm rồi.</item>
+/// quan trọng hơn: không xoá mất lượt làm bài hay điểm của em đã làm rồi. Gửi lại chỉ có thể đổi
+/// khung giờ của em chưa bắt đầu, không bao giờ đụng trạng thái hay điểm.</item>
 /// <item><b>Phạm vi tính theo nhóm lớp mà giáo viên quản lý.</b> Không có hàng rào này thì một
 /// giáo viên đoán id là giao được bài cho lớp của đồng nghiệp.</item>
 /// <item><b>Sinh đề nằm trong cùng transaction với tạo assignment.</b> Tách ra thì có lúc tồn tại
@@ -74,13 +75,6 @@ public sealed class ExamAssignmentService : IExamAssignmentService
         var asOf = DateTime.UtcNow;
         var assignments = await _unitOfWork.ExamAssignments.GetByExamAsync(examId, cancellationToken);
 
-        // Gắn đề vào từng bản ghi để ResolveStatus biết đề đã đóng chưa. Repository không nạp sẵn
-        // Exam ở truy vấn này, mà cả danh sách vốn thuộc đúng một đề nên gán thẳng là đủ.
-        foreach (var assignment in assignments)
-        {
-            assignment.Exam = exam.ValueOrThrow;
-        }
-
         IReadOnlyList<ExamAssignmentDto> result =
             assignments.Select(assignment => assignment.ToDto(asOf)).ToList();
 
@@ -108,6 +102,16 @@ public sealed class ExamAssignmentService : IExamAssignmentService
         if (exam.IsDraft)
         {
             return Result.Conflict<AssignExamResponse>(DraftCannotAssignMessage);
+        }
+
+        // Nằm ở đây chứ không ở validator vì thời lượng đến từ đề — validator không nhìn thấy nó. Kiểm cả
+        // khi đây là lần gửi lại để sửa giờ cho một lớp đã giao, vì khung giờ đó cũng sẽ được ghi xuống.
+        if (request.OpenAt is { } requestedOpen && request.CloseAt is { } requestedClose
+            && !AssignmentSchedule.FitsDuration(requestedOpen, requestedClose, exam.DurationMinutes))
+        {
+            return Result.Failure<AssignExamResponse>(
+                $"Đề này cho làm bài {exam.DurationMinutes} phút, dài hơn khung giờ riêng vừa chọn. "
+                + "Hãy nới khung giờ ra, hoặc rút ngắn thời gian làm bài ở phần sửa đề.");
         }
 
         // Cờ này thuộc về đề chứ không thuộc về từng assignment. Đổi nó khi đề đã giao một phần
@@ -150,6 +154,24 @@ public sealed class ExamAssignmentService : IExamAssignmentService
             .Where(student => !alreadyAssigned.Contains(student.Id))
             .ToList();
 
+        // Gửi lại một lớp kèm khung giờ là cách giáo viên sửa giờ cho lớp đó. Chỉ đụng tới những em được
+        // giao QUA lớp ấy và chưa bắt đầu làm bài. Request không kèm khung giờ thì không xoá khung giờ nào:
+        // giao bổ sung một em vào lớp mà xoá luôn giờ riêng của cả lớp là mất dữ liệu trong im lặng.
+        //
+        // Không gọi Update() trên các bản ghi này: DbSet.Update đi hết đồ thị và đánh dấu luôn Attempt đã
+        // Include là Modified — ghi đè một bản cũ của lượt đang làm lên những lần lưu nháp đồng thời.
+        // Theo dõi thay đổi tự nhận ra OpenAt/CloseAt đã đổi.
+        var rescheduled = new AssignmentSchedule.RescheduleOutcome(0, 0);
+        if (request.OpenAt is { } newOpenAt && request.CloseAt is { } newCloseAt && targets.OwnedGroupIds.Count > 0)
+        {
+            var viaGroupRows = await _unitOfWork.ExamAssignments.GetByExamViaGroupsAsync(
+                exam.Id,
+                targets.OwnedGroupIds,
+                cancellationToken);
+
+            rescheduled = AssignmentSchedule.Reschedule(viaGroupRows, newOpenAt, newCloseAt);
+        }
+
         var response = new AssignExamResponse
         {
             AssignedCount = newcomers.Count,
@@ -157,13 +179,15 @@ public sealed class ExamAssignmentService : IExamAssignmentService
             SkippedLocked = targets.LockedCount,
             SkippedNotFound = targets.NotFoundCount,
             SkippedOutOfScope = targets.OutOfScopeCount,
-            SkippedOutOfScopeGroups = targets.OutOfScopeGroupCount
+            SkippedOutOfScopeGroups = targets.OutOfScopeGroupCount,
+            ScheduleUpdatedCount = rescheduled.Updated,
+            ScheduleKeptStartedCount = rescheduled.KeptStarted
         };
 
         var now = DateTime.UtcNow;
         var flagChanged = requestedRandomize is not null && exam.RandomizePerStudent != requestedRandomize;
 
-        if (newcomers.Count == 0 && !flagChanged)
+        if (newcomers.Count == 0 && !flagChanged && rescheduled.Updated == 0)
         {
             // Không có gì để ghi. Vẫn trả 200 kèm các con số: người dùng cần biết vì sao không ai
             // được giao, và "đã giao hết rồi" là câu trả lời hợp lệ chứ không phải lỗi.
@@ -199,7 +223,19 @@ public sealed class ExamAssignmentService : IExamAssignmentService
                 ExamId = exam.Id,
                 StudentId = student.Id,
                 AssignedAt = now,
-                CreatedAt = now
+                CreatedAt = now,
+
+                // NULL khi giáo viên chọn đích danh em này thay vì chọn cả lớp.
+                AssignedViaGroupId = targets.ViaGroup.TryGetValue(student.Id, out var groupId)
+                    ? groupId
+                    : null,
+
+                // Lịch riêng của lượt giao này. NULL nghĩa là theo lịch chung của đề — không chép
+                // sẵn lịch đề vào đây, vì chép rồi thì sửa lịch đề sẽ không còn lan tới những lớp
+                // vốn không đặt giờ riêng. Quy về UTC ngay để giá trị trong bộ nhớ khớp với thứ sẽ
+                // nằm trong database, và khớp với phép so của Reschedule.
+                OpenAt = request.OpenAt.ToUtc(),
+                CloseAt = request.CloseAt.ToUtc()
             })
             .ToList();
 
@@ -301,6 +337,12 @@ public sealed class ExamAssignmentService : IExamAssignmentService
         /// <summary>Những em thật sự giao được: có thật, đúng vai trò, đang hoạt động, thuộc lớp của giáo viên.</summary>
         public required IReadOnlyList<User> InScope { get; init; }
 
+        /// <summary>Em nào đến từ lớp nào. Vắng mặt nghĩa là giáo viên chọn đích danh em đó.</summary>
+        public required IReadOnlyDictionary<int, int> ViaGroup { get; init; }
+
+        /// <summary>Các lớp trong request mà giáo viên này được giao bài — cũng là các lớp được phép sửa khung giờ.</summary>
+        public required IReadOnlyList<int> OwnedGroupIds { get; init; }
+
         public required int NotFoundCount { get; init; }
 
         public required int LockedCount { get; init; }
@@ -342,12 +384,23 @@ public sealed class ExamAssignmentService : IExamAssignmentService
         // sự im lặng mà AssignExamResponse nói là nó sinh ra để tránh.
         var outOfScopeGroups = requestedGroupIds.Count - ownedGroups.Count;
 
+        // Ghi lại em nào đến từ lớp nào ngay tại đây. Tra ngược qua User.GroupId về sau là sai:
+        // học sinh chuyển lớp giữa kỳ thì GroupId đổi theo, và lúc đó không còn cách nào biết bài
+        // này vốn được giao cho em với tư cách thành viên lớp nào — mà đó là thứ quyết định em làm
+        // bài vào khung giờ nào.
+        var viaGroup = new Dictionary<int, int>();
+
         foreach (var group in ownedGroups)
         {
             var members = await _unitOfWork.Users.GetStudentsByGroupAsync(group.Id, cancellationToken);
             foreach (var member in members)
             {
                 requestedIds.Add(member.Id);
+
+                // Em thuộc nhiều lớp là chuyện không xảy ra (User.GroupId là khoá đơn), nhưng nếu
+                // cùng một em lọt vào hai lớp được chọn thì lấy lớp đầu tiên — nhất quán giữa các
+                // lần chạy vì ownedGroups đã sắp thứ tự.
+                viaGroup.TryAdd(member.Id, group.Id);
             }
         }
 
@@ -356,6 +409,8 @@ public sealed class ExamAssignmentService : IExamAssignmentService
             return new Targets
             {
                 InScope = [],
+                ViaGroup = viaGroup,
+                OwnedGroupIds = ownedGroups.Select(group => group.Id).ToList(),
                 NotFoundCount = 0,
                 LockedCount = 0,
                 OutOfScopeCount = 0,
@@ -399,6 +454,8 @@ public sealed class ExamAssignmentService : IExamAssignmentService
         return new Targets
         {
             InScope = inScope,
+            ViaGroup = viaGroup,
+            OwnedGroupIds = ownedGroups.Select(group => group.Id).ToList(),
             NotFoundCount = notFound,
             LockedCount = locked,
             OutOfScopeCount = outOfScope,
@@ -456,6 +513,10 @@ public sealed class ExamAssignmentService : IExamAssignmentService
     /// Cũng đẩy lại số chưa đọc, vì bản ghi thông báo vừa được tạo trong transaction: không có nó
     /// thì chấm đỏ trên chuông đứng yên cho tới lần tải trang kế tiếp — mà việc poll đã bị bỏ đi
     /// chính vì sự kiện này (§7).
+    ///
+    /// Mỗi sự kiện cũng mang khung giờ thật của chính em đó, phân giải với đề đưa vào tường minh: bản
+    /// ghi vừa tạo chưa chắc đã được gắn navigation Exam, và bước này chạy sau commit nên một lỗi ở
+    /// đây biến một lô giao bài đã ghi xong thành lỗi 500.
     /// </remarks>
     private async Task PublishAssignedAsync(
         Exam exam,
@@ -468,16 +529,7 @@ public sealed class ExamAssignmentService : IExamAssignmentService
         {
             await _realtime.ExamAssignedAsync(
                 [assignment.StudentId],
-                new ExamAssignedEvent
-                {
-                    ExamId = exam.Id,
-                    AssignmentId = assignment.Id,
-                    ExamTitle = exam.Title,
-                    TeacherName = teacherName,
-                    DurationMinutes = exam.DurationMinutes,
-                    OpenAt = exam.OpenAt.ToUtc(),
-                    CloseAt = exam.CloseAt.ToUtc()
-                },
+                assignment.ToAssignedEvent(exam, teacherName),
                 cancellationToken);
 
             await _realtime.UnreadCountChangedAsync(

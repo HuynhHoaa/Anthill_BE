@@ -119,8 +119,6 @@ public sealed class DashboardService : IDashboardService
         // quán với nhau; hỏi database bảy lần thì bảy câu trả lời có thể thuộc bảy thời điểm.
         var assignments = await _unitOfWork.ExamAssignments.GetForStudentAsync(CurrentUserId, cancellationToken);
 
-        var open = new List<ExamAssignment>();
-        var upcoming = new List<ExamAssignment>();
         var visibleScores = new List<decimal>();
         var completed = 0;
 
@@ -148,25 +146,9 @@ public sealed class DashboardService : IDashboardService
                     visibleScores.Add(attempt.Score);
                 }
             }
-
-            // Bài đã NỘP thì không còn nằm ở "đang mở" nữa. Nhưng bài đang làm dở thì có: đó
-            // chính là việc em cần làm gấp nhất, và bỏ nó ra khỏi cả hai danh sách nghĩa là trang
-            // tổng quan không còn đường nào dẫn em quay lại bài đang chạy đồng hồ.
-            if (attempt is not null && attempt.Status != AssignmentStatus.InProgress)
-            {
-                continue;
-            }
-
-            switch (assignment.Exam.ResolveLifecycle(now))
-            {
-                case ExamLifecycle.Open:
-                    open.Add(assignment);
-                    break;
-                case ExamLifecycle.Scheduled:
-                    upcoming.Add(assignment);
-                    break;
-            }
         }
+
+        var (open, upcoming) = SplitOpenAndUpcoming(assignments, now);
 
         var recentPage = await _unitOfWork.ExamAttempts.GetMyResultsPagedAsync(
             CurrentUserId, search: null, PaginationParams.Of(1, RecentResultCount), cancellationToken);
@@ -192,17 +174,10 @@ public sealed class DashboardService : IDashboardService
                     : null
             },
 
-            // Sắp theo hạn nộp gần nhất: bài sắp đóng là bài cần làm trước.
-            OpenExams = open
-                .OrderBy(assignment => assignment.Exam.CloseAt)
-                .Select(assignment => assignment.ToStudentExamItemDto(now))
-                .ToList(),
-
-            // Sắp theo giờ mở: bài sắp tới trước.
-            UpcomingExams = upcoming
-                .OrderBy(assignment => assignment.Exam.OpenAt)
-                .Select(assignment => assignment.ToStudentExamItemDto(now))
-                .ToList(),
+            // Thứ tự đã chốt trong SplitOpenAndUpcoming: đang mở theo hạn nộp của lớp, sắp tới theo
+            // giờ mở của lớp.
+            OpenExams = open.Select(assignment => assignment.ToStudentExamItemDto(now)).ToList(),
+            UpcomingExams = upcoming.Select(assignment => assignment.ToStudentExamItemDto(now)).ToList(),
 
             RecentResults = recentPage.Items
                 .Select(attempt => attempt.ToSummaryDto(
@@ -210,5 +185,58 @@ public sealed class DashboardService : IDashboardService
                     questionCounts.GetValueOrDefault(attempt.Id)))
                 .ToList()
         });
+    }
+
+    /// <summary>
+    /// Chia bài được giao của một học sinh thành "đang mở" và "sắp tới", mỗi nhóm đã sắp sẵn.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Vòng đời và hai mốc giờ lấy từ BẢN GHI GIAO BÀI, không từ đề — đúng như chính thẻ bài bên trong
+    /// (<see cref="ExamAttemptMappingExtensions.ToStudentExamItemDto"/>) và như <c>GET /api/my/exams</c>.
+    /// Đọc lịch của đề ở đây là để trang tổng quan nói ngược với thẻ nó đang vẽ: lớp chiều đang trong
+    /// giờ mà bài biến khỏi cả hai danh sách vì lịch chung đã đóng, còn lớp sáng đã hết giờ lại nằm
+    /// trong "cần làm ngay".
+    /// </para>
+    /// <para>Hàm tĩnh thuần để kiểm được bằng unit test mà không phải dựng cả IUnitOfWork.</para>
+    /// </remarks>
+    public static (IReadOnlyList<ExamAssignment> Open, IReadOnlyList<ExamAssignment> Upcoming) SplitOpenAndUpcoming(
+        IEnumerable<ExamAssignment> assignments,
+        DateTime asOfUtc)
+    {
+        ArgumentNullException.ThrowIfNull(assignments);
+
+        var open = new List<(ExamAssignment Assignment, DateTime CloseAt)>();
+        var upcoming = new List<(ExamAssignment Assignment, DateTime OpenAt)>();
+
+        foreach (var assignment in assignments)
+        {
+            // Bài đã NỘP thì không còn nằm ở "đang mở" nữa. Nhưng bài đang làm dở thì có: đó
+            // chính là việc em cần làm gấp nhất, và bỏ nó ra khỏi cả hai danh sách nghĩa là trang
+            // tổng quan không còn đường nào dẫn em quay lại bài đang chạy đồng hồ.
+            if (assignment.Attempt is { Status: not AssignmentStatus.InProgress })
+            {
+                continue;
+            }
+
+            var (openAt, closeAt) = AssignmentSchedule.Resolve(assignment);
+
+            switch (assignment.ResolveLifecycle(asOfUtc))
+            {
+                case ExamLifecycle.Open:
+                    open.Add((assignment, closeAt.ToUtc()));
+                    break;
+                case ExamLifecycle.Scheduled:
+                    upcoming.Add((assignment, openAt.ToUtc()));
+                    break;
+            }
+        }
+
+        // Sắp theo mốc THẬT của em: frontend lấy phần tử đầu của "đang mở" làm cảnh báo sắp hết hạn,
+        // nên sắp theo lịch chung của đề là chỉ nhầm bài. OrderBy ổn định: hai bài cùng mốc giữ thứ tự
+        // repository (mới giao trước).
+        return (
+            open.OrderBy(entry => entry.CloseAt).Select(entry => entry.Assignment).ToList(),
+            upcoming.OrderBy(entry => entry.OpenAt).Select(entry => entry.Assignment).ToList());
     }
 }
