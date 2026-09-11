@@ -5,28 +5,28 @@ phân quyền theo vai trò, phạm vi dữ liệu, và hành vi trong transacti
 
 ## Chạy
 
-Cần API đang chạy và database đã có lược đồ:
+Cần API đang chạy, database đã có lược đồ và đã có tài khoản demo (script đăng nhập bằng chúng):
 
 ```bash
-dotnet run --project src/EduQuiz.Api          # cửa sổ thứ nhất
+dotnet run --project src/Anthill.Api          # cửa sổ thứ nhất
 bash tests/api-checks/step4-exams.sh          # cửa sổ thứ hai
 ```
 
-Đổi địa chỉ API bằng biến `HOST`:
+Đổi địa chỉ API bằng biến `HOST` (mặc định `http://localhost:5002`):
 
 ```bash
-HOST=https://eduquiz-api.onrender.com bash tests/api-checks/step4-exams.sh
+HOST=http://localhost:8080 bash tests/api-checks/step4-exams.sh
 ```
 
-Thoát với mã 0 khi mọi phép đều đạt, khác 0 khi có phép hỏng — nên cắm vào CI được.
+Thoát với mã 0 khi mọi phép kiểm đều đạt, khác 0 khi có phép hỏng — nên cắm vào CI được.
 
 ## Vì sao là script chứ không phải xUnit
 
 Hai lớp kiểm này trả lời hai câu hỏi khác nhau.
 
-`tests/EduQuiz.Tests/` kiểm **logic thuần**: phép chia blueprint, suy diễn vòng đời, luật validator.
-Chúng chạy trong một phần mười giây, không cần database, và chạy được ở mọi máy — nên đó là chỗ
-đặt những phép kiểm dày đặc, quét hết mọi tổ hợp.
+`tests/Anthill.Tests/` kiểm **logic thuần**: phép chia blueprint, suy diễn vòng đời, luật validator.
+Chúng không cần database và chạy được ở mọi máy — nên đó là chỗ đặt những phép kiểm dày đặc, quét
+hết mọi tổ hợp.
 
 Thư mục này kiểm **hành vi của một API đang sống**: 401 khác 403 khác 404, transaction có thật sự
 cuộn lại không, phạm vi dữ liệu có rò sang giáo viên khác không. Viết chúng bằng xUnit thì cần
@@ -34,41 +34,48 @@ cuộn lại không, phạm vi dữ liệu có rò sang giáo viên khác không
 lúc này đổi lại là một tầng hạ tầng phải bảo trì để kiểm đúng những thứ mà mấy chục dòng `curl`
 đã nói rõ.
 
-Mỗi script **tự dựng dữ liệu của chính nó rồi tự dọn** trong `trap EXIT`, kể cả khi hỏng giữa
-chừng. Nhờ vậy chạy lại nhiều lần không tích rác, và không phụ thuộc vào việc database đang có
-sẵn những gì.
+Mỗi script **tự dựng dữ liệu của chính nó** nên không phụ thuộc vào việc database đang có sẵn những
+gì, và dọn trong `trap EXIT` kể cả khi hỏng giữa chừng. Dọn chỉ được phần xoá được: đề đã có bài nộp
+được giữ lại, học sinh chỉ bị khoá chứ không xoá. Riêng `step5` tới `step8` còn để lại lớp thử, vì
+bước dọn gỡ học sinh khỏi lớp và xoá lớp bằng token giáo viên, mà hai thao tác đó chỉ quản trị viên
+được làm.
 
 ## Các bộ hiện có
 
+12 script, tổng cộng 676 phép kiểm.
+
 | Script | Phủ |
 |---|---|
-| `step2-students.sh` | §4.2, §4.3 — học sinh, nhóm lớp, xoay SecurityStamp. 37 phép |
-| `step3-questions.sh` | §4.5 — ngân hàng câu hỏi, bốn hàng rào upload. 38 phép |
-| `step4-exams.sh` | §4.6 — bài kiểm tra và blueprint. 51 phép |
-| `step5-assignments.sh` | §4.6 — giao bài, sinh đề, randomizePerStudent. 49 phép |
-| `step6-attempts.sh` | §4.7 — làm bài, chấm ở server, chống rò đáp án. 101 phép |
-| `step7-results.sh` | §4.8 — kết quả và dashboard, chống rò điểm. 83 phép |
-| `step8-notifications.sh` | §4.2, §7 — thông báo và hộp thư riêng. 35 phép |
-| `step5-assignments.sh` | §4.6 phần giao bài — phạm vi, idempotent, thu hồi. 42 phép |
-| `step6-attempts.sh` | §4.7 — làm bài, lưu nháp, chấm ở server. 85 phép |
+| `step2-students.sh` | học sinh, lớp, xoay SecurityStamp |
+| `step3-questions.sh` | ngân hàng câu hỏi, bốn lớp kiểm khi upload ảnh |
+| `step4-exams.sh` | đề và blueprint, vòng đời đề |
+| `step5-assignments.sh` | giao bài, sinh đề, `randomizePerStudent`, phạm vi, idempotent, thu hồi |
+| `step6-attempts.sh` | làm bài, lưu nháp, chấm ở server, chống rò đáp án, hạn giờ theo đồng hồ server |
+| `step7-results.sh` | kết quả và dashboard, chống rò điểm giữa các vai trò |
+| `step8-notifications.sh` | thông báo, hộp thư riêng từng người |
+| `classes-admin.sh` | lớp do quản trị viên lập, phân công giáo viên, công bố |
+| `flow-class-to-student.sh` | luồng xuyên suốt: lập lớp → phân công giáo viên → giao theo lớp → cả lớp làm được bài → giáo viên thấy kết quả |
+| `per-class-schedule.sh` | một đề, nhiều lớp, mỗi lớp một khung giờ; đáp án giữ lại tới khi mọi lớp hết giờ |
+| `students-deletion.sh` | xoá mềm: lý do bắt buộc, chỉ quản trị viên, chặn đăng nhập, khôi phục |
+| `students-status-guards.sh` | chặn các lối vòng quanh trạng thái tài khoản học sinh (đặt thẳng `deleted`, sửa hay cấp lại mật khẩu cho tài khoản chờ xoá...) |
 
-`lib.sh` là khung dùng chung: `call`, `expect_status`, `expect_json`, `login`, `summary`.
+`lib.sh` là khung dùng chung: `call`, `expect_status`, `expect_json`, `login`, `new_class`, `summary`.
 
-`step6-attempts.sh` chạy lâu hơn hai bộ kia khoảng **30 giây**: nó tạo một đề có cửa sổ mở chỉ 25
-giây rồi chờ hết giờ thật. Không có quãng chờ đó thì không phép nào chứng minh được rằng hạn nộp
-tính bằng đồng hồ server — mà đó lại là quy tắc dễ cài sai nhất của cả §4.7.
+`step6-attempts.sh` có một quãng chờ **30 giây** thật: nó tạo một đề có cửa sổ mở chỉ 25 giây rồi chờ
+hết giờ. `per-class-schedule.sh` cũng chờ tới mốc giờ thật. Không có quãng chờ đó thì không phép nào
+chứng minh được rằng hạn nộp tính bằng đồng hồ server — mà đó lại là quy tắc dễ cài sai nhất.
 
-## Một điều cần biết trước khi chạy
+## Một phép kiểm chập chờn
 
-Từ bước 8, API có một **tiến trình nền tự nộp bài** chạy mỗi 30 giây. Nó có thể chạm vào lượt làm
-bài mà script vừa tạo và làm một phép kiểm hỏng — điều này đã xảy ra đúng một lần trong quá trình
-phát triển và không tái hiện lại được sau đó.
+API có một **tiến trình nền tự nộp bài** chạy mỗi 30 giây. Phép "lưu nháp sau khi hết giờ → 410"
+trong `step6-attempts.sh` hỏng khoảng một nửa số lần chạy trọn bộ: khi tiến trình nền chốt lượt làm
+bài trước gói nháp của script, API trả 409 (lượt không còn ở trạng thái đang làm) thay vì 410.
 
-Muốn chạy hoàn toàn tất định thì tắt nó đi khi khởi động API:
+Muốn chạy tất định thì tắt tiến trình đó khi khởi động API (hoặc dùng profile `http-no-autosubmit`):
 
 ```bash
-AutoSubmit__Enabled=false dotnet run --project src/EduQuiz.Api
+AutoSubmit__Enabled=false dotnet run --project src/Anthill.Api
 ```
 
-Không tắt cũng chạy được — nhưng nếu gặp một phép hỏng lẻ không giải thích nổi ở `step6-attempts.sh`,
-đây là chỗ đáng nghi đầu tiên, chứ không phải backend vừa hỏng.
+Tắt nó không làm hỏng phép nào khác: lượt quá hạn trong `step6-attempts.sh` được chốt ngay ở lời gọi
+lưu nháp, nên phép `autoSubmitted = true` vẫn đạt.

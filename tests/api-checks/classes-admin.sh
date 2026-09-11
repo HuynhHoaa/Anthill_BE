@@ -12,8 +12,8 @@
 
 source "$(dirname "$0")/lib.sh"
 
-ADMIN=$(login "huy.pq@eduquiz.vn" "eduquiz123")
-TEACHER=$(login "an.nv@eduquiz.vn" "eduquiz123")
+ADMIN=$(login "huy.pq@anthill.edu.vn" "anthill123")
+TEACHER=$(login "an.nv@anthill.edu.vn" "anthill123")
 
 STAMP=$(date +%H%M%S)
 GROUP_IDS=()

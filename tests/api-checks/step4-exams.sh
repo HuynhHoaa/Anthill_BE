@@ -9,9 +9,9 @@
 
 source "$(dirname "$0")/lib.sh"
 
-TEACHER=$(login "an.nv@eduquiz.vn" "eduquiz123")
-ADMIN=$(login "huy.pq@eduquiz.vn" "eduquiz123")
-STUDENT=$(login "lan.tt" "eduquiz123")
+TEACHER=$(login "an.nv@anthill.edu.vn" "anthill123")
+ADMIN=$(login "huy.pq@anthill.edu.vn" "anthill123")
+STUDENT=$(login "lan.tt" "anthill123")
 
 CREATED_QUESTIONS=()
 CREATED_EXAMS=()

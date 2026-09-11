@@ -10,8 +10,8 @@
 
 source "$(dirname "$0")/lib.sh"
 
-ADMIN=$(login "huy.pq@eduquiz.vn" "eduquiz123")
-TEACHER=$(login "an.nv@eduquiz.vn" "eduquiz123")
+ADMIN=$(login "huy.pq@anthill.edu.vn" "anthill123")
+TEACHER=$(login "an.nv@anthill.edu.vn" "anthill123")
 
 STAMP=$(date +%H%M%S)
 STUDENT_IDS=()
@@ -28,7 +28,7 @@ fail_fast() { echo "  Dung du lieu nen that bai: $1" >&2; exit 1; }
 
 new_student() {
   local c; c=$(call POST /api/students "$ADMIN" \
-    "{\"fullName\":\"Hoc sinh $1\",\"email\":\"d$1@kiemthu.vn\",\"username\":\"d$1\",\"code\":\"D$1\",\"password\":\"eduquiz123\"}")
+    "{\"fullName\":\"Hoc sinh $1\",\"email\":\"d$1@kiemthu.vn\",\"username\":\"d$1\",\"code\":\"D$1\",\"password\":\"anthill123\"}")
   [[ "$c" != "200" ]] && fail_fast "tao hoc sinh: HTTP $c — $(body)"
   echo "$(json_field id)"
 }
@@ -51,7 +51,7 @@ expect_status "goi khong token → 401" 401 \
   "$(call POST "/api/students/$SID/request-deletion" "" '{"reason":"Khong co token thi khong lam gi duoc"}')"
 
 section "Yeu cau xoa"
-STUDENT_TOKEN=$(login "d${STAMP}a" "eduquiz123")
+STUDENT_TOKEN=$(login "d${STAMP}a" "anthill123")
 expect_status "truoc khi xoa, hoc sinh dang nhap duoc" 200 "$(call GET /api/auth/me "$STUDENT_TOKEN")"
 expect_status "admin yeu cau xoa → 200" 200 \
   "$(call POST "/api/students/$SID/request-deletion" "$ADMIN" '{"reason":"Hoc sinh chuyen truong tu dau hoc ky hai."}')"
@@ -63,7 +63,7 @@ expect_json   "  status = pendingDeletion" status pendingDeletion
 # kem cau chu cu the cho hoc sinh biet phai hoi ai. Cung khuon voi nhanh khoa tai khoan o step2.
 expect_status "  token dang cam chet ngay → 403 kem thong diep ro rang" 403 "$(call GET /api/auth/me "$STUDENT_TOKEN")"
 expect_status "  dang nhap lai → 403" 403 \
-  "$(call POST /api/auth/login "" "{\"username\":\"d${STAMP}a\",\"password\":\"eduquiz123\"}")"
+  "$(call POST /api/auth/login "" "{\"username\":\"d${STAMP}a\",\"password\":\"anthill123\"}")"
 expect_status "yeu cau xoa lan hai → 409" 409 \
   "$(call POST "/api/students/$SID/request-deletion" "$ADMIN" '{"reason":"Lan nay la thao tac trung lap"}')"
 
@@ -71,7 +71,7 @@ section "Khoi phuc trong thoi gian cho"
 expect_status "admin khoi phuc → 200" 200 "$(call POST "/api/students/$SID/restore" "$ADMIN")"
 expect_json   "  status ve active" status active
 expect_status "  dang nhap lai duoc → 200" 200 \
-  "$(call POST /api/auth/login "" "{\"username\":\"d${STAMP}a\",\"password\":\"eduquiz123\"}")"
+  "$(call POST /api/auth/login "" "{\"username\":\"d${STAMP}a\",\"password\":\"anthill123\"}")"
 expect_status "khoi phuc tai khoan dang hoat dong → 409" 409 "$(call POST "/api/students/$SID/restore" "$ADMIN")"
 expect_status "giao vien khoi phuc → 403" 403 "$(call POST "/api/students/$SID/restore" "$TEACHER")"
 

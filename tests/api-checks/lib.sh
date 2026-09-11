@@ -16,7 +16,7 @@ FAILURES=()
 #
 # Phần thân đi qua FILE chứ không qua biến, vì call() gần như luôn được gọi trong $( ) — tức là
 # trong một subshell, nơi mọi phép gán biến đều mất khi subshell kết thúc. Một file thì sống sót.
-BODY_FILE="${BODY_FILE:-$(mktemp -t eduquiz-body.XXXXXX)}"
+BODY_FILE="${BODY_FILE:-$(mktemp -t anthill-body.XXXXXX)}"
 body() { cat "$BODY_FILE" 2>/dev/null; }
 call() {
   local method="$1" path="$2" token="${3:-}" payload="${4:-}"

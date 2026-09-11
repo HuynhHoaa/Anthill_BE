@@ -9,8 +9,8 @@
 
 source "$(dirname "$0")/lib.sh"
 
-TEACHER=$(login "an.nv@eduquiz.vn" "eduquiz123")
-ADMIN=$(login "huy.pq@eduquiz.vn" "eduquiz123")
+TEACHER=$(login "an.nv@anthill.edu.vn" "anthill123")
+ADMIN=$(login "huy.pq@anthill.edu.vn" "anthill123")
 
 STAMP=$(date +%H%M%S)
 # GROUP_IDS chứ không phải GROUPS: bash có sẵn một mảng dựng sẵn tên GROUPS mang numeric group id
@@ -22,7 +22,7 @@ GROUP_ID=""
 
 # Thân response của lời gọi bắt đầu làm bài phải dùng lại qua nhiều lời gọi sau, mà $BODY_FILE thì
 # bị ghi đè mỗi lần call. Chép sang một file riêng.
-SESSION_FILE=$(mktemp -t eduquiz-session.XXXXXX)
+SESSION_FILE=$(mktemp -t anthill-session.XXXXXX)
 
 cleanup() {
   section "Dọn dữ liệu"
@@ -169,7 +169,7 @@ NEW_STUDENT_ID=""
 new_student() {
   local suffix="$1" payload
   payload="{\"fullName\":\"Hoc sinh $suffix\",\"email\":\"hs$suffix@kiemthu.vn\",\"username\":\"hs$suffix\""
-  payload="$payload,\"code\":\"KT$suffix\",\"password\":\"eduquiz123\",\"groupId\":$GROUP_ID}"
+  payload="$payload,\"code\":\"KT$suffix\",\"password\":\"anthill123\",\"groupId\":$GROUP_ID}"
   local c; c=$(call POST /api/students "$ADMIN" "$payload")
   [[ "$c" != "200" ]] && fail_fast "tao hoc sinh $suffix: HTTP $c — $(body)"
   NEW_STUDENT_ID=$(json_field id)
@@ -189,8 +189,8 @@ for pair in easy:1 easy:2 easy:3 easy:4 medium:1 medium:2 medium:3 hard:1 hard:2
   QUESTIONS+=("$(json_field id)")
 done
 
-STUDENT_A=$(login "hs${STAMP}a" "eduquiz123")
-STUDENT_B=$(login "hs${STAMP}b" "eduquiz123")
+STUDENT_A=$(login "hs${STAMP}a" "anthill123")
+STUDENT_B=$(login "hs${STAMP}b" "anthill123")
 
 printf '  nhóm %s · 2 học sinh · %d câu hỏi\n' "$GROUP_ID" "${#QUESTIONS[@]}"
 

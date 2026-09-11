@@ -14,8 +14,8 @@
 
 source "$(dirname "$0")/lib.sh"
 
-ADMIN=$(login "huy.pq@eduquiz.vn" "eduquiz123")
-TEACHER=$(login "an.nv@eduquiz.vn" "eduquiz123")
+ADMIN=$(login "huy.pq@anthill.edu.vn" "anthill123")
+TEACHER=$(login "an.nv@anthill.edu.vn" "anthill123")
 
 # Co ca ngay trong nam: tai khoan cua lan chay truoc con nam lai (khong xoa cung duoc), nen chi gio
 # phut giay thi chay lai dung gio do vao hom khac se dung ma.
@@ -39,7 +39,7 @@ trap cleanup EXIT
 
 fail_fast() { echo "  Dung du lieu nen that bai: $1" >&2; exit 1; }
 
-HELPERS=$(mktemp -t eduquiz-guards.XXXXXX.py)
+HELPERS=$(mktemp -t anthill-guards.XXXXXX.py)
 cat > "$HELPERS" <<'PYHELPER'
 """Phep tinh nho cho bo kiem, tach ra file rieng de khoi long trich dan trong shell."""
 import datetime
@@ -91,7 +91,7 @@ GID=$(json_field id)
 
 new_student() {
   local code
-  code=$(call POST /api/students "$ADMIN" "{\"fullName\":\"HS rao $1\",\"email\":\"g$1@kiemthu.vn\",\"username\":\"g$1\",\"code\":\"G$1\",\"password\":\"eduquiz123\"}")
+  code=$(call POST /api/students "$ADMIN" "{\"fullName\":\"HS rao $1\",\"email\":\"g$1@kiemthu.vn\",\"username\":\"g$1\",\"code\":\"G$1\",\"password\":\"anthill123\"}")
   [[ "$code" != "200" ]] && fail_fast "tao hoc sinh $1: HTTP $code — $(body)"
   NEW_ID=$(json_field id)
 }
@@ -105,7 +105,7 @@ expect_status "PATCH status=deleted → 400" 400 \
 expect_status "PATCH status=pendingDeletion → 400" 400 \
   "$(call PATCH "/api/students/$OTHER/status" "$ADMIN" '{"status":"pendingDeletion"}')"
 expect_status "tao hoc sinh voi status=deleted → 400" 400 \
-  "$(call POST /api/students "$ADMIN" "{\"fullName\":\"X\",\"email\":\"x$STAMP@kiemthu.vn\",\"username\":\"x$STAMP\",\"code\":\"X$STAMP\",\"password\":\"eduquiz123\",\"status\":\"deleted\"}")"
+  "$(call POST /api/students "$ADMIN" "{\"fullName\":\"X\",\"email\":\"x$STAMP@kiemthu.vn\",\"username\":\"x$STAMP\",\"code\":\"X$STAMP\",\"password\":\"anthill123\",\"status\":\"deleted\"}")"
 expect_status "khoa van dung binh thuong → 200" 200 \
   "$(call PATCH "/api/students/$OTHER/status" "$ADMIN" '{"status":"locked"}')"
 expect_json   "  status = locked" status locked
@@ -195,7 +195,7 @@ expect_status "giao bai cho ca lop → 200" 200 \
   "$(call POST "/api/exams/$EID/assignments" "$TEACHER" "{\"studentIds\":[],\"groupIds\":[$CID],\"notify\":false}")"
 expect_json   "  chi giao cho em con hoc" assignedCount 1
 # Em cho xoa hien duoc dem vao skippedLocked. Tach thanh skippedRetired la viec cua nhanh lich
-# rieng, vi nhanh do dang sua chinh doan gom hoc sinh nay (EduQuiz_Status.md, muc 8.2b).
+# rieng, vi nhanh do dang sua chinh doan gom hoc sinh nay.
 expect_json   "  em cho xoa bi bo qua" skippedLocked 1
 
 section "Lop con tai khoan cho xoa thi phai go ra truoc khi xoa"

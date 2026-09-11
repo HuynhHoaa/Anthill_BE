@@ -1,0 +1,104 @@
+using Anthill.Application.Common;
+using Anthill.Application.DTOs.Auth;
+using Anthill.Application.Interfaces.Services;
+using Microsoft.AspNetCore.Authorization;
+using Microsoft.AspNetCore.Mvc;
+
+namespace Anthill.Api.Controllers;
+
+/// <summary>
+/// Sáu endpoint xác thực và hồ sơ cá nhân của §4.1.
+/// </summary>
+/// <remarks>
+/// Controller này <b>không chứa logic nghiệp vụ</b>: mỗi action gọi đúng một phương thức của
+/// <see cref="IAuthService"/> rồi để <see cref="ApiControllerBase.FromResult{TValue}"/> dịch kết quả
+/// sang HTTP. Không endpoint nào nhận <c>userId</c> từ client — danh tính suy từ JWT qua
+/// <c>ICurrentUser</c> (§3 quy tắc ④).
+/// </remarks>
+[Authorize]
+[Route("api/auth")]
+public sealed class AuthController : ApiControllerBase
+{
+    private readonly IAuthService _authService;
+
+    public AuthController(IAuthService authService)
+    {
+        _authService = authService;
+    }
+
+    /// <summary>Đăng nhập bằng email (giáo viên, quản trị viên) hoặc username / mã học sinh.</summary>
+    /// <remarks>
+    /// Endpoint duy nhất không cần token (§1). Trường <c>role</c> trong body chỉ để đối chiếu;
+    /// vai trò thật luôn đọc từ database (§3 quy tắc ⑤).
+    /// </remarks>
+    [AllowAnonymous]
+    [HttpPost("login")]
+    [ProducesResponseType<LoginResponse>(StatusCodes.Status200OK)]
+    [ProducesResponseType<ApiErrorResponse>(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType<ApiErrorResponse>(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType<ApiErrorResponse>(StatusCodes.Status403Forbidden)]
+    public async Task<IActionResult> Login(
+        [FromBody] LoginRequest request,
+        CancellationToken cancellationToken)
+        => FromResult(await _authService.LoginAsync(request, cancellationToken));
+
+    /// <summary>Cấp lại access token từ refresh token.</summary>
+    /// <remarks>
+    /// Chưa dùng được: hệ thống chưa có bảng lưu refresh token nên <c>LoginAsync</c> không phát hành
+    /// chuỗi nào, và cấp access token dựa trên một chuỗi server không kiểm chứng được là tự mở cửa
+    /// sau. Service trả 401 để client đăng nhập lại — đúng thứ frontend đã biết cách xử lý; endpoint
+    /// vẫn đứng sẵn ở đây để bước sau chỉ phải thay phần ruột.
+    /// </remarks>
+    [AllowAnonymous]
+    [HttpPost("refresh")]
+    [ProducesResponseType<LoginResponse>(StatusCodes.Status200OK)]
+    [ProducesResponseType<ApiErrorResponse>(StatusCodes.Status401Unauthorized)]
+    public async Task<IActionResult> Refresh(
+        [FromBody] RefreshTokenRequest request,
+        CancellationToken cancellationToken)
+        => FromResult(await _authService.RefreshAsync(request, cancellationToken));
+
+    /// <summary>Hồ sơ của người đang đăng nhập, suy từ JWT.</summary>
+    [HttpGet("me")]
+    [ProducesResponseType<UserProfileDto>(StatusCodes.Status200OK)]
+    [ProducesResponseType<ApiErrorResponse>(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType<ApiErrorResponse>(StatusCodes.Status403Forbidden)]
+    public async Task<IActionResult> GetMe(CancellationToken cancellationToken)
+        => FromResult(await _authService.GetCurrentProfileAsync(cancellationToken));
+
+    /// <summary>Cập nhật thông tin liên hệ của chính mình.</summary>
+    /// <remarks>Email trùng tài khoản khác trả 409, không phải 400 (§5).</remarks>
+    [HttpPut("me")]
+    [ProducesResponseType<UserProfileDto>(StatusCodes.Status200OK)]
+    [ProducesResponseType<ApiErrorResponse>(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType<ApiErrorResponse>(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType<ApiErrorResponse>(StatusCodes.Status409Conflict)]
+    public async Task<IActionResult> UpdateMe(
+        [FromBody] UpdateProfileRequest request,
+        CancellationToken cancellationToken)
+        => FromResult(await _authService.UpdateCurrentProfileAsync(request, cancellationToken));
+
+    /// <summary>Đổi mật khẩu, có xác minh mật khẩu hiện tại.</summary>
+    /// <remarks>
+    /// Đổi thành công sẽ xoay <c>SecurityStamp</c>, nên <b>mọi</b> token đã cấp trước đó mất hiệu lực
+    /// ngay — kể cả token client đang cầm. Frontend phải điều hướng về màn hình đăng nhập sau khi
+    /// nhận 200 ở đây.
+    /// </remarks>
+    [HttpPost("change-password")]
+    [ProducesResponseType<ApiMessageResponse>(StatusCodes.Status200OK)]
+    [ProducesResponseType<ApiErrorResponse>(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType<ApiErrorResponse>(StatusCodes.Status401Unauthorized)]
+    public async Task<IActionResult> ChangePassword(
+        [FromBody] ChangePasswordRequest request,
+        CancellationToken cancellationToken)
+        => FromResult(
+            await _authService.ChangePasswordAsync(request, cancellationToken),
+            "Đổi mật khẩu thành công. Vui lòng đăng nhập lại.");
+
+    /// <summary>Thu hồi phiên hiện tại.</summary>
+    [HttpPost("logout")]
+    [ProducesResponseType<ApiMessageResponse>(StatusCodes.Status200OK)]
+    [ProducesResponseType<ApiErrorResponse>(StatusCodes.Status401Unauthorized)]
+    public async Task<IActionResult> Logout(CancellationToken cancellationToken)
+        => FromResult(await _authService.LogoutAsync(cancellationToken), "Đã đăng xuất.");
+}
