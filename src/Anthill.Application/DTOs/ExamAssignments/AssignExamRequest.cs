@@ -59,8 +59,8 @@ public sealed record AssignExamRequest
     /// </para>
     /// <para>
     /// Gửi lại một lớp đã giao kèm khung giờ thì khung giờ của những em được giao qua lớp đó mà chưa
-    /// bắt đầu làm bài cũng được đổi theo; em chọn đích danh đã có bài không bị đổi; bỏ trống thì không
-    /// đụng tới khung giờ đã đặt.
+    /// bắt đầu làm bài cũng được đổi theo; em chọn đích danh đã có bài không bị đổi (dời giờ từng em bằng
+    /// <c>PATCH .../assignments/{id}/schedule</c>); bỏ trống thì không đụng tới khung giờ đã đặt.
     /// Cặp giờ này không áp cho các lớp trong <see cref="Classes"/> — mỗi lớp ở đó mang giờ của riêng nó.
     /// </para>
     /// </remarks>

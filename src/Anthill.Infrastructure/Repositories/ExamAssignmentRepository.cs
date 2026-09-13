@@ -232,6 +232,39 @@ public class ExamAssignmentRepository : GenericRepository<ExamAssignment>, IExam
         return assignment;
     }
 
+    /// <inheritdoc />
+    public async Task<ExamAssignment?> LockForRescheduleAsync(
+        int assignmentId,
+        CancellationToken cancellationToken = default)
+    {
+        var rows = await DbSet
+            .FromSql($"""SELECT * FROM "ExamAssignments" WHERE "Id" = {assignmentId} FOR UPDATE""")
+            .ToListAsync(cancellationToken);
+
+        if (rows.Count == 0)
+        {
+            return null;
+        }
+
+        var assignment = rows[0];
+        var entry = Context.Entry(assignment);
+
+        // Mỗi lần nạp là một câu lệnh mới sau khi đã cầm khoá, nên ở READ COMMITTED chúng thấy lượt làm bài
+        // của em vừa commit. Người gọi chưa đọc dòng này trước đó, nên không có bản cũ nào nằm trong change
+        // tracker phải đọc lại.
+        await entry.Reference(a => a.Exam).LoadAsync(cancellationToken);
+        await entry.Reference(a => a.Attempt).LoadAsync(cancellationToken);
+        await entry.Reference(a => a.AssignedViaGroup).LoadAsync(cancellationToken);
+        await entry.Reference(a => a.Student).LoadAsync(cancellationToken);
+
+        if (assignment.Student is not null)
+        {
+            await Context.Entry(assignment.Student).Reference(s => s.Group).LoadAsync(cancellationToken);
+        }
+
+        return assignment;
+    }
+
     /// <summary>
     /// Ba con số dẫn xuất cho nhiều đề trong ba truy vấn cố định, thay cho 3×N lời gọi ở màn hình
     /// danh sách đề. Cố ý tách làm ba lượt <c>GROUP BY</c> đơn giản thay vì một truy vấn có

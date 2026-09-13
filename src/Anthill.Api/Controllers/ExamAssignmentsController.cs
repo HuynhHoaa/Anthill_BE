@@ -8,7 +8,7 @@ using Microsoft.AspNetCore.Mvc;
 namespace Anthill.Api.Controllers;
 
 /// <summary>
-/// Ba endpoint giao bài của §4.6, lồng dưới đường dẫn của đề.
+/// Bốn endpoint giao bài của §4.6, lồng dưới đường dẫn của đề.
 /// </summary>
 /// <remarks>
 /// Tách khỏi <see cref="ExamsController"/> vì đây là một nghiệp vụ khác: kia quản lý <i>cấu hình</i>
@@ -74,6 +74,31 @@ public sealed class ExamAssignmentsController : ApiControllerBase
         [FromBody] AssignExamRequest request,
         CancellationToken cancellationToken)
         => FromResult(await _assignmentService.AssignAsync(examId, request, cancellationToken));
+
+    /// <summary>Dời giờ cho một em được chọn đích danh, hoặc đưa em về lịch chung của đề.</summary>
+    /// <remarks>
+    /// <para>
+    /// Gửi đủ <c>openAt</c> + <c>closeAt</c> để đặt khung giờ riêng, bỏ trống cả hai để em theo lịch chung.
+    /// Trả về dòng theo dõi của em với khung giờ đã phân giải.
+    /// </para>
+    /// <para>
+    /// <b>409</b> khi em được giao qua lớp (sửa giờ của lớp bằng cách gửi lại lớp) hoặc em đã bắt đầu làm bài;
+    /// <b>400</b> khi khung giờ ngắn hơn thời lượng làm bài.
+    /// </para>
+    /// </remarks>
+    [HttpPatch("{assignmentId:int}/schedule")]
+    [Authorize(Roles = SystemRoles.Teacher)]
+    [ProducesResponseType<ExamAssignmentDto>(StatusCodes.Status200OK)]
+    [ProducesResponseType<ApiErrorResponse>(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType<ApiErrorResponse>(StatusCodes.Status403Forbidden)]
+    [ProducesResponseType<ApiErrorResponse>(StatusCodes.Status404NotFound)]
+    [ProducesResponseType<ApiErrorResponse>(StatusCodes.Status409Conflict)]
+    public async Task<IActionResult> Reschedule(
+        int examId,
+        int assignmentId,
+        [FromBody] UpdateAssignmentScheduleRequest request,
+        CancellationToken cancellationToken)
+        => FromResult(await _assignmentService.RescheduleAsync(examId, assignmentId, request, cancellationToken));
 
     /// <summary>Thu hồi một bài đã giao.</summary>
     /// <remarks>

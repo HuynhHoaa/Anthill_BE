@@ -106,6 +106,18 @@ public interface IExamAssignmentRepository : IGenericRepository<ExamAssignment>
     /// </remarks>
     Task<ExamAssignment?> LockForStartAsync(int assignmentId, CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// Khoá ghi (<c>FOR UPDATE</c>) một dòng giao bài để dời giờ, rồi nạp đề, hồ sơ học sinh kèm lớp, lớp đã
+    /// giao qua và lượt làm bài — tất cả đọc <b>sau</b> khi đã cầm khoá.
+    /// </summary>
+    /// <remarks>
+    /// Khoá này xung đột với khoá chia sẻ của <see cref="LockForStartAsync"/>, nên em đang bấm "Vào thi"
+    /// hoặc đã vào trước và lượt làm bài được thấy ở đây, hoặc phải chờ lần dời giờ commit rồi đọc khung
+    /// giờ mới. Không khoá thì lần dời giờ có thể ghi đè khung giờ của một em vừa bắt đầu, và thẻ bài với
+    /// đồng hồ của em nói hai giờ khác nhau. Trả NULL khi dòng không còn. Phải gọi bên trong transaction.
+    /// </remarks>
+    Task<ExamAssignment?> LockForRescheduleAsync(int assignmentId, CancellationToken cancellationToken = default);
+
     /// <summary>Ba con số dẫn xuất cho nhiều đề cùng lúc, tránh N+1 ở màn hình danh sách đề.</summary>
     Task<IReadOnlyDictionary<int, (int Assigned, int Submitted, int Started)>> CountByExamsAsync(
         IEnumerable<int> examIds,

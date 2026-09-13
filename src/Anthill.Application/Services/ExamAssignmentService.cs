@@ -11,7 +11,7 @@ using Anthill.Domain.Enums;
 namespace Anthill.Application.Services;
 
 /// <summary>
-/// Cài đặt <see cref="IExamAssignmentService"/> — ba endpoint giao bài của §4.6.
+/// Cài đặt <see cref="IExamAssignmentService"/> — bốn endpoint giao bài của §4.6.
 /// </summary>
 /// <remarks>
 /// Bốn điều quyết định nằm ở file này:
@@ -369,6 +369,76 @@ public sealed class ExamAssignmentService : IExamAssignmentService
         }
 
         return Result.Success(response);
+    }
+
+    /// <inheritdoc />
+    public async Task<Result<ExamAssignmentDto>> RescheduleAsync(
+        int examId,
+        int assignmentId,
+        UpdateAssignmentScheduleRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+
+        var found = await FindOwnedExamAsync(examId, cancellationToken);
+        if (found.IsFailure)
+        {
+            return Result.Failure<ExamAssignmentDto>(found.Error!, found.ErrorCode);
+        }
+
+        // Cùng thứ tự khoá với giao bài: dòng đề trước, dòng giao bài sau. Khoá dòng đề để lần dời giờ này
+        // xếp hàng với lần sửa đề (có thể đổi thời lượng mà phép kiểm bên dưới đang dựa vào) và với lần gửi
+        // lại lớp; khoá dòng giao bài để xếp hàng với chính em đang bấm "Vào thi".
+        await using var transaction = await _unitOfWork.BeginTransactionAsync(cancellationToken);
+
+        var exam = await _unitOfWork.Exams.LockForEditAsync(examId, cancellationToken);
+        if (exam is null)
+        {
+            return Result.NotFound<ExamAssignmentDto>(ExamNotFoundMessage);
+        }
+
+        var assignment = await _unitOfWork.ExamAssignments.LockForRescheduleAsync(assignmentId, cancellationToken);
+
+        // Kiểm cả examId: thiếu vế này thì đổi số trên thanh địa chỉ là dời được giờ của một đề khác.
+        if (assignment is null || assignment.ExamId != examId)
+        {
+            return Result.NotFound<ExamAssignmentDto>(AssignmentNotFoundMessage);
+        }
+
+        if (assignment.AssignedViaGroupId is not null)
+        {
+            var className = assignment.AssignedViaGroup?.Name ?? "đã giao bài cho em";
+            return Result.Conflict<ExamAssignmentDto>(
+                $"Em này được giao bài qua lớp {className}, nên em làm bài theo khung giờ của cả lớp. "
+                + "Hãy đổi khung giờ của lớp ở trang giao bài.");
+        }
+
+        if (assignment.Attempt is not null)
+        {
+            return Result.Conflict<ExamAssignmentDto>(
+                "Em này đã bắt đầu làm bài nên hạn nộp đã chốt lúc vào thi, không dời giờ được nữa.");
+        }
+
+        if (request.OpenAt is { } openAt && request.CloseAt is { } closeAt
+            && !AssignmentSchedule.FitsDuration(openAt, closeAt, exam.DurationMinutes))
+        {
+            return Result.Failure<ExamAssignmentDto>(
+                $"Đề này cho làm bài {exam.DurationMinutes} phút, dài hơn khung giờ vừa chọn. "
+                + "Hãy nới khung giờ ra, hoặc rút ngắn thời gian làm bài ở phần sửa đề.");
+        }
+
+        var outcome = AssignmentSchedule.Reschedule([assignment], request.OpenAt, request.CloseAt);
+        var now = DateTime.UtcNow;
+
+        if (outcome.Updated > 0)
+        {
+            // Không gọi Update(): dòng đã được theo dõi từ lúc khoá, và Update() sẽ đánh dấu luôn đề, học sinh
+            // đã nạp kèm là Modified rồi ghi đè chúng bằng bản vừa đọc.
+            await _unitOfWork.SaveChangesAsync(cancellationToken);
+            await transaction.CommitAsync(cancellationToken);
+        }
+
+        return Result.Success(assignment.ToDto(now));
     }
 
     /// <inheritdoc />

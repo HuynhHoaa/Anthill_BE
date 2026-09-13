@@ -105,3 +105,38 @@ public class AssignExamRequestValidatorTests
         ErrorsOf(new AssignExamRequest()).Should().Contain(message => message.Contains("ít nhất một học sinh"));
     }
 }
+
+/// <summary>Dời giờ cho một em chọn đích danh: đủ cặp là giờ riêng, trống cả cặp là về lịch đề.</summary>
+public class UpdateAssignmentScheduleRequestValidatorTests
+{
+    private static readonly DateTime Open = new(2026, 9, 15, 1, 0, 0, DateTimeKind.Utc);
+    private static readonly DateTime Close = new(2026, 9, 15, 2, 30, 0, DateTimeKind.Utc);
+
+    private readonly UpdateAssignmentScheduleRequestValidator _validator = new();
+
+    [Fact]
+    public void Du_cap_gio_la_hop_le()
+    {
+        _validator.Validate(new UpdateAssignmentScheduleRequest { OpenAt = Open, CloseAt = Close })
+            .IsValid.Should().BeTrue();
+    }
+
+    [Fact]
+    public void Trong_ca_cap_la_ve_lich_de_va_hop_le()
+    {
+        _validator.Validate(new UpdateAssignmentScheduleRequest()).IsValid.Should().BeTrue();
+    }
+
+    [Fact]
+    public void Nua_cap_bi_tu_choi()
+    {
+        _validator.Validate(new UpdateAssignmentScheduleRequest { CloseAt = Close }).IsValid.Should().BeFalse();
+    }
+
+    [Fact]
+    public void Gio_dong_truoc_gio_mo_bi_tu_choi()
+    {
+        _validator.Validate(new UpdateAssignmentScheduleRequest { OpenAt = Close, CloseAt = Open })
+            .IsValid.Should().BeFalse();
+    }
+}

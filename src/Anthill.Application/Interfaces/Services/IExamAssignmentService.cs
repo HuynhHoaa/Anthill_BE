@@ -32,6 +32,19 @@ public interface IExamAssignmentService
         CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// Dời giờ cho một em được chọn đích danh, hoặc đưa em về lịch chung của đề.
+    /// </summary>
+    /// <remarks>
+    /// Từ chối (409) với em được giao qua lớp — giờ của em đó là giờ của lớp, sửa bằng cách gửi lại lớp — và
+    /// với em đã bắt đầu làm bài, vì hạn nộp đã chốt lúc em vào thi.
+    /// </remarks>
+    Task<Result<ExamAssignmentDto>> RescheduleAsync(
+        int examId,
+        int assignmentId,
+        UpdateAssignmentScheduleRequest request,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Thu hồi một bài đã giao. Bổ sung so với frontend: giao nhầm lớp là chuyện thường, mà
     /// endpoint giao bài lại cố ý idempotent nên không có đường lùi.
     /// </summary>
