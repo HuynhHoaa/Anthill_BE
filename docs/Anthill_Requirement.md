@@ -139,7 +139,7 @@ Quy tắc:
 - Câu hỏi đã nằm trong một đề đã sinh thì không xóa được, chỉ ẩn được.
 - Ẩn câu hỏi chỉ loại câu đó khỏi các lần sinh đề sau; đề đã sinh không thay đổi.
 - Sửa câu hỏi không làm thay đổi điểm của các bài đã chấm, vì bài làm được chấm theo bản chụp của đề đã sinh.
-- Hình ảnh phải được tải lên server trước qua API upload (PNG, JPEG, GIF, WebP); câu hỏi và đáp án chỉ lưu đường dẫn ảnh, server không nhận ảnh nhúng dạng data URI. Giao diện soạn câu hỏi hiện vẫn đọc ảnh thành data URI và chưa gọi API upload, nên chưa lưu được câu hỏi kèm ảnh.
+- Hình ảnh phải được tải lên server trước qua API upload (PNG, JPEG, GIF, WebP); câu hỏi và đáp án chỉ lưu đường dẫn ảnh, server không nhận ảnh nhúng dạng data URI. Ảnh được tải lên ngay khi Teacher chọn; trong lúc ảnh còn đang tải, câu hỏi chưa lưu được.
 
 Mức độ khó của câu hỏi:
 
