@@ -56,6 +56,7 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IExamGeneratorService, ExamGeneratorService>();
         services.AddScoped<IExamAssignmentService, ExamAssignmentService>();
         services.AddScoped<IExamScheduleNotifier, ExamScheduleNotifier>();
+        services.AddScoped<IDeadlineReminderService, DeadlineReminderService>();
         services.AddScoped<IResultService, ResultService>();
         services.AddScoped<IDashboardService, DashboardService>();
         services.AddScoped<IExamAttemptService, ExamAttemptService>();
@@ -249,6 +250,11 @@ public static class ServiceCollectionExtensions
         // sửa theo.
         services.AddOptions<AutoSubmitOptions>().BindConfiguration(AutoSubmitOptions.SectionName);
         services.AddHostedService<AutoSubmitExpiredAttemptsService>();
+
+        // Nhắc học sinh chưa vào thi khi giờ của em sắp hết. Cùng lý do với tiến trình trên: em không mở
+        // ứng dụng thì không có đồng hồ nào chạy trên máy em, mà đúng em đó mới là người cần được nhắc.
+        services.AddOptions<DeadlineReminderOptions>().BindConfiguration(DeadlineReminderOptions.SectionName);
+        services.AddHostedService<NotifyDeadlineSoonService>();
 
         // Xoá dữ liệu cá nhân của tài khoản đã hết thời gian chờ. Quét thưa hơn nhiều so với tiến
         // trình trên vì trễ vài tiếng ở đây không ai nhận ra, mà việc nó làm thì không hoàn tác được.

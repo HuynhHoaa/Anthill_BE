@@ -59,6 +59,21 @@ public class ExamAssignment : BaseEntity
     /// </summary>
     public DateTime? CloseAt { get; set; }
 
+    /// <summary>Mốc đóng mà lời nhắc "sắp hết giờ" đã được gửi cho bản ghi này. NULL khi chưa nhắc lần nào.</summary>
+    /// <remarks>
+    /// <para>
+    /// Lưu chính <b>mốc đóng có hiệu lực</b> chứ không phải một cờ đã-nhắc-hay-chưa, vì hai điều phải cùng
+    /// đúng: em chỉ nhận một lời nhắc cho mỗi khung giờ, và em phải được nhắc lại khi giáo viên dời khung
+    /// sang một giờ khác. Một cờ boolean giữ được vế đầu và đánh mất vế sau — em được gia hạn tới chiều mai
+    /// sẽ không bao giờ nghe thêm gì nữa.
+    /// </para>
+    /// <para>
+    /// Nằm trong database chứ không trong bộ nhớ tiến trình: khởi động lại giữa buổi thi không được biến
+    /// thành một lượt nhắc thứ hai cho cả trường.
+    /// </para>
+    /// </remarks>
+    public DateTime? DeadlineNoticeCloseAt { get; set; }
+
     public Exam Exam { get; set; } = null!;
 
     public User Student { get; set; } = null!;

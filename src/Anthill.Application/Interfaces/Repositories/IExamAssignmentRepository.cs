@@ -123,8 +123,27 @@ public interface IExamAssignmentRepository : IGenericRepository<ExamAssignment>
     /// hoặc đã vào trước và lượt làm bài được thấy ở đây, hoặc phải chờ lần dời giờ commit rồi đọc khung
     /// giờ mới. Không khoá thì lần dời giờ có thể ghi đè khung giờ của một em vừa bắt đầu, và thẻ bài với
     /// đồng hồ của em nói hai giờ khác nhau. Trả NULL khi dòng không còn. Phải gọi bên trong transaction.
+    ///
+    /// Tiến trình nhắc sắp hết giờ cũng dùng hàm này: nó cần đúng những dữ liệu đó, và cần chính khoá đó để
+    /// hai instance cùng quét không gửi hai lời nhắc cho một em.
     /// </remarks>
     Task<ExamAssignment?> LockForRescheduleAsync(int assignmentId, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Những lượt giao có thể tới lúc nhắc "sắp hết giờ": chưa bắt đầu, đề đã xuất bản, tài khoản đang hoạt
+    /// động, và giờ đóng có hiệu lực nằm trong khoảng từ bây giờ tới <paramref name="horizon"/> nữa.
+    /// </summary>
+    /// <remarks>
+    /// Lọc thô ở database rồi để <see cref="Common.DeadlineReminder"/> quyết từng dòng: mốc nhắc phụ thuộc
+    /// thời lượng của từng đề nên không viết gọn được thành một điều kiện SQL, còn kéo cả bảng về để lọc
+    /// trong bộ nhớ thì mỗi phút một lần là quá tốn. Sắp theo giờ đóng gần nhất, để một lượt quét bị trần
+    /// chặn lại vẫn xử lý những em gấp nhất trước.
+    /// </remarks>
+    Task<IReadOnlyList<ExamAssignment>> GetDeadlineReminderCandidatesAsync(
+        DateTime utcNow,
+        TimeSpan horizon,
+        int batchSize,
+        CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Bản ghi giao bài của nhiều đề, gom theo (đề, lớp đã giao qua, cặp giờ thô, đã bắt đầu hay chưa) — nguyên

@@ -124,6 +124,41 @@ public class ExamAssignmentRepository : GenericRepository<ExamAssignment>, IExam
             .OrderBy(a => a.Id)
             .ToListAsync(cancellationToken);
 
+    /// <inheritdoc />
+    public async Task<IReadOnlyList<ExamAssignment>> GetDeadlineReminderCandidatesAsync(
+        DateTime utcNow,
+        TimeSpan horizon,
+        int batchSize,
+        CancellationToken cancellationToken = default)
+    {
+        if (batchSize <= 0)
+        {
+            return [];
+        }
+
+        var until = utcNow.Add(horizon);
+
+        // Vế "giờ đóng có hiệu lực" viết lại bằng SQL, đúng như GetAnswersReleaseAtAsync: có đủ cặp giờ
+        // riêng thì lấy giờ riêng, còn lại lấy giờ của đề. Không có nó thì lớp học buổi chiều bị nhắc theo
+        // lịch chung của cả tuần.
+        return await DbSet
+            .AsNoTracking()
+            .Include(a => a.Exam)
+            .Where(a => a.Attempt == null
+                        && !a.Exam.IsDraft
+                        && a.Student.Status == UserStatus.Active
+                        && (a.OpenAt != null && a.CloseAt != null ? a.OpenAt.Value : a.Exam.OpenAt) <= utcNow
+                        && (a.OpenAt != null && a.CloseAt != null ? a.CloseAt.Value : a.Exam.CloseAt) > utcNow
+                        && (a.OpenAt != null && a.CloseAt != null ? a.CloseAt.Value : a.Exam.CloseAt) <= until
+                        && (a.DeadlineNoticeCloseAt == null
+                            || a.DeadlineNoticeCloseAt
+                               != (a.OpenAt != null && a.CloseAt != null ? a.CloseAt.Value : a.Exam.CloseAt)))
+            .OrderBy(a => a.OpenAt != null && a.CloseAt != null ? a.CloseAt!.Value : a.Exam.CloseAt)
+            .ThenBy(a => a.Id)
+            .Take(batchSize)
+            .ToListAsync(cancellationToken);
+    }
+
     public async Task<IReadOnlyList<int>> GetAssignedStudentIdsAsync(
         int examId,
         IEnumerable<int> studentIds,
