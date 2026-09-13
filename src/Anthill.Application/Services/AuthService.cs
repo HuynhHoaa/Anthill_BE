@@ -33,14 +33,6 @@ public sealed class AuthService : IAuthService
     private const string CurrentPasswordField = "currentPassword";
     private const string NewPasswordField = "newPassword";
 
-    /// <summary>
-    /// Chuỗi băm hợp lệ nhưng không thuộc tài khoản nào, dùng để đốt đúng lượng thời gian mà một lần
-    /// đối chiếu mật khẩu thật tiêu tốn. Không có nó, nhánh "tài khoản không tồn tại" trả lời sau vài
-    /// mili giây còn nhánh "sai mật khẩu" sau vài trăm — dùng chung một thông điệp thì vẫn dò ra được
-    /// tài khoản nào có thật, chỉ bằng đồng hồ bấm giây.
-    /// </summary>
-    private const string TimingDecoyHash = "$2a$11$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad68LJZdL17lhWy";
-
     private readonly IUnitOfWork _unitOfWork;
     private readonly IPasswordHasher _passwordHasher;
     private readonly IJwtTokenGenerator _jwtTokenGenerator;
@@ -420,11 +412,17 @@ public sealed class AuthService : IAuthService
     /// Đối chiếu mật khẩu với một chuỗi băm giả để nhánh "không có tài khoản" tốn xấp xỉ cùng thời
     /// gian với nhánh "sai mật khẩu". Kết quả cố tình bỏ đi.
     /// </summary>
+    /// <remarks>
+    /// Chuỗi băm giả lấy từ chính <see cref="IPasswordHasher"/> nên nó luôn mang đúng work factor mà
+    /// mật khẩu thật đang dùng. Không có nó, nhánh "tài khoản không tồn tại" trả lời sau vài mili giây
+    /// còn nhánh "sai mật khẩu" sau vài trăm — dùng chung một thông điệp thì vẫn dò ra được tài khoản
+    /// nào có thật, chỉ bằng đồng hồ bấm giây.
+    /// </remarks>
     private void BurnPasswordVerificationTime(string password)
     {
         try
         {
-            _ = _passwordHasher.Verify(password, TimingDecoyHash);
+            _ = _passwordHasher.Verify(password, _passwordHasher.TimingDecoyHash);
         }
         catch
         {
