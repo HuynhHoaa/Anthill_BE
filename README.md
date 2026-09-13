@@ -40,12 +40,10 @@ Giới hạn đã biết:
   token. Access token sống 120 phút (480 ở Development), đủ cho một bài 45–60 phút.
 - Ảnh câu hỏi ghi xuống đĩa của máy chạy API (`wwwroot/uploads`); nền tảng nào xoá đĩa khi khởi động
   lại thì cần một cài đặt `IFileService` khác.
-- Kết nối SignalR **đã mở** trước khi tài khoản bị khoá, đưa vào diện xoá hay đổi mật khẩu vẫn nhận sự
-  kiện server đẩy xuống — thông báo của chính tài khoản đó, và tiến độ nộp bài nếu là giáo viên đang
-  theo dõi một đề — cho tới khi client gọi một phương thức hub (lúc đó `SessionRevalidationHubFilter`
-  trả lỗi kèm lý do và cắt kết nối) hoặc tới khi token hết hạn (server tự đóng kết nối nhờ
-  `CloseOnAuthenticationExpiration`). Negotiate, mở kết nối mới và mọi request REST của phiên đó thì bị
-  từ chối ngay. Đóng hẳn khe này cần ghi lại connectionId của từng tài khoản để cắt ngay lúc xoay stamp.
+- Sổ kết nối SignalR (`UserConnectionRegistry`) nằm trong bộ nhớ của một tiến trình, nên lệnh cắt lúc
+  xoay stamp chỉ với tới kết nối do chính tiến trình đó giữ. Chạy nhiều bản API sau bộ cân bằng tải thì
+  phải kèm backplane và phát lệnh cắt qua đó; tới lúc ấy, kết nối ở bản khác vẫn bị chặn ở lời gọi hub
+  kế tiếp và khi token hết hạn.
 - Lưu nháp, nạp lại phiên và vào lại bài (`POST /api/exam-attempts`) sau khi hết giờ đều trả 410, dù
   `AutoSubmitExpiredAttemptsService` có chốt bài trước hay không; 409 chỉ dành cho bài học sinh tự nộp
   trước giờ. Chỗ còn để ngỏ là khung giờ đồng hồ: hai instance API lệch nhau vài mili giây thì một lời gọi
@@ -98,15 +96,22 @@ khoá, đổi mật khẩu, cấp lại mật khẩu và đưa vào diện xoá 
 cố ý không xoay. Sau khi kiểm chữ ký, `OnTokenValidated` tra tài khoản theo khoá chính (chỉ Id, Status,
 SecurityStamp, không theo dõi thay đổi) và từ chối token khi tài khoản không còn, stamp đã đổi, hoặc
 trạng thái không phải Active — áp cho mọi request có token, kể cả negotiate và kết nối SignalR. Trên
-một WebSocket đã mở, bộ lọc hub kiểm lại phiên ở mỗi lời gọi phương thức và cắt kết nối kèm lý do, còn
-kết nối tự đóng khi token hết hạn. Token bị từ chối nhận **401** kèm lý do cụ thể, vì 401 là thứ khiến
+một WebSocket đã mở, mọi kết nối của tài khoản bị cắt ngay lúc stamp xoay, bộ lọc hub kiểm lại phiên ở
+mỗi lời gọi phương thức và cắt kết nối kèm lý do, còn kết nối tự đóng khi token hết hạn. Token bị từ chối nhận **401** kèm lý do cụ thể, vì 401 là thứ khiến
 frontend đưa người dùng về trang đăng nhập; mở khoá không làm token cũ sống lại. Vì vậy 401 chỉ dành cho
 phiên đã chết: gõ sai mật khẩu hiện tại khi đổi mật khẩu là 400 gắn vào ô `currentPassword`. Riêng
 `GET/PUT /api/auth/me` và `change-password` giữ hợp đồng cũ: tài khoản bị khoá hay chờ xoá nhận 403 kèm
 câu nói rõ phải liên hệ ai. Đổi lại là thêm một truy vấn theo khoá chính trên mỗi request có token và
 mỗi lời gọi hub; cố ý không cache, vì cache có hạn là mở lại đúng khoảng trễ này. (`SessionValidation`,
 `AccountSessionReader`, `ServiceCollectionExtensions.OnTokenValidated`, `ReportsBlockedAccountAttribute`,
-`SessionRevalidationHubFilter`)
+`SessionRevalidationHubFilter`, `UserConnectionRegistry`)
+
+**Kết nối realtime chết ngay khi phiên chết.** Sự kiện server đẩy xuống không đi qua phương thức hub nào,
+nên trước đây một WebSocket mở trước lúc khoá vẫn nhận thông báo cá nhân — và cả tiến độ nộp bài nếu là
+giáo viên đang theo dõi một đề — cho tới lần gọi hub kế tiếp hoặc tới khi token hết hạn (tối đa 120 phút).
+Hub ghi từng kết nối vào một sổ theo tài khoản, và mọi lối xoay `SecurityStamp` gọi cắt ngay sau khi
+transaction commit (cắt trước commit thì client nối lại kịp đọc stamp cũ). Sổ nằm trong bộ nhớ một tiến
+trình — giới hạn ghi ở đầu file lớp đó. (`UserConnectionRegistry`, `IUserConnectionCloser`)
 
 **Lưu một entity chỉ ghi những cột thật sự đổi.** `GenericRepository.Update` không gọi `DbSet.Update`
 trên entity DbContext đang theo dõi: hàm đó đánh dấu mọi cột là Modified, tức là ghi lại nguyên bản đã

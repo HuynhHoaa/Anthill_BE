@@ -1,5 +1,6 @@
 using Anthill.Application.Common;
 using Anthill.Application.DTOs.Auth;
+using Anthill.Application.Interfaces.Realtime;
 using Anthill.Application.Interfaces.Security;
 using Anthill.Application.Interfaces.Services;
 using Anthill.Application.Interfaces.UnitOfWork;
@@ -44,17 +45,20 @@ public sealed class AuthService : IAuthService
     private readonly IPasswordHasher _passwordHasher;
     private readonly IJwtTokenGenerator _jwtTokenGenerator;
     private readonly ICurrentUser _currentUser;
+    private readonly IUserConnectionCloser _connections;
 
     public AuthService(
         IUnitOfWork unitOfWork,
         IPasswordHasher passwordHasher,
         IJwtTokenGenerator jwtTokenGenerator,
-        ICurrentUser currentUser)
+        ICurrentUser currentUser,
+        IUserConnectionCloser connections)
     {
         _unitOfWork = unitOfWork;
         _passwordHasher = passwordHasher;
         _jwtTokenGenerator = jwtTokenGenerator;
         _currentUser = currentUser;
+        _connections = connections;
     }
 
     /// <inheritdoc />
@@ -295,6 +299,10 @@ public sealed class AuthService : IAuthService
         _unitOfWork.Users.Update(account);
         await _unitOfWork.SaveChangesAsync(cancellationToken);
         await transaction.CommitAsync(cancellationToken);
+
+        // Sau commit, không phải trước: xem IUserConnectionCloser. Kết nối ở chính tab vừa đổi mật khẩu
+        // cũng bị cắt — nó đang cầm token vừa chết, như mọi tab khác.
+        _connections.CloseConnectionsOf(account.Id);
 
         return Result.Success();
     }

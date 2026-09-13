@@ -1,5 +1,6 @@
 using Anthill.Application.Common;
 using Anthill.Application.DTOs.Students;
+using Anthill.Application.Interfaces.Realtime;
 using Anthill.Application.Interfaces.Security;
 using Anthill.Application.Interfaces.Services;
 using Anthill.Application.Interfaces.UnitOfWork;
@@ -42,14 +43,19 @@ public sealed class StudentService : IStudentService
     /// </summary>
     private readonly ICurrentUser _currentUser;
 
+    /// <summary>Cắt kết nối realtime đang mở mỗi khi một lối ghi ở đây xoay <c>SecurityStamp</c>.</summary>
+    private readonly IUserConnectionCloser _connections;
+
     public StudentService(
         IUnitOfWork unitOfWork,
         IPasswordHasher passwordHasher,
-        ICurrentUser currentUser)
+        ICurrentUser currentUser,
+        IUserConnectionCloser connections)
     {
         _unitOfWork = unitOfWork;
         _passwordHasher = passwordHasher;
         _currentUser = currentUser;
+        _connections = connections;
     }
 
     /// <inheritdoc />
@@ -214,6 +220,7 @@ public sealed class StudentService : IStudentService
         }
 
         var newStatus = ParseStatusOrDefault(request.Status, account.Status);
+        var stampBefore = account.SecurityStamp;
 
         account.FullName = fields.FullName;
         account.Email = fields.Email;
@@ -229,6 +236,7 @@ public sealed class StudentService : IStudentService
         _unitOfWork.Users.Update(account);
         await _unitOfWork.SaveChangesAsync(cancellationToken);
         await transaction.CommitAsync(cancellationToken);
+        CloseConnectionsIfStampRotated(account, stampBefore);
 
         return Result.Success(await BuildDtoAsync(
             account,
@@ -259,12 +267,14 @@ public sealed class StudentService : IStudentService
 
         if (account.Status != status)
         {
+            var stampBefore = account.SecurityStamp;
             ApplyStatus(account, status);
             account.UpdatedAt = DateTime.UtcNow;
 
             _unitOfWork.Users.Update(account);
             await _unitOfWork.SaveChangesAsync(cancellationToken);
             await transaction.CommitAsync(cancellationToken);
+            CloseConnectionsIfStampRotated(account, stampBefore);
         }
 
         // Đặt lại đúng trạng thái đang có không phải lỗi: giáo viên bấm nhầm hai lần, hoặc hai tab
@@ -318,6 +328,7 @@ public sealed class StudentService : IStudentService
         _unitOfWork.Users.Update(account);
         await _unitOfWork.SaveChangesAsync(cancellationToken);
         await transaction.CommitAsync(cancellationToken);
+        _connections.CloseConnectionsOf(account.Id);
 
         return Result.Success(await BuildDtoAsync(
             account,
@@ -401,7 +412,7 @@ public sealed class StudentService : IStudentService
             return Result.Success(0);
         }
 
-        var purged = 0;
+        var purged = new List<int>(due.Count);
 
         foreach (var account in due)
         {
@@ -415,13 +426,20 @@ public sealed class StudentService : IStudentService
 
             StudentAnonymizer.Anonymize(account, now);
             _unitOfWork.Users.Update(account);
-            purged++;
+            purged.Add(account.Id);
         }
 
         await _unitOfWork.SaveChangesAsync(cancellationToken);
         await transaction.CommitAsync(cancellationToken);
 
-        return Result.Success(purged);
+        // Tài khoản chờ xoá đã bị cắt kết nối từ lúc được đưa vào diện xoá, nên thường không còn gì để
+        // cắt. Vẫn gọi: ẩn danh hoá cũng xoay stamp, và mọi lối xoay stamp đi theo cùng một quy tắc.
+        foreach (var userId in purged)
+        {
+            _connections.CloseConnectionsOf(userId);
+        }
+
+        return Result.Success(purged.Count);
     }
 
     /// <inheritdoc />
@@ -458,6 +476,7 @@ public sealed class StudentService : IStudentService
         _unitOfWork.Users.Update(account);
         await _unitOfWork.SaveChangesAsync(cancellationToken);
         await transaction.CommitAsync(cancellationToken);
+        _connections.CloseConnectionsOf(account.Id);
 
         return Result.Success(new ResetPasswordResponse
         {
@@ -585,6 +604,22 @@ public sealed class StudentService : IStudentService
         if (status == UserStatus.Locked)
         {
             account.SecurityStamp = NewSecurityStamp();
+        }
+    }
+
+    /// <summary>
+    /// Cắt kết nối realtime của tài khoản nếu lần ghi vừa commit đã xoay stamp. Gọi sau commit, xem
+    /// <see cref="IUserConnectionCloser"/>.
+    /// </summary>
+    /// <remarks>
+    /// So stamp thay vì so trạng thái: quy tắc "khi nào xoay" nằm ở <see cref="ApplyStatus"/>, và hỏi thẳng
+    /// kết quả của nó thì hai nơi không thể hiểu khác nhau.
+    /// </remarks>
+    private void CloseConnectionsIfStampRotated(User account, string stampBefore)
+    {
+        if (!string.Equals(account.SecurityStamp, stampBefore, StringComparison.Ordinal))
+        {
+            _connections.CloseConnectionsOf(account.Id);
         }
     }
 

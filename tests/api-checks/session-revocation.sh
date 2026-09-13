@@ -21,8 +21,9 @@
 #     SecurityStamp, PasswordHash) va lam lenh khoa bien mat. Chay tuan tu khong bao gio thay loi nay.
 #     Tu khi bang Users co concurrency token (xmin), PUT ghi tren ban da cu nhan 409 thay vi ghi de;
 #     con lenh khoa va cap lai mat khau giu khoa dong nen luon 200, du bi ban PUT lien tuc.
-#   - hub: mot WebSocket mo TRUOC luc khoa van goi duoc phuong thuc hub, vi OnTokenValidated chi chay
-#     tren request HTTP. Bo loc hub phai tu choi va cat ket noi o loi goi dau tien sau khi khoa.
+#   - hub: mot WebSocket mo TRUOC luc khoa van song va van nhan thong bao, vi OnTokenValidated chi chay
+#     tren request HTTP. Khoa, cap lai mat khau, tu doi mat khau va dua vao dien xoa deu phai cat ket noi
+#     do ngay, khong cho client goi hub; ket noi cua tai khoan khac thi khong bi dung toi.
 
 source "$(dirname "$0")/lib.sh"
 
@@ -285,16 +286,23 @@ done
 # thay 409 nao nghia la concurrency token khong con tren bang Users va ben ghi sau lai am tham thang.
 expect_status "concurrency token: co PUT /me ghi tren ban cu bi tu choi 409" co "$(has_any "$RACE_CONFLICTS")"
 
-section "Hub: ket noi mo truoc luc khoa bi cat o loi goi ke tiep"
-# curl khong noi WebSocket, nen dung mot client toi gian viet bang python (thu vien chuan). Mot
-# tien trinh lam tron: mo ket noi, goi GetServerTime, de quan tri vien khoa, goi lai tren CHINH ket
-# noi do, roi thu goi lan nua de xem ket noi con song khong.
-TH=$(login "$USERNAME" "$CURRENT_PW")
-HUB_OUT=$(python - "$HOST" "$TH" "$ADMIN" "$SID" <<'PY'
+section "Hub: ket noi dang mo bi cat ngay khi tai khoan bi thu hoi"
+# curl khong noi WebSocket, nen dung mot client toi gian viet bang python (thu vien chuan). Mot tien
+# trinh lam tron: mo ket noi bang token $1, goi GetServerTime, thuc hien mot thao tac HTTP ($2 $3 bang
+# token $4, than $5) roi KHONG goi gi nua — chi ngoi cho toi 5 giay xem server co tu dong ket noi khong.
+# Truoc day ket noi do song tiep va van nhan thong bao ca nhan cho toi lan goi hub ke tiep (luc do bo
+# loc hub moi cat) hoac toi khi token het han.
+hub_watch() {
+  python - "$HOST" "$@" <<'PY'
 import base64, json, os, socket, struct, sys, urllib.error, urllib.parse, urllib.request
 
 sys.stdout.reconfigure(encoding="utf-8")
-host, token, admin, student_id = sys.argv[1:5]
+host, token, method, action_path, action_bearer, action_body = sys.argv[1:7]
+
+# Duong dan truyen vao khong mang dau gach cheo dau: Git Bash doi moi doi so bat dau bang "/" thanh
+# duong dan Windows truoc khi python nhin thay no, va "/api/students/1/status" toi noi thanh
+# "C:/Program Files/Git/api/students/1/status". Gan lai dau gach cheo o day.
+action_path = "/" + action_path.lstrip("/")
 url = urllib.parse.urlparse(host)
 
 def http(method, path, bearer, body=None):
@@ -397,34 +405,64 @@ if handshake.get("error"):
 reply = invoke("1")
 print("TRUOC:" + ("loi" if "error" in reply else "ok"))
 
-code, _ = http("PATCH", "/api/students/%s/status" % student_id, admin, {"status": "locked"})
-print("KHOA:%d" % code)
+code, raw = http(method, action_path, action_bearer, json.loads(action_body) if action_body else None)
+print("HANH_DONG:%d" % code)
+print("BODY:" + raw.decode(errors="replace").replace("\n", " "))
 
+# Chi doc, khong goi phuong thuc nao: ping (type 6) bo qua, close (type 7) hay dong socket la bi cat.
+sock.settimeout(5)
 try:
-    reply = invoke("2")
-    print("SAU:" + ("loi" if "error" in reply else "ok"))
-    if "error" in reply:
-        print("LOI:" + reply["error"])
+    while True:
+        message = next_message()
+        if message.get("type") == 7:
+            raise EOFError
+except socket.timeout:
+    print("SAU:mo")
+    sock.settimeout(10)
+    try:
+        print("GOI_LAI:" + ("loi" if "error" in invoke("2") else "ok"))
+    except (EOFError, OSError):
+        print("GOI_LAI:dong")
 except (EOFError, OSError):
     print("SAU:dong")
-
-try:
-    sock.settimeout(5)
-    invoke("3")
-    print("KET_NOI:mo")
-except socket.timeout:
-    print("KET_NOI:im")
-except (EOFError, OSError):
-    print("KET_NOI:dong")
 PY
-)
+}
 hub_line() { printf '%s\n' "$HUB_OUT" | sed -n "s/^$1://p" | head -1; }
-expect_status "ket noi mo khi con hop le: GetServerTime → ok" ok "$(hub_line TRUOC)"
-expect_status "quan tri vien khoa trong luc ket noi dang mo → 200" 200 "$(hub_line KHOA)"
-expect_status "cung ket noi do, goi tiep → bi tu choi" loi "$(hub_line SAU)"
-LOCK_REASON=$(hub_line LOI)
-expect_status "  loi noi ro la bi khoa" co "$([[ "$LOCK_REASON" == *"$LOCKED_MSG"* ]] && echo co || echo "khong: $LOCK_REASON")"
-expect_status "  server cat ket noi, khong goi them duoc" dong "$(hub_line KET_NOI)"
-expect_status "token cua ket noi do: negotiate lai → 401" 401 "$(negotiate "$TH")"
+
+# $1 nhan, $2 token cua ket noi; phan con lai la thao tac thu hoi truyen cho hub_watch.
+expect_hub_closed() {
+  local label="$1" token="$2"; shift 2
+  HUB_OUT=$(hub_watch "$token" "$@")
+  expect_status "$label: ket noi mo khi con hop le → ok" ok "$(hub_line TRUOC)"
+  expect_status "$label: thao tac thu hoi → 200" 200 "$(hub_line HANH_DONG)"
+  expect_status "$label: server cat ket noi ngay, khong can goi hub" dong "$(hub_line SAU)"
+  expect_status "$label: token cua ket noi do: negotiate lai → 401" 401 "$(negotiate "$token")"
+}
+
+TH=$(login "$USERNAME" "$CURRENT_PW")
+expect_hub_closed "khoa" "$TH" PATCH "api/students/$SID/status" "$ADMIN" '{"status":"locked"}'
+expect_status "  mo khoa cho buoc sau → 200" 200 "$(call PATCH "/api/students/$SID/status" "$ADMIN" '{"status":"active"}')"
+
+TH=$(login "$USERNAME" "$CURRENT_PW")
+expect_hub_closed "cap lai mat khau" "$TH" POST "api/students/$SID/reset-password" "$ADMIN" ""
+CURRENT_PW=$(hub_line BODY | python -c 'import json,sys; print(json.load(sys.stdin)["password"])')
+
+TH=$(login "$USERNAME" "$CURRENT_PW")
+HUB_PW="Hub$STAMP"
+expect_hub_closed "tu doi mat khau" "$TH" POST api/auth/change-password "$TH" \
+  "{\"currentPassword\":\"$CURRENT_PW\",\"newPassword\":\"$HUB_PW\"}"
+CURRENT_PW="$HUB_PW"
+
+TH=$(login "$USERNAME" "$CURRENT_PW")
+expect_hub_closed "dua vao dien xoa" "$TH" POST "api/students/$SID/request-deletion" "$ADMIN" \
+  '{"reason":"Kiem tra ket noi hub bi cat khi xoa."}'
+expect_status "  khoi phuc cho buoc sau → 200" 200 "$(call POST "/api/students/$SID/restore" "$ADMIN")"
+
+# Doi chung: cat theo tai khoan, khong cat bua. Ket noi cua giao vien van song khi hoc sinh bi khoa.
+HUB_OUT=$(hub_watch "$TEACHER" PATCH "api/students/$SID/status" "$ADMIN" '{"status":"locked"}')
+expect_status "giao vien: ket noi mo → ok" ok "$(hub_line TRUOC)"
+expect_status "giao vien: hoc sinh bi khoa → 200" 200 "$(hub_line HANH_DONG)"
+expect_status "giao vien: ket noi van mo sau 5 giay" mo "$(hub_line SAU)"
+expect_status "giao vien: van goi hub duoc" ok "$(hub_line GOI_LAI)"
 
 summary
