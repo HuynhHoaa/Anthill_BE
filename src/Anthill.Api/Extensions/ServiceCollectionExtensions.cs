@@ -55,6 +55,7 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IExamService, ExamService>();
         services.AddScoped<IExamGeneratorService, ExamGeneratorService>();
         services.AddScoped<IExamAssignmentService, ExamAssignmentService>();
+        services.AddScoped<IExamScheduleNotifier, ExamScheduleNotifier>();
         services.AddScoped<IResultService, ResultService>();
         services.AddScoped<IDashboardService, DashboardService>();
         services.AddScoped<IExamAttemptService, ExamAttemptService>();

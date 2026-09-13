@@ -51,6 +51,13 @@ public interface IExamAssignmentRepository : IGenericRepository<ExamAssignment>
     /// <remarks>Xem <c>ResultMappingExtensions.ResolveAnswerVisibility</c>.</remarks>
     Task<DateTime?> GetAnswersReleaseAtAsync(int examId, CancellationToken cancellationToken = default);
 
+    /// <summary>Các bản ghi của đề mà em chưa bắt đầu làm bài, không theo dõi thay đổi.</summary>
+    /// <remarks>
+    /// Đúng những em một lần sửa lịch hay thời lượng còn tác động tới — em đã bắt đầu giữ hạn nộp đã chốt.
+    /// Gọi trong transaction đang khoá các dòng giao bài để danh sách không lệch với lần sửa.
+    /// </remarks>
+    Task<IReadOnlyList<ExamAssignment>> GetNotStartedByExamAsync(int examId, CancellationToken cancellationToken = default);
+
     /// <summary>Học sinh nào trong tập này đã được giao rồi — để khử trùng lặp trước khi ghi.</summary>
     Task<IReadOnlyList<int>> GetAssignedStudentIdsAsync(
         int examId,

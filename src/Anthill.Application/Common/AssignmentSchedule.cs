@@ -206,6 +206,67 @@ public static class AssignmentSchedule
         return beforeOpen.ToUtc() != openAt.ToUtc() || beforeClose.ToUtc() != closeAt.ToUtc();
     }
 
+    /// <summary>Ảnh chụp lịch chung và thời lượng của đề trước một lần sửa.</summary>
+    public readonly record struct ExamTiming(DateTime OpenAt, DateTime CloseAt, int DurationMinutes)
+    {
+        public static ExamTiming Of(Exam exam)
+        {
+            ArgumentNullException.ThrowIfNull(exam);
+            return new ExamTiming(exam.OpenAt.ToUtc(), exam.CloseAt.ToUtc(), exam.DurationMinutes);
+        }
+    }
+
+    /// <summary>Một lần sửa đề đổi gì với một em chưa bắt đầu: khung giờ, thời lượng, hay không gì cả.</summary>
+    /// <param name="assignment">Bản ghi của em — người gọi chỉ đưa vào em CHƯA bắt đầu làm bài.</param>
+    /// <param name="before">Lịch chung và thời lượng trước lần sửa.</param>
+    /// <param name="after">Đề sau lần sửa.</param>
+    /// <param name="now">Giờ server của lần sửa, để bỏ qua những em mà giờ làm bài đã qua từ trước.</param>
+    /// <remarks>
+    /// Em có giờ riêng không bị lịch chung kéo theo, nên đổi lịch chung không phải chuyện của em — nhưng đổi
+    /// thời lượng thì em nào cũng làm bài theo con số mới. Đề đang là nháp thì không em nào vào được, nên
+    /// không có gì để báo. Em đã bắt đầu không nằm ở đây: hạn nộp của em đã chốt lúc vào thi.
+    /// </remarks>
+    public static (bool WindowChanged, bool DurationChanged) ChangesFromExamEdit(
+        ExamAssignment assignment,
+        ExamTiming before,
+        Exam after,
+        DateTime now)
+    {
+        ArgumentNullException.ThrowIfNull(assignment);
+        ArgumentNullException.ThrowIfNull(after);
+
+        if (after.IsDraft)
+        {
+            return (false, false);
+        }
+
+        var hasOwnWindow = HasOverride(assignment);
+        var (_, closeAt) = Resolve(assignment, after);
+        var closeBefore = hasOwnWindow ? closeAt : before.CloseAt;
+
+        var durationChanged = before.DurationMinutes != after.DurationMinutes
+                              && StillMatters(closeBefore, closeAt, now);
+
+        var windowChanged = !hasOwnWindow
+                            && (before.OpenAt.ToUtc() != after.OpenAt.ToUtc()
+                                || before.CloseAt.ToUtc() != after.CloseAt.ToUtc())
+                            && StillMatters(closeBefore, closeAt, now);
+
+        return (windowChanged, durationChanged);
+    }
+
+    /// <summary>Lần đổi này còn thay đổi được điều gì cho em, hay cả hai khung giờ đều đã qua.</summary>
+    /// <remarks>
+    /// Sửa lịch một đề của tháng trước — vì gõ nhầm, hay để dọn dẹp — không được đánh thức thông báo cho cả
+    /// trăm em mà giờ làm bài đã hết từ lâu và vẫn hết. Chỉ cần một trong hai mốc đóng còn ở phía trước thì
+    /// lần đổi có hệ quả thật: hoặc em vừa mất giờ làm bài, hoặc em vừa được mở lại.
+    /// </remarks>
+    public static bool StillMatters(DateTime previousCloseAt, DateTime newCloseAt, DateTime now)
+    {
+        var moment = now.ToUtc();
+        return previousCloseAt.ToUtc() > moment || newCloseAt.ToUtc() > moment;
+    }
+
     /// <summary>Cặp giờ thô cho một bản ghi giao bài sắp được tạo.</summary>
     /// <param name="viaGroupId">Lớp mà em được giao qua; NULL khi giáo viên chọn đích danh em.</param>
     /// <param name="requestWindow">Cặp giờ chung của request (NULL cả hai = không kèm giờ).</param>

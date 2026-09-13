@@ -44,17 +44,20 @@ public sealed class ExamAssignmentService : IExamAssignmentService
     private readonly ICurrentUser _currentUser;
     private readonly IExamGeneratorService _generator;
     private readonly IRealtimeNotificationService _realtime;
+    private readonly IExamScheduleNotifier _scheduleNotifier;
 
     public ExamAssignmentService(
         IUnitOfWork unitOfWork,
         ICurrentUser currentUser,
         IExamGeneratorService generator,
-        IRealtimeNotificationService realtime)
+        IRealtimeNotificationService realtime,
+        IExamScheduleNotifier scheduleNotifier)
     {
         _unitOfWork = unitOfWork;
         _currentUser = currentUser;
         _generator = generator;
         _realtime = realtime;
+        _scheduleNotifier = scheduleNotifier;
     }
 
     private int CurrentUserId => _currentUser.RequireUserId();
@@ -197,6 +200,15 @@ public sealed class ExamAssignmentService : IExamAssignmentService
         // Không gọi Update() trên các bản ghi này: DbSet.Update đi hết đồ thị và đánh dấu luôn Attempt đã
         // Include là Modified — ghi đè một bản cũ của lượt đang làm lên những lần lưu nháp đồng thời.
         // Theo dõi thay đổi tự nhận ra OpenAt/CloseAt đã đổi.
+        // Khoá các dòng giao bài trước khi đọc chúng, cùng thứ tự khoá với lần sửa đề (dòng đề trước, dòng
+        // giao bài sau). Em bấm "Vào thi" phải cầm khoá chia sẻ trên dòng của mình, nên hoặc em vào trước và
+        // lần gửi lại này thấy em đã bắt đầu, hoặc em phải chờ. Không khoá thì một em vừa vào thi bị dời
+        // khung giờ dưới tay — và nhận một thông báo "giờ đã đổi" trong lúc đang làm bài.
+        if (targets.OwnedGroups.Count > 0)
+        {
+            await _unitOfWork.ExamAssignments.LockByExamAsync(exam.Id, cancellationToken);
+        }
+
         IReadOnlyList<ExamAssignment> viaGroupRows = targets.OwnedGroups.Count == 0
             ? []
             : await _unitOfWork.ExamAssignments.GetByExamViaGroupsAsync(exam.Id, targets.OwnedGroupIds, cancellationToken);
@@ -267,13 +279,23 @@ public sealed class ExamAssignmentService : IExamAssignmentService
         {
             exam.RandomizePerStudent = requestedRandomize!.Value;
             exam.UpdatedAt = now;
-            _unitOfWork.Exams.Update(exam);
+
+            // Không gọi Exams.Update(exam): đề đang được theo dõi từ lúc khoá, và các dòng giao bài vừa khoá
+            // đã được EF gắn vào exam.Assignments. Update() đi hết đồ thị đó và đánh dấu cả những dòng — kể
+            // cả lượt làm bài đã nạp kèm — là đã sửa, tức ghi đè một bản cũ lên những lần lưu nháp đồng thời.
         }
+
+        // Những em vừa bị dời giờ phải được báo, kể cả khi giáo viên không tích "gửi thông báo": ô tích đó
+        // nói về việc giao bài mới, còn đây là giờ thi của em vừa dịch đi — im lặng ở đây là em đến muộn.
+        var scheduleNotices = await StageScheduleNoticesAsync(exam, rescheduled.Changes, now, cancellationToken);
 
         if (newcomers.Count == 0)
         {
             await _unitOfWork.SaveChangesAsync(cancellationToken);
+            await _scheduleNotifier.CollectUnreadCountsAsync(scheduleNotices, cancellationToken);
             await transaction.CommitAsync(cancellationToken);
+
+            await _scheduleNotifier.PublishAsync(scheduleNotices, cancellationToken);
             return Result.Success(response);
         }
 
@@ -358,6 +380,8 @@ public sealed class ExamAssignmentService : IExamAssignmentService
             }
         }
 
+        await _scheduleNotifier.CollectUnreadCountsAsync(scheduleNotices, cancellationToken);
+
         await transaction.CommitAsync(cancellationToken);
 
         // SAU khi commit, không sớm hơn một dòng nào. Bắn trước commit thì có lúc học sinh nhận
@@ -368,7 +392,33 @@ public sealed class ExamAssignmentService : IExamAssignmentService
             await PublishAssignedAsync(exam, assignments, teacherName, unreadCounts, cancellationToken);
         }
 
+        await _scheduleNotifier.PublishAsync(scheduleNotices, cancellationToken);
+
         return Result.Success(response);
+    }
+
+    /// <summary>Thêm thông báo đổi giờ cho những lượt giao vừa bị dời sang khung khác.</summary>
+    /// <remarks>
+    /// Gọi trong transaction đang khoá các dòng giao bài, sau khi khung giờ mới đã được gán trong bộ nhớ:
+    /// <see cref="ScheduleNotice.FromReschedule"/> so khung giờ có hiệu lực trước và sau, nên đặt giờ riêng
+    /// trùng khít lịch đề không sinh thông báo nào.
+    /// </remarks>
+    private async Task<ScheduleNoticeBatch> StageScheduleNoticesAsync(
+        Exam exam,
+        IReadOnlyList<AssignmentSchedule.RescheduleChange> changes,
+        DateTime now,
+        CancellationToken cancellationToken)
+    {
+        if (changes.Count == 0)
+        {
+            return ScheduleNoticeBatch.Empty;
+        }
+
+        var notices = changes
+            .Select(change => ScheduleNotice.FromReschedule(change, exam, now))
+            .ToList();
+
+        return await _scheduleNotifier.StageExamUpdatedAsync(exam, notices, now, cancellationToken);
     }
 
     /// <inheritdoc />
@@ -432,10 +482,15 @@ public sealed class ExamAssignmentService : IExamAssignmentService
 
         if (outcome.Updated > 0)
         {
+            var notices = await StageScheduleNoticesAsync(exam, outcome.Changes, now, cancellationToken);
+
             // Không gọi Update(): dòng đã được theo dõi từ lúc khoá, và Update() sẽ đánh dấu luôn đề, học sinh
             // đã nạp kèm là Modified rồi ghi đè chúng bằng bản vừa đọc.
             await _unitOfWork.SaveChangesAsync(cancellationToken);
+            await _scheduleNotifier.CollectUnreadCountsAsync(notices, cancellationToken);
             await transaction.CommitAsync(cancellationToken);
+
+            await _scheduleNotifier.PublishAsync(notices, cancellationToken);
         }
 
         return Result.Success(assignment.ToDto(now));

@@ -115,6 +115,15 @@ public class ExamAssignmentRepository : GenericRepository<ExamAssignment>, IExam
             .Include(a => a.Paper)
             .FirstOrDefaultAsync(a => a.Id == assignmentId, cancellationToken);
 
+    public async Task<IReadOnlyList<ExamAssignment>> GetNotStartedByExamAsync(
+        int examId,
+        CancellationToken cancellationToken = default) =>
+        await DbSet
+            .AsNoTracking()
+            .Where(a => a.ExamId == examId && a.Attempt == null)
+            .OrderBy(a => a.Id)
+            .ToListAsync(cancellationToken);
+
     public async Task<IReadOnlyList<int>> GetAssignedStudentIdsAsync(
         int examId,
         IEnumerable<int> studentIds,

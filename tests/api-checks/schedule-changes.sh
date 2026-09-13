@@ -14,6 +14,7 @@
 #      dau bi tu choi 409; khung qua ngan 400; quan tri vien 403.
 #   5. Trang de cua giao vien mang khung gio THAT cua tung lop (assignmentWindows), voi trang thai mo/dong
 #      tinh cung phep so voi phia hoc sinh — trong khi vong doi cua de van theo lich chung.
+#   6. Doi gio thi bao cho DUNG nhung em bi doi, moi lan doi mot thong bao, em da bat dau thi khong.
 
 source "$(dirname "$0")/lib.sh"
 
@@ -109,6 +110,15 @@ elif mode == "window":
     rows = [x for x in data["assignmentWindows"] if x.get("groupId") == key]
     print("none" if not rows else show(rows[0].get(sys.argv[3])))
 
+elif mode == "notice":
+    # So thong bao loai $3 trong hop thu, hoac truong $4 cua thong bao moi nhat loai do.
+    items = load(sys.argv[2])["items"]
+    rows = [x for x in items if x["type"] == sys.argv[3]]
+    if len(sys.argv) > 4:
+        print("none" if not rows else show(rows[0].get(sys.argv[4])))
+    else:
+        print(len(rows))
+
 elif mode == "window_count":
     print(len(load(sys.argv[2])["assignmentWindows"]))
 
@@ -129,6 +139,10 @@ wait_past()        { python "$HELPERS" wait "$1"; }
 # Truong $1 cua khung gio lop $2 ("le" = chon le) tren de dang o $BODY_FILE; $3 = id de khi doc trang danh sach.
 window_of()        { python "$HELPERS" window "$(to_native_path "$BODY_FILE")" "$1" "$2" "${3:-0}"; }
 window_count()     { python "$HELPERS" window_count "$(to_native_path "$BODY_FILE")"; }
+# So thong bao loai $1 trong hop thu dang o $BODY_FILE; them $2 de doc mot truong cua thong bao moi nhat.
+notice()           { PYTHONIOENCODING=utf-8 python "$HELPERS" notice "$(to_native_path "$BODY_FILE")" "$1" ${2:+"$2"}; }
+# So thong bao doi lich cua hoc sinh co token $1.
+notice_count()     { call GET /api/notifications "$1" > /dev/null; notice examUpdated; }
 
 TEACHER_ID=$(call GET /api/auth/me "$TEACHER" > /dev/null; json_field id)
 
@@ -311,5 +325,79 @@ AID_D_MY=$(my_field assignmentId "$EID")
 expect_status "em D vao lam → 200" 200 "$(call POST /api/exam-attempts "$TOK_D" "{\"assignmentId\":$AID_D_MY}")"
 expect_status "PATCH em da bat dau → 409" 409 \
   "$(call PATCH "/api/exams/$EID/assignments/$AID_D/schedule" "$TEACHER" "{\"openAt\":\"$D_OPEN\",\"closeAt\":\"$D_CLOSE\"}")"
+
+section "Doi gio thi bao cho dung nhung em bi doi"
+# notify=false o moi lan giao, nen moi thong bao dem duoc o day deu sinh ra tu mot lan DOI GIO.
+build_class "Bao gio F $STAMP" "${STAMP}f"; G_F=$BUILT_GID; SID_F=$BUILT_SID
+build_class "Bao gio G $STAMP" "${STAMP}g"; G_G=$BUILT_GID; SID_G=$BUILT_SID
+build_class "Bao gio H $STAMP" "${STAMP}h"; G_H=$BUILT_GID; SID_H=$BUILT_SID
+
+new_exam "De bao gio $STAMP" -1 30
+EID_N=$NEW_EID
+F_OPEN=$(at_hours 2); F_CLOSE=$(at_hours 4)
+NOTIFY_BODY="{\"studentIds\":[$SID_H],\"groupIds\":[$G_G],\"classes\":[$(class_entry "$G_F" "$F_OPEN" "$F_CLOSE")],\"notify\":false}"
+expect_status "giao lop F (gio rieng), lop G (lich de), em H chon le → 200" 200 \
+  "$(call POST "/api/exams/$EID_N/assignments" "$TEACHER" "$NOTIFY_BODY")"
+expect_json   "  assignedCount = 3" assignedCount 3
+
+TOK_F=$(login "q${STAMP}f" "anthill123")
+TOK_G=$(login "q${STAMP}g" "anthill123")
+TOK_H=$(login "q${STAMP}h" "anthill123")
+expect_status "khong ai co thong bao nao (notify=false)" "0 0 0" \
+  "$(notice_count "$TOK_F") $(notice_count "$TOK_G") $(notice_count "$TOK_H")"
+
+call GET "/api/exams/$EID_N/assignments" "$TEACHER" > /dev/null
+AID_G=$(row_of_student id "$SID_G")
+AID_H=$(row_of_student id "$SID_H")
+
+N_OPEN=$(at_hours -0.5); N_CLOSE=$(at_hours 40)
+expect_status "doi lich chung cua de → 200" 200 \
+  "$(call PATCH "/api/exams/$EID_N/schedule" "$TEACHER" "{\"openAt\":\"$N_OPEN\",\"closeAt\":\"$N_CLOSE\"}")"
+expect_status "  em lop G (theo lich de) duoc bao" 1 "$(notice_count "$TOK_G")"
+expect_status "  em chon le cung theo lich de"     1 "$(notice_count "$TOK_H")"
+expect_status "  em lop F co gio rieng: khong bao" 0 "$(notice_count "$TOK_F")"
+call GET /api/notifications "$TOK_G" > /dev/null
+expect_status "  thong bao dan toi bai cua chinh em" "/hoc-sinh/bai-kiem-tra/$AID_G" "$(notice examUpdated link)"
+expect_status "  tieu de noi ro chuyen gi" "Lịch làm bài đã thay đổi" "$(notice examUpdated title)"
+expect_status "  con chua doc" false "$(notice examUpdated isRead)"
+# Server chay theo UTC va khong biet truong o mui gio nao, nen cau chu khong duoc ghi gio cu the.
+expect_status "  cau chu khong ghi gio cu the" yes \
+  "$(notice examUpdated message | grep -qE '[0-9]{1,2}:[0-9]{2}' && echo no || echo yes)"
+
+F_OPEN2=$(at_hours 5); F_CLOSE2=$(at_hours 7)
+expect_status "gui lai lop F voi khung khac → 200" 200 \
+  "$(call POST "/api/exams/$EID_N/assignments" "$TEACHER" \
+    "{\"studentIds\":[],\"classes\":[$(class_entry "$G_F" "$F_OPEN2" "$F_CLOSE2")],\"notify\":false}")"
+expect_status "  em lop F duoc bao"           1 "$(notice_count "$TOK_F")"
+expect_status "  em lop G khong nhan them gi" 1 "$(notice_count "$TOK_G")"
+expect_status "gui lai lop F voi dung khung do → 200" 200 \
+  "$(call POST "/api/exams/$EID_N/assignments" "$TEACHER" \
+    "{\"studentIds\":[],\"classes\":[$(class_entry "$G_F" "$F_OPEN2" "$F_CLOSE2")],\"notify\":false}")"
+expect_status "  khong co thong bao thu hai cho mot lan doi" 1 "$(notice_count "$TOK_F")"
+
+H_OPEN=$(at_hours 6); H_CLOSE=$(at_hours 8)
+expect_status "doi gio em chon le → 200" 200 \
+  "$(call PATCH "/api/exams/$EID_N/assignments/$AID_H/schedule" "$TEACHER" \
+    "{\"openAt\":\"$H_OPEN\",\"closeAt\":\"$H_CLOSE\"}")"
+expect_status "  em chon le duoc bao" 2 "$(notice_count "$TOK_H")"
+expect_status "PATCH lai y het → 200" 200 \
+  "$(call PATCH "/api/exams/$EID_N/assignments/$AID_H/schedule" "$TEACHER" \
+    "{\"openAt\":\"$H_OPEN\",\"closeAt\":\"$H_CLOSE\"}")"
+expect_status "  khong bao lai" 2 "$(notice_count "$TOK_H")"
+
+expect_status "doi thoi luong lam bai → 200" 200 \
+  "$(call PUT "/api/exams/$EID_N" "$TEACHER" "$(exam_body "De bao gio $STAMP" "$N_OPEN" "$N_CLOSE" 60)")"
+expect_status "  em lop F: doi thoi luong thi ai cung lam theo con so moi" 2 "$(notice_count "$TOK_F")"
+expect_status "  em lop G" 2 "$(notice_count "$TOK_G")"
+expect_status "  em chon le" 3 "$(notice_count "$TOK_H")"
+call GET /api/notifications "$TOK_F" > /dev/null
+expect_status "  cau chu noi so phut moi" yes "$(notice examUpdated message | grep -q "60 phút" && echo yes || echo no)"
+
+call GET /api/my/exams "$TOK_G" > /dev/null
+AID_G_MY=$(my_field assignmentId "$EID_N")
+expect_status "em lop G vao lam bai → 200" 200 "$(call POST /api/exam-attempts "$TOK_G" "{\"assignmentId\":$AID_G_MY}")"
+expect_status "doi lich chung lan nua → 200" 200 \
+  "$(call PATCH "/api/exams/$EID_N/schedule" "$TEACHER" "{\"openAt\":\"$(at_hours -0.4)\",\"closeAt\":\"$(at_hours 41)\"}")"
+expect_status "  em da bat dau khong bi bao: han nop da chot luc vao thi" 2 "$(notice_count "$TOK_G")"
 
 summary
