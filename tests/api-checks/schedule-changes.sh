@@ -12,6 +12,8 @@
 #      "giu khung cu" khi khung gui len that su khac khung em dang giu.
 #   4. Em chon dich danh doi duoc gio rieng (PATCH), ve lai lich de duoc; em giao qua lop va em da bat
 #      dau bi tu choi 409; khung qua ngan 400; quan tri vien 403.
+#   5. Trang de cua giao vien mang khung gio THAT cua tung lop (assignmentWindows), voi trang thai mo/dong
+#      tinh cung phep so voi phia hoc sinh — trong khi vong doi cua de van theo lich chung.
 
 source "$(dirname "$0")/lib.sh"
 
@@ -98,6 +100,18 @@ elif mode == "my":
     row = next((x for x in rows if x["examId"] == int(sys.argv[4])), None)
     print("none" if row is None else show(row.get(sys.argv[3])))
 
+elif mode == "window":
+    # Truong $3 cua khung gio thuoc lop $4 ("le" = hoc sinh chon le) trong assignmentWindows cua de.
+    data = load(sys.argv[2])
+    if "items" in data:
+        data = next((x for x in data["items"] if x["id"] == int(sys.argv[5])), {"assignmentWindows": []})
+    key = None if sys.argv[4] == "le" else int(sys.argv[4])
+    rows = [x for x in data["assignmentWindows"] if x.get("groupId") == key]
+    print("none" if not rows else show(rows[0].get(sys.argv[3])))
+
+elif mode == "window_count":
+    print(len(load(sys.argv[2])["assignmentWindows"]))
+
 elif mode == "wait":
     target = parse(sys.argv[2]) + datetime.timedelta(seconds=1)
     while now() <= target:
@@ -112,6 +126,9 @@ row_near()         { python "$HELPERS" row_near "$(to_native_path "$BODY_FILE")"
 field_near()       { python "$HELPERS" field_near "$(to_native_path "$BODY_FILE")" "$1" "$2"; }
 my_field()         { python "$HELPERS" my "$(to_native_path "$BODY_FILE")" "$1" "$2"; }
 wait_past()        { python "$HELPERS" wait "$1"; }
+# Truong $1 cua khung gio lop $2 ("le" = chon le) tren de dang o $BODY_FILE; $3 = id de khi doc trang danh sach.
+window_of()        { python "$HELPERS" window "$(to_native_path "$BODY_FILE")" "$1" "$2" "${3:-0}"; }
+window_count()     { python "$HELPERS" window_count "$(to_native_path "$BODY_FILE")"; }
 
 TEACHER_ID=$(call GET /api/auth/me "$TEACHER" > /dev/null; json_field id)
 
@@ -187,6 +204,20 @@ expect_status "  lop C: mo theo lich de"           true   "$(row_near openAt "$S
 expect_status "  em chon le: khong gan lop"        absent "$(row_of_student assignedViaGroupId "$SID_D")"
 expect_status "  lop B: ghi lai lop da giao qua"   "$G_B" "$(row_of_student assignedViaGroupId "$SID_B")"
 
+section "Giao vien thay khung gio cua tung lop tren de"
+expect_status "chi tiet de → 200" 200 "$(call GET "/api/exams/$EID" "$TEACHER")"
+expect_status "  ba lop + mot khung cua hoc sinh chon le" 4 "$(window_count)"
+expect_status "  lop A: ten lop"            "Doi gio A $STAMP" "$(window_of groupName "$G_A")"
+expect_status "  lop A: chua toi gio"       scheduled "$(window_of lifecycle "$G_A")"
+expect_status "  lop A: gio rieng"          true      "$(window_of hasScheduleOverride "$G_A")"
+expect_status "  lop C: theo lich de, dang mo" open   "$(window_of lifecycle "$G_C")"
+expect_status "  lop C: hasScheduleOverride = false" false "$(window_of hasScheduleOverride "$G_C")"
+expect_status "  hoc sinh chon le: mot em"  1         "$(window_of assignedCount le)"
+expect_status "  hoc sinh chon le: khong co ten lop" absent "$(window_of groupName le)"
+expect_status "  vong doi cua de van theo lich chung" open "$(json_field lifecycle)"
+expect_status "danh sach de → 200" 200 "$(call GET "/api/exams?search=De%20doi%20gio%20$STAMP" "$TEACHER")"
+expect_status "  lop B tren trang danh sach: chua toi gio" scheduled "$(window_of lifecycle "$G_B" "$EID")"
+
 section "Request sai hinh dang bi tu choi, khong tao dong nao"
 DUP_BODY="{\"studentIds\":[],\"classes\":[$(class_entry "$G_E" "$A_OPEN" "$A_CLOSE"),$(class_entry "$G_E")],\"notify\":false}"
 expect_status "mot lop hai lan trong classes → 400" 400 "$(call POST "/api/exams/$EID/assignments" "$TEACHER" "$DUP_BODY")"
@@ -219,6 +250,9 @@ call GET "/api/exams/$EID/assignments" "$TEACHER" > /dev/null
 expect_status "  em A theo lich de"     false "$(row_of_student hasScheduleOverride "$SID_A")"
 expect_status "  em A2 theo lich de"    false "$(row_of_student hasScheduleOverride "$SID_A2")"
 expect_status "  em B van giu gio rieng" true "$(row_of_student hasScheduleOverride "$SID_B")"
+expect_status "chi tiet de → 200" 200 "$(call GET "/api/exams/$EID" "$TEACHER")"
+expect_status "  lop A gio la lich de, dang mo" open  "$(window_of lifecycle "$G_A")"
+expect_status "  lop A: hai em"                 2     "$(window_of assignedCount "$G_A")"
 
 section "Em da bat dau chi bi dem khi khung that su khac"
 TOK_C=$(login "q${STAMP}c" "anthill123")

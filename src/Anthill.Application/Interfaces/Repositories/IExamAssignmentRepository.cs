@@ -1,3 +1,4 @@
+using Anthill.Application.Common;
 using Anthill.Domain.Entities;
 
 namespace Anthill.Application.Interfaces.Repositories;
@@ -117,6 +118,15 @@ public interface IExamAssignmentRepository : IGenericRepository<ExamAssignment>
     /// đồng hồ của em nói hai giờ khác nhau. Trả NULL khi dòng không còn. Phải gọi bên trong transaction.
     /// </remarks>
     Task<ExamAssignment?> LockForRescheduleAsync(int assignmentId, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Bản ghi giao bài của nhiều đề, gom theo (đề, lớp đã giao qua, cặp giờ thô, đã bắt đầu hay chưa) — nguyên
+    /// liệu cho <c>AssignmentWindowSummary</c>.
+    /// </summary>
+    /// <remarks>Gom trong SQL: màn hình danh sách chín đề, mỗi đề vài trăm em, chỉ kéo về vài chục dòng.</remarks>
+    Task<IReadOnlyList<AssignmentWindowRow>> GetWindowRowsByExamsAsync(
+        IEnumerable<int> examIds,
+        CancellationToken cancellationToken = default);
 
     /// <summary>Ba con số dẫn xuất cho nhiều đề cùng lúc, tránh N+1 ở màn hình danh sách đề.</summary>
     Task<IReadOnlyDictionary<int, (int Assigned, int Submitted, int Started)>> CountByExamsAsync(

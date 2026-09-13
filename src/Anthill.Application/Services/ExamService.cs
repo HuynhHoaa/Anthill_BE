@@ -105,11 +105,11 @@ public sealed class ExamService : IExamService
 
         // Một lời gọi cho cả trang thay vì mỗi đề một lần: mười đề trên màn hình danh sách vốn là
         // hai mươi truy vấn đếm.
-        var counters = await _unitOfWork.ExamAssignments.CountByExamsAsync(
-            page.Items.Select(exam => exam.Id),
-            cancellationToken);
+        var examIds = page.Items.Select(exam => exam.Id).ToList();
+        var counters = await _unitOfWork.ExamAssignments.CountByExamsAsync(examIds, cancellationToken);
+        var windowRows = await _unitOfWork.ExamAssignments.GetWindowRowsByExamsAsync(examIds, cancellationToken);
 
-        return Result.Success(page.Map(exam => ToDto(exam, asOf, counters)));
+        return Result.Success(page.Map(exam => ToDto(exam, asOf, counters, windowRows)));
     }
 
     /// <inheritdoc />
@@ -765,17 +765,24 @@ public sealed class ExamService : IExamService
         var assigned = await _unitOfWork.ExamAssignments.CountByExamAsync(exam.Id, cancellationToken);
         var submitted = await _unitOfWork.ExamAssignments.CountSubmittedByExamAsync(exam.Id, cancellationToken);
         var started = await _unitOfWork.ExamAssignments.CountStartedByExamAsync(exam.Id, cancellationToken);
+        var windowRows = await _unitOfWork.ExamAssignments.GetWindowRowsByExamsAsync([exam.Id], cancellationToken);
 
-        return exam.ToDto(asOf, assigned, submitted, started);
+        return exam.ToDto(asOf, assigned, submitted, started, AssignmentWindowSummary.Build(exam, windowRows, asOf));
     }
 
     private static ExamDto ToDto(
         Exam exam,
         DateTime asOf,
-        IReadOnlyDictionary<int, (int Assigned, int Submitted, int Started)> counters)
+        IReadOnlyDictionary<int, (int Assigned, int Submitted, int Started)> counters,
+        IReadOnlyList<AssignmentWindowRow> windowRows)
     {
         var counts = counters.TryGetValue(exam.Id, out var value) ? value : (Assigned: 0, Submitted: 0, Started: 0);
-        return exam.ToDto(asOf, counts.Assigned, counts.Submitted, counts.Started);
+        return exam.ToDto(
+            asOf,
+            counts.Assigned,
+            counts.Submitted,
+            counts.Started,
+            AssignmentWindowSummary.Build(exam, windowRows, asOf));
     }
 
     /// <summary>Bản nháp khi client gửi <c>lifecycle: "draft"</c>; bỏ trống nghĩa là đề có hiệu lực thật.</summary>

@@ -1,3 +1,4 @@
+using Anthill.Application.Common;
 using Anthill.Application.Interfaces.Repositories;
 using Anthill.Domain.Entities;
 using Anthill.Domain.Enums;
@@ -263,6 +264,55 @@ public class ExamAssignmentRepository : GenericRepository<ExamAssignment>, IExam
         }
 
         return assignment;
+    }
+
+    /// <inheritdoc />
+    public async Task<IReadOnlyList<AssignmentWindowRow>> GetWindowRowsByExamsAsync(
+        IEnumerable<int> examIds,
+        CancellationToken cancellationToken = default)
+    {
+        var ids = examIds.Distinct().ToList();
+        if (ids.Count == 0)
+        {
+            return [];
+        }
+
+        var rows = await DbSet
+            .AsNoTracking()
+            .Where(a => ids.Contains(a.ExamId))
+            .GroupBy(a => new
+            {
+                a.ExamId,
+                a.AssignedViaGroupId,
+                GroupName = a.AssignedViaGroup != null ? a.AssignedViaGroup.Name : null,
+                a.OpenAt,
+                a.CloseAt,
+                Started = a.Attempt != null
+            })
+            .Select(group => new
+            {
+                group.Key.ExamId,
+                group.Key.AssignedViaGroupId,
+                group.Key.GroupName,
+                group.Key.OpenAt,
+                group.Key.CloseAt,
+                group.Key.Started,
+                Count = group.Count(),
+                LatestAssignedAt = group.Max(a => a.AssignedAt)
+            })
+            .ToListAsync(cancellationToken);
+
+        return rows
+            .Select(row => new AssignmentWindowRow(
+                row.ExamId,
+                row.AssignedViaGroupId,
+                row.GroupName,
+                row.OpenAt,
+                row.CloseAt,
+                row.Started,
+                row.Count,
+                row.LatestAssignedAt))
+            .ToList();
     }
 
     /// <summary>
