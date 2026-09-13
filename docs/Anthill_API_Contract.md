@@ -261,7 +261,7 @@ Mock hiện tra ngược `mockQuestions` theo id lúc chấm — điều đó c�
 
 - **Khử trùng lặp ở BE** bằng `HashSet`: `targets = distinct(studentIds hợp lệ ∪ học sinh của groupIds)`. FE có tính số hiển thị nhưng đó chỉ để hiện lên màn hình.
 - **Idempotent** theo cặp `(examId, studentId)` — unique index. Giao lại cho người đã có bài thì bỏ qua, giữ nguyên `status`/`attemptId`/`score`.
-- **Kiểm tra phạm vi:** học sinh phải thuộc một lớp đã công bố mà giáo viên đó được phân công. Không cho giáo viên A giao bài cho lớp của giáo viên B bằng cách đoán id. Em ngoài phạm vi đếm vào `skippedOutOfScope`, xét **trước** trạng thái tài khoản.
+- **Kiểm tra phạm vi:** học sinh phải thuộc một lớp đã công bố mà giáo viên đó được phân công. Không cho giáo viên A giao bài cho lớp của giáo viên B bằng cách đoán id. Em ngoài phạm vi đếm vào `skippedOutOfScope`, xét **trước** trạng thái tài khoản. **Id không tồn tại (hoặc không phải tài khoản học sinh) đếm vào cùng con số đó** — không có trường riêng cho "không tìm thấy": hai con số tách rời cho phép giáo viên bắn từng id một rồi đọc xem id nào là học sinh thật của lớp người khác. Lớp cũng vậy: lớp không tồn tại và lớp của người khác cùng đếm vào `skippedOutOfScopeGroups`.
 - **Học sinh bị khoá:** FE hiển thị nhãn "Đã khóa" nhưng vẫn cho chọn và vẫn tạo assignment. BE **bỏ qua** và trả `skippedLocked` để giáo viên biết. Tài khoản đang chờ xoá cũng bị bỏ qua nhưng đếm riêng vào `skippedRetired` — em đã rời trường thì không có gì để mở khoá. Tài khoản đã xoá hẳn đã bị gỡ khỏi lớp nên rơi vào `skippedOutOfScope`.
 - **Chặn giao đề đang là nháp.** FE hoàn toàn không kiểm điều này.
 - **`randomizePerStudent` chốt từ lần giao đầu tiên.** Đề đã có lượt giao mà request đổi cờ thì **409**; muốn đổi thì thu hồi hết rồi giao lại.
@@ -286,6 +286,7 @@ Mock hiện tra ngược `mockQuestions` theo id lúc chấm — điều đó c�
 | `Student.deletionScheduledAt` | `deletionRequestedAt` + 60 ngày, chỉ có khi `status = pendingDeletion`. Server tính sẵn — FE không tự cộng ngày |
 | `AddMembersResponse.skippedRetired` | Số tài khoản chờ xoá hoặc đã xoá bị bỏ qua, không đưa vào lớp |
 | `AssignExamResponse.skippedRetired` | Số tài khoản **đang chờ xoá** bị bỏ qua khi giao bài — không tính vào `skippedLocked`. Tài khoản đã xoá hẳn không có lớp nên nằm trong `skippedOutOfScope` |
+| `AssignExamResponse.skippedOutOfScope` | Số id không giao được vì không thuộc lớp giáo viên phụ trách **hoặc** không tồn tại — cố ý gộp một con số để không dò được id nào là học sinh thật (không còn trường `skippedNotFound` ở endpoint này) |
 | `studentStatus` trên `ExamAssignment`, `ResultSummary`, `AttemptDetail` | Trạng thái tài khoản của em (`active` · `locked` · `pendingDeletion` · `deleted`), cùng chuỗi với `Student.status`. Tách khỏi `status` — trường đó là trạng thái lượt làm bài |
 | `StudentGroup.studentCount` | COUNT thành viên đang hoạt động hoặc đang khoá — không tính tài khoản chờ xoá |
 | `Student.group` (tên) | dữ liệu JOIN, **chỉ đọc** — client gửi lên thì bỏ qua |
