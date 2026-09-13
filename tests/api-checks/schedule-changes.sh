@@ -15,6 +15,7 @@
 #   5. Trang de cua giao vien mang khung gio THAT cua tung lop (assignmentWindows), voi trang thai mo/dong
 #      tinh cung phep so voi phia hoc sinh — trong khi vong doi cua de van theo lich chung.
 #   6. Doi gio thi bao cho DUNG nhung em bi doi, moi lan doi mot thong bao, em da bat dau thi khong.
+#   7. Dap an chi mo khi moi khung gio cua de deu da dong — gia han mot lop la dong dap an lai.
 
 source "$(dirname "$0")/lib.sh"
 
@@ -399,5 +400,65 @@ expect_status "em lop G vao lam bai → 200" 200 "$(call POST /api/exam-attempts
 expect_status "doi lich chung lan nua → 200" 200 \
   "$(call PATCH "/api/exams/$EID_N/schedule" "$TEACHER" "{\"openAt\":\"$(at_hours -0.4)\",\"closeAt\":\"$(at_hours 41)\"}")"
 expect_status "  em da bat dau khong bi bao: han nop da chot luc vao thi" 2 "$(notice_count "$TOK_G")"
+
+section "Dap an chi mo khi moi khung gio deu da dong"
+# per-class-schedule.sh chung minh dap an cho toi khi lop dong muon nhat het gio. Cho nay canh chieu
+# nguoc lai: moi lop da dong va dap an da mo, roi mot lop duoc gia han — dap an phai dong lai.
+build_class "Dap an K $STAMP" "${STAMP}k"; G_K=$BUILT_GID; SID_K=$BUILT_SID
+build_class "Dap an L $STAMP" "${STAMP}l"; G_L=$BUILT_GID; SID_L=$BUILT_SID
+new_exam "De mo dap an $STAMP" -24 168 1; EID_DA=$NEW_EID
+K_CLOSE=$(at_hours 0.0125)
+expect_status "lop K: dong sau 45 giay → 200" 200 \
+  "$(call POST "/api/exams/$EID_DA/assignments" "$TEACHER" \
+    "{\"studentIds\":[],\"classes\":[$(class_entry "$G_K" "$(at_hours -1)" "$K_CLOSE")],\"notify\":false}")"
+expect_status "lop L: khung da qua → 200" 200 \
+  "$(call POST "/api/exams/$EID_DA/assignments" "$TEACHER" \
+    "{\"studentIds\":[],\"classes\":[$(class_entry "$G_L" "$(at_hours -3)" "$(at_hours -2)")],\"notify\":false}")"
+
+TOK_K=$(login "q${STAMP}k" "anthill123")
+call GET /api/my/exams "$TOK_K" > /dev/null
+AID_K=$(my_field assignmentId "$EID_DA")
+expect_status "em lop K vao lam → 200" 200 "$(call POST /api/exam-attempts "$TOK_K" "{\"assignmentId\":$AID_K}")"
+ATT_K=$(json_field attemptId)
+expect_status "em lop K nop bai → 200" 200 "$(call POST "/api/exam-attempts/$ATT_K/submit" "$TOK_K" '{"answers":[]}')"
+expect_status "em xem ket qua → 200" 200 "$(call GET "/api/results/$ATT_K" "$TOK_K")"
+expect_json   "  co diem ngay, chua co dap an" canSeeAnswers false
+expect_status "  hen mo dap an dung luc lop K dong" true "$(field_near answersVisibleAt "$K_CLOSE")"
+
+printf '  doi lop K dong...\n'
+wait_past "$K_CLOSE"
+expect_status "moi lop da dong → 200" 200 "$(call GET "/api/results/$ATT_K" "$TOK_K")"
+expect_json   "  dap an da mo" canSeeAnswers true
+
+L_CLOSE=$(at_hours 26)
+expect_status "gia han lop L sang ngay mai → 200" 200 \
+  "$(call POST "/api/exams/$EID_DA/assignments" "$TEACHER" \
+    "{\"studentIds\":[],\"classes\":[$(class_entry "$G_L" "$(at_hours 24)" "$L_CLOSE")],\"notify\":false}")"
+expect_json   "  mot em cua lop L doi gio" scheduleUpdatedCount 1
+expect_status "em lop K xem lai → 200" 200 "$(call GET "/api/results/$ATT_K" "$TOK_K")"
+expect_json   "  dap an dong lai vi con lop chua thi" canSeeAnswers false
+expect_status "  hen mo theo gio dong cua lop L" true "$(field_near answersVisibleAt "$L_CLOSE")"
+
+add_student "$G_L" "${STAMP}m"; SID_M=$BUILT_SID
+expect_status "giao them mot em chon le → 200" 200 \
+  "$(call POST "/api/exams/$EID_DA/assignments" "$TEACHER" "{\"studentIds\":[$SID_M],\"notify\":false}")"
+call GET "/api/exams/$EID_DA/assignments" "$TEACHER" > /dev/null
+AID_M=$(row_of_student id "$SID_M")
+M_CLOSE=$(at_hours 50)
+expect_status "doi gio em chon le xa hon nua → 200" 200 \
+  "$(call PATCH "/api/exams/$EID_DA/assignments/$AID_M/schedule" "$TEACHER" \
+    "{\"openAt\":\"$(at_hours 48)\",\"closeAt\":\"$M_CLOSE\"}")"
+expect_status "em lop K xem lai → 200" 200 "$(call GET "/api/results/$ATT_K" "$TOK_K")"
+expect_json   "  van chua mo dap an" canSeeAnswers false
+expect_status "  hen mo theo em dong muon nhat" true "$(field_near answersVisibleAt "$M_CLOSE")"
+
+expect_status "keo lop L ve khung da qua → 200" 200 \
+  "$(call POST "/api/exams/$EID_DA/assignments" "$TEACHER" \
+    "{\"studentIds\":[],\"classes\":[$(class_entry "$G_L" "$(at_hours -3)" "$(at_hours -2)")],\"notify\":false}")"
+expect_status "keo em chon le ve khung da qua → 200" 200 \
+  "$(call PATCH "/api/exams/$EID_DA/assignments/$AID_M/schedule" "$TEACHER" \
+    "{\"openAt\":\"$(at_hours -3)\",\"closeAt\":\"$(at_hours -2)\"}")"
+expect_status "em lop K xem lai → 200" 200 "$(call GET "/api/results/$ATT_K" "$TOK_K")"
+expect_json   "  dap an mo lai" canSeeAnswers true
 
 summary
