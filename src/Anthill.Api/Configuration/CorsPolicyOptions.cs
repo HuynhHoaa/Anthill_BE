@@ -16,6 +16,13 @@ namespace Anthill.Api.Configuration;
 /// <c>SetIsOriginAllowed</c>, và middleware CORS sẽ phản hồi lại đúng origin cụ thể của request
 /// thay vì dấu sao, nên vẫn dùng được với <c>AllowCredentials</c>.
 /// </para>
+/// <para>
+/// Mẫu sao là công cụ của bản chạy thử, <b>không</b> phải giá trị mặc định: <c>https://*.vercel.app</c>
+/// nghĩa là mọi trang bất kỳ ai deploy lên Vercel đều gọi được API từ trình duyệt của người đang đăng
+/// nhập. Vì vậy <c>appsettings.json</c> để danh sách rỗng, Production phải khai địa chỉ thật bằng
+/// <c>Cors__AllowedOrigins__0</c>, và <c>ValidateSecurityConfiguration</c> dừng khởi động khi danh sách
+/// rỗng ở Production, đồng thời ghi log lỗi nếu vẫn còn mẫu sao.
+/// </para>
 /// </remarks>
 public sealed class CorsPolicyOptions
 {

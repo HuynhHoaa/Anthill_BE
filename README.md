@@ -203,7 +203,7 @@ từng chạy môi trường Development trên database thật thì phải xoá 
 | `ConnectionStrings:DefaultConnection` | `ConnectionStrings__DefaultConnection`, hoặc `DATABASE_URL` dạng URI | bắt buộc |
 | `Jwt:SecretKey` | `Jwt__SecretKey` hoặc `JWT_SECRET_KEY` | bắt buộc, tối thiểu 32 byte |
 | `Jwt:Issuer`, `Jwt:Audience`, `Jwt:ExpiryMinutes` | `Jwt__*` | `Anthill`, `Anthill.Client`, 120 phút |
-| `Cors:AllowedOrigins` | `Cors__AllowedOrigins__0`, `__1`, ... | mặc định `https://anthill.vercel.app`, `https://*.vercel.app`; deploy thì đặt lại |
+| `Cors:AllowedOrigins` | `Cors__AllowedOrigins__0`, `__1`, ... | không có mặc định; **bắt buộc** ở Production, thiếu thì API dừng lúc khởi động |
 | `AutoSubmit:Enabled`, `IntervalSeconds`, `BatchSize` | `AutoSubmit__*` | `true`, 30, 50 |
 | `FileStorage:MaxBytes` | `FileStorage__MaxBytes` | 4 MB |
 
@@ -213,13 +213,14 @@ trống, và được tự chuyển sang chuỗi kết nối Npgsql. Hai điều
 - **`Jwt:SecretKey` trong `appsettings.Development.json` chỉ dùng cho dev.** Nó nằm trong git nên coi như
   công khai. Production phải đặt khoá riêng qua biến môi trường (`openssl rand -base64 48`); thiếu hoặc
   ngắn hơn 32 byte thì API dừng ngay lúc khởi động, kèm thông điệp chỉ rõ chỗ sửa.
-- **CORS không được dùng `*`.** SignalR cần `AllowCredentials`, mà trình duyệt từ chối cặp
-  `AllowAnyOrigin` + `AllowCredentials`. Phải liệt kê origin cụ thể; riêng phần subdomain thì chấp nhận
-  một dấu sao (`https://*.vercel.app`) cho địa chỉ preview đổi theo từng lần deploy. Dấu sao chấp nhận
-  được vì API không dùng cookie: token đi bằng header `Authorization` (hub dùng query `access_token`),
-  nên CORS ở đây không phải lớp bảo mật. Mảng cấu hình bị đè theo từng chỉ số: chỉ đặt
-  `Cors__AllowedOrigins__0` thì phần tử `__1` (dấu sao) vẫn còn. Không muốn nhận địa chỉ preview thì đặt
-  cả `__1`, ví dụ trùng với `__0`.
+- **CORS không được dùng `*`, và không có địa chỉ mặc định nào.** SignalR cần `AllowCredentials`, mà
+  trình duyệt từ chối cặp `AllowAnyOrigin` + `AllowCredentials`, nên origin phải liệt kê cụ thể. Phần
+  subdomain chấp nhận một dấu sao (`https://*.vercel.app`) để chạy thử các bản preview đổi địa chỉ theo
+  từng lần deploy — nhưng chỉ vậy thôi: `appsettings.json` để danh sách rỗng, còn `https://*.vercel.app`
+  là "mọi trang bất kỳ ai deploy lên Vercel". Ở Production, danh sách rỗng làm API dừng ngay lúc khởi
+  động kèm tên biến phải đặt, và một mẫu có dấu sao còn sót lại thì hiện ra trong log dưới dạng lỗi.
+  Danh sách rỗng ở file gốc cũng gỡ luôn cái bẫy của mảng cấu hình: mảng bị đè theo từng chỉ số, nên
+  trước đây đặt `Cors__AllowedOrigins__0` mà quên `__1` là dấu sao vẫn còn hiệu lực.
 
 ## Kiểm thử
 

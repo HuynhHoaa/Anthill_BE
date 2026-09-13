@@ -147,10 +147,11 @@ Khuyến nghị: **làm Render trước cho có demo chạy sớm**, khi rảnh 
 - [ ] **Disk là ephemeral.** Render/Azure free xoá sạch file khi restart. Ảnh câu hỏi lưu vào `wwwroot/uploads` sẽ **mất hết** sau mỗi lần deploy. Bắt buộc đẩy lên Cloudinary/R2, DB chỉ lưu URL. Thiết kế ngay từ đầu, đừng để sau.
 - [ ] **Connection pooling với Neon.** EF Core mặc định mở pool lớn, Neon free giới hạn connection. Dùng **pooled connection string** (endpoint có `-pooler`) và set `Maximum Pool Size=10`.
 - [ ] **CORS cross-domain.** FE ở `*.vercel.app`, BE ở `*.onrender.com` là hai domain khác nhau. JWT để trong header thì ổn. Nếu dùng refresh token qua cookie phải set `SameSite=None; Secure`.
+- [ ] **Khai địa chỉ frontend bằng `Cors__AllowedOrigins__0`.** `appsettings.json` cố ý không có địa chỉ mặc định nào, và ở Production mà danh sách rỗng thì API **dừng ngay lúc khởi động** kèm thông điệp nói rõ phải đặt biến nào. Nhiều địa chỉ thì thêm `Cors__AllowedOrigins__1`, `__2`... Đặt đúng origin, không có dấu gạch chéo cuối.
 - [ ] **SignalR cần `AllowCredentials()`** + khai báo origin cụ thể, **không dùng được `AllowAnyOrigin()`** chung với credentials.
 - [ ] **Timezone.** Lưu UTC trong DB, quy đổi sang giờ VN ở tầng hiển thị. Bài kiểm tra có deadline nên sai timezone là sai nghiệp vụ.
 - [ ] **Secrets.** Connection string, JWT key, Cloudinary key đều qua biến môi trường. Không commit `appsettings.Production.json`.
-- [ ] **Preview deployment của Vercel** sinh domain mới mỗi lần push → nhớ cấu hình CORS cho phép pattern preview, hoặc chỉ test tích hợp trên domain production.
+- [ ] **Preview deployment của Vercel** sinh domain mới mỗi lần push. Cấu hình chấp nhận mẫu một dấu sao (`https://*.vercel.app`) cho những bản chạy thử, nhưng **đừng để mẫu đó trên Production**: nó cho phép mọi trang bất kỳ ai deploy lên Vercel gọi API từ trình duyệt của người đang đăng nhập. Bản chạy thật khai đúng domain; log khởi động sẽ báo lỗi nếu còn mẫu sao ở Production.
 
 ---
 
