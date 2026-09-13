@@ -19,6 +19,8 @@
 #   - chay dua: ban PUT /api/auth/me song song trong luc quan tri vien khoa hay cap lai mat khau. Mot
 #     request nap tai khoan truoc luc khoa ma ghi sau luc khoa tung ghi lai nguyen ban cu (Status,
 #     SecurityStamp, PasswordHash) va lam lenh khoa bien mat. Chay tuan tu khong bao gio thay loi nay.
+#     Tu khi bang Users co concurrency token (xmin), PUT ghi tren ban da cu nhan 409 thay vi ghi de;
+#     con lenh khoa va cap lai mat khau giu khoa dong nen luon 200, du bi ban PUT lien tuc.
 #   - hub: mot WebSocket mo TRUOC luc khoa van goi duoc phuong thuc hub, vi OnTokenValidated chi chay
 #     tren request HTTP. Bo loc hub phai tu choi va cat ket noi o loi goi dau tien sau khi khoa.
 
@@ -123,9 +125,12 @@ hammer_profile() {
 # Mot vong dua: PUT /me ban nen bang token $2, giua chung goi ham $3 (thao tac thu hoi), cho het request
 # roi dem ma. Phai co request 200 (xong truoc luc thu hoi) VA request mang ma $4 (sau luc thu hoi) —
 # khong co ca hai thi vong nay khong he dua, va cac phep kiem sau no khong chung minh duoc gi.
+# 409 la ma hop le: request doc dong truoc khi mot request khac (PUT song song, hay lenh thu hoi) ghi
+# xong, va concurrency token tu choi lan luu tren ban da cu. So 409 cong don vao RACE_CONFLICTS.
+RACE_CONFLICTS=0
 race_against() {
   local label="$1" token="$2" action="$3" after_code="$4"
-  local out stop pid before after other
+  local out stop pid before after conflicts other
   out=$(mktemp -t anthill-race-out.XXXXXX)
   stop="$out.stop"
 
@@ -139,12 +144,14 @@ race_against() {
 
   before=$(grep -c '^200$' "$out")
   after=$(grep -c "^$after_code\$" "$out")
-  other=$(grep -vc -e '^200$' -e "^$after_code\$" "$out")
+  conflicts=$(grep -c '^409$' "$out")
+  other=$(grep -vc -e '^200$' -e '^409$' -e "^$after_code\$" "$out")
+  RACE_CONFLICTS=$((RACE_CONFLICTS + conflicts))
   rm -f "$out" "$stop"
 
   expect_status "$label: co PUT /me xong truoc luc thu hoi" co "$(has_any "$before")"
   expect_status "$label: co PUT /me bi chan sau luc thu hoi ($after_code)" co "$(has_any "$after")"
-  expect_status "$label: khong PUT /me nao ra ma khac" 0 "$other"
+  expect_status "$label: khong PUT /me nao ra ma khac 200 / 409 / $after_code" 0 "$other"
 }
 
 lock_student() {
@@ -273,6 +280,10 @@ for ((round = 1; round <= RACE_ROUNDS_RESET; round++)); do
   expect_status "vong $round: mat khau vua cap → 200" 200 "$(student_login "$RACE_PW")"
   CURRENT_PW="$RACE_PW"
 done
+
+# Hang tram PUT cung tai khoan bay song song thi chac chan co cap doc cung mot ban roi cung ghi. Khong
+# thay 409 nao nghia la concurrency token khong con tren bang Users va ben ghi sau lai am tham thang.
+expect_status "concurrency token: co PUT /me ghi tren ban cu bi tu choi 409" co "$(has_any "$RACE_CONFLICTS")"
 
 section "Hub: ket noi mo truoc luc khoa bi cat o loi goi ke tiep"
 # curl khong noi WebSocket, nen dung mot client toi gian viet bang python (thu vien chuan). Mot

@@ -113,7 +113,14 @@ trên entity DbContext đang theo dõi: hàm đó đánh dấu mọi cột là M
 đọc từ đầu request. Một lần `PUT /api/auth/me` nạp tài khoản ngay trước lúc quản trị viên bấm khoá từng
 ghi lại `Status`, `SecurityStamp` và `PasswordHash` cũ, làm lệnh khoá biến mất. `session-revocation.sh`
 bắn hàng loạt `PUT /api/auth/me` song song với lệnh khoá và lệnh cấp lại mật khẩu, lặp nhiều vòng, để
-giữ điều này. Hai request cùng sửa một cột thì bên ghi sau vẫn thắng; chưa có concurrency token.
+giữ điều này.
+
+**Ghi lên bản tài khoản đã cũ thì 409, không ghi đè.** Bảng `Users` dùng cột hệ thống `xmin` của PostgreSQL
+làm concurrency token: request đọc tài khoản rồi lưu sau khi người khác đã ghi dòng đó nhận 409. Riêng các
+thao tác quyết định phiên (khoá, cấp lại hay đổi mật khẩu, đưa vào diện xoá, khôi phục) giữ khoá dòng
+`FOR UPDATE` từ lúc đọc tới lúc commit, nên một tài khoản bắn `PUT /api/auth/me` liên tục cũng không làm
+lệnh khoá trượt; tiến trình xoá dữ liệu khoá lô của nó bằng `SKIP LOCKED` để không đè lên tài khoản đang
+được khôi phục. (`UserConfiguration`, `UserRepository.LockForUpdateAsync`, `ExceptionMiddleware`)
 
 **Giáo viên chỉ thấy học sinh mình phụ trách.** `GET /api/students` của giáo viên chỉ trả các em ở lớp họ
 được phân công và lớp đã công bố — cùng tập với danh sách lớp của họ. Lọc theo lớp người khác, lớp nháp

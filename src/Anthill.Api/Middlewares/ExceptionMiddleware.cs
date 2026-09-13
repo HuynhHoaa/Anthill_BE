@@ -84,6 +84,26 @@ public sealed class ExceptionMiddleware
                 "Dữ liệu gửi lên không hợp lệ.",
                 exception);
         }
+        catch (DbUpdateConcurrencyException exception)
+        {
+            // Concurrency token chặn một lần ghi lên bản đã cũ: request này đọc dòng, rồi có người
+            // khác ghi dòng đó trước khi nó kịp lưu. Ví dụ điển hình: học sinh lưu hồ sơ đúng lúc quản
+            // trị viên khoá tài khoản. Ghi tiếp là đè lên thứ người kia vừa quyết định mà không ai
+            // được biết, nên thao tác bị huỷ nguyên vẹn và trả 409 — không phải 500, vì hàng rào đang
+            // làm đúng việc của nó. Đứng trước nhánh dưới vì đây là lớp con của DbUpdateException.
+            _logger.LogWarning(
+                exception,
+                "Xung đột ghi đồng thời ở {Method} {Path}.",
+                context.Request.Method,
+                context.Request.Path.Value);
+
+            await WriteAsync(
+                context,
+                (int)HttpStatusCode.Conflict,
+                "Dữ liệu này vừa được thay đổi ở nơi khác trong lúc bạn thao tác, nên thay đổi của bạn "
+                + "chưa được lưu. Hãy tải lại trang rồi thử lại.",
+                exception);
+        }
         catch (DbUpdateException exception) when (IsUniqueViolation(exception))
         {
             // Hai thao tác ghi cùng lúc trên cùng một tài nguyên. Ví dụ rõ nhất: hai giáo viên

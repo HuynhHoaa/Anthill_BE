@@ -170,7 +170,9 @@ public sealed class AuthService : IAuthService
         // Đường ghi dùng GetByIdAsync: entity trần do DbContext theo dõi là đủ. Vì nó đang được theo
         // dõi, SaveChanges chỉ ghi đúng các cột gán dưới đây (xem GenericRepository.Update) — lần lưu
         // hồ sơ này không thể ghi đè Status, SecurityStamp hay PasswordHash mà quản trị viên vừa đổi
-        // trong lúc request đang chạy, tức là không thể làm một lệnh khoá biến mất.
+        // trong lúc request đang chạy, tức là không thể làm một lệnh khoá biến mất. Cố ý không khoá dòng:
+        // nếu quản trị viên ghi chen vào giữa lúc đọc và lúc lưu, concurrency token (xmin) biến lần lưu
+        // này thành 409 — bên ghi trên bản đã cũ là bên phải làm lại, không phải lệnh khoá.
         var user = await _unitOfWork.Users.GetByIdAsync(userId, cancellationToken);
 
         var guard = GuardAccountState(user);
@@ -238,7 +240,12 @@ public sealed class AuthService : IAuthService
             return Result.Unauthorized(SessionExpiredMessage);
         }
 
-        var user = await _unitOfWork.Users.GetByIdAsync(userId, cancellationToken);
+        // Khoá dòng từ lúc đọc tới lúc commit (xem IUserRepository.LockForUpdateAsync): quản trị viên
+        // cấp lại mật khẩu đúng lúc này thì một trong hai bên phải chờ bên kia, không có chuyện bên ghi
+        // sau lặng lẽ đè mất mật khẩu bên kia vừa đặt.
+        await using var transaction = await _unitOfWork.BeginTransactionAsync(cancellationToken);
+
+        var user = await _unitOfWork.Users.LockForUpdateAsync(userId, cancellationToken);
 
         var guard = GuardAccountState(user);
         if (guard.IsFailure)
@@ -287,6 +294,7 @@ public sealed class AuthService : IAuthService
 
         _unitOfWork.Users.Update(account);
         await _unitOfWork.SaveChangesAsync(cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
 
         return Result.Success();
     }

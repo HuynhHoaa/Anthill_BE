@@ -10,6 +10,9 @@ namespace Anthill.Infrastructure.Persistence.Configurations;
 /// </summary>
 public class UserConfiguration : IEntityTypeConfiguration<User>
 {
+    /// <summary>Tên thuộc tính ẩn ánh xạ vào cột hệ thống <c>xmin</c>.</summary>
+    public const string RowVersionProperty = "xmin";
+
     public void Configure(EntityTypeBuilder<User> builder)
     {
         builder.ToTable("Users");
@@ -36,6 +39,16 @@ public class UserConfiguration : IEntityTypeConfiguration<User>
         builder.Property(u => u.SecurityStamp)
             .IsRequired()
             .HasMaxLength(64);
+
+        // Concurrency token là cột hệ thống xmin của PostgreSQL: mỗi lần dòng bị ghi, kể cả bởi SET NULL
+        // của khoá ngoại, nó nhận mã transaction mới. EF thêm "AND xmin = <giá trị lúc đọc>" vào mọi câu
+        // UPDATE, nên một request ghi lên bản đã cũ nhận DbUpdateConcurrencyException (409) thay vì âm
+        // thầm ghi đè. Không thêm cột nào, và bắt được cả những lần ghi không đụng tới SecurityStamp —
+        // khôi phục tài khoản chen giữa lúc tiến trình xoá đọc và lúc nó ghi là ví dụ.
+        //
+        // Thuộc tính ẩn (shadow) để tầng Domain không mang một chi tiết riêng của PostgreSQL.
+        builder.Property<uint>(RowVersionProperty)
+            .IsRowVersion();
 
         builder.Property(u => u.Role)
             .IsRequired()
