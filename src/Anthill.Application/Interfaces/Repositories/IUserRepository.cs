@@ -115,12 +115,37 @@ public interface IUserRepository : IGenericRepository<User>
         IEnumerable<int> teacherIds,
         CancellationToken cancellationToken = default);
 
-    /// <summary>Tài khoản đã hết thời gian chờ, đến lúc xoá dữ liệu cá nhân.</summary>
+    /// <summary>
+    /// Nạp một tài khoản kèm <b>khoá ghi ở mức dòng</b>, giữ tới khi transaction kết thúc.
+    /// </summary>
     /// <remarks>
+    /// <para>
+    /// Chỉ có nghĩa khi gọi bên trong một transaction. Dùng ở mọi lối ghi quyết định phiên đăng nhập:
+    /// khoá, cấp lại mật khẩu, đổi mật khẩu, đưa vào diện xoá, khôi phục.
+    /// </para>
+    /// <para>
+    /// Concurrency token (xmin) một mình thì chỉ nói "có người ghi chen vào" và để bên đến sau nhận
+    /// 409 — mà bên đến sau có thể chính là quản trị viên đang bấm khoá, trong khi một tài khoản bị
+    /// chiếm bắn liên tục <c>PUT /api/auth/me</c> để lệnh khoá lần nào cũng trượt. Giữ khoá dòng từ
+    /// lúc đọc tới lúc commit thì không ai ghi chen được: thao tác bảo mật luôn xong, và request cũ
+    /// ghi sau nó mới là bên nhận 409.
+    /// </para>
+    /// </remarks>
+    Task<User?> LockForUpdateAsync(int userId, CancellationToken cancellationToken = default);
+
+    /// <summary>Tài khoản đã hết thời gian chờ, đến lúc xoá dữ liệu cá nhân — khoá dòng, bỏ qua dòng đang bị khoá.</summary>
+    /// <remarks>
+    /// <para>
     /// Lọc ngay trong SQL theo mốc thời gian truyền vào chứ không đọc hết rồi lọc trong bộ nhớ:
     /// bảng người dùng lớn dần theo từng khoá học sinh, còn số tài khoản đến hạn thì luôn nhỏ.
+    /// </para>
+    /// <para>
+    /// Chỉ có nghĩa bên trong một transaction. Dòng đang bị khoá — quản trị viên đang khôi phục đúng
+    /// tài khoản đó — bị bỏ qua (<c>SKIP LOCKED</c>) thay vì chờ: ẩn danh hoá không hoàn tác được, nên
+    /// thà để lượt quét sau xét lại còn hơn ghi lên một tài khoản vừa được khôi phục.
+    /// </para>
     /// </remarks>
-    Task<IReadOnlyList<User>> GetDueForDeletionAsync(
+    Task<IReadOnlyList<User>> LockDueForDeletionAsync(
         DateTime dueBeforeUtc,
         int batchSize,
         CancellationToken cancellationToken = default);

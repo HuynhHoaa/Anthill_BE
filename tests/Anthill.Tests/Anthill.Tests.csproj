@@ -20,6 +20,7 @@
   </ItemGroup>
 
   <ItemGroup>
+    <ProjectReference Include="..\..\src\Anthill.Api\Anthill.Api.csproj" />
     <ProjectReference Include="..\..\src\Anthill.Application\Anthill.Application.csproj" />
     <ProjectReference Include="..\..\src\Anthill.Domain\Anthill.Domain.csproj" />
     <ProjectReference Include="..\..\src\Anthill.Infrastructure\Anthill.Infrastructure.csproj" />

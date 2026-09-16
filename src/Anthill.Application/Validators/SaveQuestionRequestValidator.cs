@@ -1,5 +1,6 @@
 using Anthill.Application.DTOs.Questions;
 using Anthill.Application.Mappings;
+using Anthill.Domain.Constants;
 using FluentValidation;
 
 namespace Anthill.Application.Validators;
@@ -90,6 +91,14 @@ public sealed class SaveQuestionRequestValidator : AbstractValidator<SaveQuestio
             .WithMessage("Ảnh phải được tải lên qua /api/uploads/images trước; API không nhận data URI.")
             .When(request => !string.IsNullOrWhiteSpace(request.ImageUrl));
 
+        // Chỉ nhận đường dẫn tương đối do chính /api/uploads/images cấp. Không chặn thì một lời
+        // gọi API trực tiếp (ngoài UI) có thể gán một URL tuyệt đối tới máy chủ khác — trình duyệt
+        // của mọi học sinh mở đề sẽ tải URL đó, lộ IP và thời điểm làm bài cho bên thứ ba.
+        RuleFor(request => request.ImageUrl)
+            .Must(url => IsAllowedImageUrl(url))
+            .WithMessage("Đường dẫn ảnh phải là ảnh đã tải lên qua /api/uploads/images.")
+            .When(request => !string.IsNullOrWhiteSpace(request.ImageUrl));
+
         RuleFor(request => request.Answers)
             .Must(answers => answers is { Count: >= MinAnswers })
             .WithMessage($"Câu hỏi phải có ít nhất {MinAnswers} đáp án.");
@@ -115,6 +124,11 @@ public sealed class SaveQuestionRequestValidator : AbstractValidator<SaveQuestio
             .WithMessage("Ảnh đáp án phải được tải lên qua /api/uploads/images trước; API không nhận data URI.")
             .When(HasAnswers);
 
+        RuleFor(request => request.Answers)
+            .Must(answers => answers!.All(answer => IsAllowedImageUrl(answer.ImageUrl)))
+            .WithMessage("Đường dẫn ảnh đáp án phải là ảnh đã tải lên qua /api/uploads/images.")
+            .When(HasAnswers);
+
         // Hai vế tách riêng để thông điệp nói đúng việc người dùng phải làm: chưa chọn đáp án đúng
         // và chọn nhầm hai đáp án đúng là hai thao tác sửa khác nhau.
         RuleFor(request => request.Answers)
@@ -136,4 +150,15 @@ public sealed class SaveQuestionRequestValidator : AbstractValidator<SaveQuestio
 
     private static bool IsDataUri(string? value) =>
         value is not null && value.TrimStart().StartsWith("data:", StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>
+    /// Trống thì hợp lệ (ảnh không bắt buộc); có giá trị thì phải là đường dẫn tương đối do chính
+    /// <c>/api/uploads/images</c> cấp — không phải một URL tuyệt đối tới máy chủ khác.
+    /// </summary>
+    private static bool IsAllowedImageUrl(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value)) return true;
+        return value.Trim().StartsWith(
+            $"{FileStorageConstants.PublicRequestPathPrefix}/", StringComparison.Ordinal);
+    }
 }

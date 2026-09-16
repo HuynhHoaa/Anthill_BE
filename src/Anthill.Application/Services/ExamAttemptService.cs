@@ -55,6 +55,13 @@ public sealed class ExamAttemptService : IExamAttemptService
     private const string NotInProgressMessage =
         "Lượt làm bài này đã kết thúc. Xem lại ở mục kết quả của bạn.";
 
+    // Bộ đếm ngược trên client bấm nộp NGAY khi còn 0 giây, rồi gói tin mới lên đường — nên request
+    // của một lần auto-submit hợp lệ hầu như luôn chạm server sau ExpiresAt, không phải trường hợp
+    // hiếm. Cửa sổ này chỉ nới cho đúng cái request mà bộ đếm ngược đã tự kích hoạt không điều kiện
+    // (client không có cách nào giữ nó lại để "câu giờ" mà không làm hỏng luôn việc nộp bài); nó
+    // không mở lại cửa cho một client vẫn đang chủ động trả lời sau hạn.
+    private static readonly TimeSpan LateSubmitGraceWindow = TimeSpan.FromSeconds(20);
+
     private readonly IUnitOfWork _unitOfWork;
     private readonly ICurrentUser _currentUser;
     private readonly IExamGeneratorService _generator;
@@ -434,12 +441,19 @@ public sealed class ExamAttemptService : IExamAttemptService
         // kèm thì cửa sổ ghi dài thêm đúng bằng độ trễ mạng, mà độ trễ đó client tự tạo ra được.
         var lateSubmit = AttemptDeadline.IsExpired(attempt.ExpiresAt, now);
 
+        // lateSubmit vẫn giữ nguyên ý nghĩa "quá hạn" cho việc chấm điểm/ghi sổ ở GradeAsync bên
+        // dưới — không đổi. Nhưng việc CÓ GỘP đáp án gửi kèm hay không thì cần một mốc rộng hơn một
+        // chút: request tự-nộp của client chạm server trễ hơn ExpiresAt gần như luôn luôn (xem giải
+        // thích ở LateSubmitGraceWindow phía trên), nên nếu gộp đúng bằng lateSubmit thì nhánh gộp
+        // coi như chết, và bài cuối cùng học sinh chọn trước khi hết giờ bị rơi mất mỗi lần.
+        var withinGraceWindow = now.ToUtc() <= attempt.ExpiresAt.ToUtc() + LateSubmitGraceWindow;
+
         // KHONG chan theo ClientSeq o day. Bo dem chi de xu ly hai goi luu nhap den sai thu tu;
         // con nop bai la loi tuyen bo cuoi cung cua hoc sinh, khong co goi nao "moi hon" dang tren
         // duong toi. Neu client vua tai lai trang thi bo dem cua no bat dau lai tu dau, va chan o
         // day nghia la cham diem tren dap an CU roi tra ve 200 kem mot con diem — hoc sinh mat bai
         // vinh vien ma khong ai bao gi.
-        if (!lateSubmit && request.Answers is { Count: > 0 })
+        if ((!lateSubmit || withinGraceWindow) && request.Answers is { Count: > 0 })
         {
             var questionsById = questions.ToDictionary(question => question.Id);
 

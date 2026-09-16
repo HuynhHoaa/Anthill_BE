@@ -40,12 +40,10 @@ Giới hạn đã biết:
   token. Access token sống 120 phút (480 ở Development), đủ cho một bài 45–60 phút.
 - Ảnh câu hỏi ghi xuống đĩa của máy chạy API (`wwwroot/uploads`); nền tảng nào xoá đĩa khi khởi động
   lại thì cần một cài đặt `IFileService` khác.
-- Kết nối SignalR **đã mở** trước khi tài khoản bị khoá, đưa vào diện xoá hay đổi mật khẩu vẫn nhận sự
-  kiện server đẩy xuống — thông báo của chính tài khoản đó, và tiến độ nộp bài nếu là giáo viên đang
-  theo dõi một đề — cho tới khi client gọi một phương thức hub (lúc đó `SessionRevalidationHubFilter`
-  trả lỗi kèm lý do và cắt kết nối) hoặc tới khi token hết hạn (server tự đóng kết nối nhờ
-  `CloseOnAuthenticationExpiration`). Negotiate, mở kết nối mới và mọi request REST của phiên đó thì bị
-  từ chối ngay. Đóng hẳn khe này cần ghi lại connectionId của từng tài khoản để cắt ngay lúc xoay stamp.
+- Sổ kết nối SignalR (`UserConnectionRegistry`) nằm trong bộ nhớ của một tiến trình, nên lệnh cắt lúc
+  xoay stamp chỉ với tới kết nối do chính tiến trình đó giữ. Chạy nhiều bản API sau bộ cân bằng tải thì
+  phải kèm backplane và phát lệnh cắt qua đó; tới lúc ấy, kết nối ở bản khác vẫn bị chặn ở lời gọi hub
+  kế tiếp và khi token hết hạn.
 - Lưu nháp, nạp lại phiên và vào lại bài (`POST /api/exam-attempts`) sau khi hết giờ đều trả 410, dù
   `AutoSubmitExpiredAttemptsService` có chốt bài trước hay không; 409 chỉ dành cho bài học sinh tự nộp
   trước giờ. Chỗ còn để ngỏ là khung giờ đồng hồ: hai instance API lệch nhau vài mili giây thì một lời gọi
@@ -98,22 +96,36 @@ khoá, đổi mật khẩu, cấp lại mật khẩu và đưa vào diện xoá 
 cố ý không xoay. Sau khi kiểm chữ ký, `OnTokenValidated` tra tài khoản theo khoá chính (chỉ Id, Status,
 SecurityStamp, không theo dõi thay đổi) và từ chối token khi tài khoản không còn, stamp đã đổi, hoặc
 trạng thái không phải Active — áp cho mọi request có token, kể cả negotiate và kết nối SignalR. Trên
-một WebSocket đã mở, bộ lọc hub kiểm lại phiên ở mỗi lời gọi phương thức và cắt kết nối kèm lý do, còn
-kết nối tự đóng khi token hết hạn. Token bị từ chối nhận **401** kèm lý do cụ thể, vì 401 là thứ khiến
+một WebSocket đã mở, mọi kết nối của tài khoản bị cắt ngay lúc stamp xoay, bộ lọc hub kiểm lại phiên ở
+mỗi lời gọi phương thức và cắt kết nối kèm lý do, còn kết nối tự đóng khi token hết hạn. Token bị từ chối nhận **401** kèm lý do cụ thể, vì 401 là thứ khiến
 frontend đưa người dùng về trang đăng nhập; mở khoá không làm token cũ sống lại. Vì vậy 401 chỉ dành cho
 phiên đã chết: gõ sai mật khẩu hiện tại khi đổi mật khẩu là 400 gắn vào ô `currentPassword`. Riêng
 `GET/PUT /api/auth/me` và `change-password` giữ hợp đồng cũ: tài khoản bị khoá hay chờ xoá nhận 403 kèm
 câu nói rõ phải liên hệ ai. Đổi lại là thêm một truy vấn theo khoá chính trên mỗi request có token và
 mỗi lời gọi hub; cố ý không cache, vì cache có hạn là mở lại đúng khoảng trễ này. (`SessionValidation`,
 `AccountSessionReader`, `ServiceCollectionExtensions.OnTokenValidated`, `ReportsBlockedAccountAttribute`,
-`SessionRevalidationHubFilter`)
+`SessionRevalidationHubFilter`, `UserConnectionRegistry`)
+
+**Kết nối realtime chết ngay khi phiên chết.** Sự kiện server đẩy xuống không đi qua phương thức hub nào,
+nên trước đây một WebSocket mở trước lúc khoá vẫn nhận thông báo cá nhân — và cả tiến độ nộp bài nếu là
+giáo viên đang theo dõi một đề — cho tới lần gọi hub kế tiếp hoặc tới khi token hết hạn (tối đa 120 phút).
+Hub ghi từng kết nối vào một sổ theo tài khoản, và mọi lối xoay `SecurityStamp` gọi cắt ngay sau khi
+transaction commit (cắt trước commit thì client nối lại kịp đọc stamp cũ). Sổ nằm trong bộ nhớ một tiến
+trình — giới hạn ghi ở đầu file lớp đó. (`UserConnectionRegistry`, `IUserConnectionCloser`)
 
 **Lưu một entity chỉ ghi những cột thật sự đổi.** `GenericRepository.Update` không gọi `DbSet.Update`
 trên entity DbContext đang theo dõi: hàm đó đánh dấu mọi cột là Modified, tức là ghi lại nguyên bản đã
 đọc từ đầu request. Một lần `PUT /api/auth/me` nạp tài khoản ngay trước lúc quản trị viên bấm khoá từng
 ghi lại `Status`, `SecurityStamp` và `PasswordHash` cũ, làm lệnh khoá biến mất. `session-revocation.sh`
 bắn hàng loạt `PUT /api/auth/me` song song với lệnh khoá và lệnh cấp lại mật khẩu, lặp nhiều vòng, để
-giữ điều này. Hai request cùng sửa một cột thì bên ghi sau vẫn thắng; chưa có concurrency token.
+giữ điều này.
+
+**Ghi lên bản tài khoản đã cũ thì 409, không ghi đè.** Bảng `Users` dùng cột hệ thống `xmin` của PostgreSQL
+làm concurrency token: request đọc tài khoản rồi lưu sau khi người khác đã ghi dòng đó nhận 409. Riêng các
+thao tác quyết định phiên (khoá, cấp lại hay đổi mật khẩu, đưa vào diện xoá, khôi phục) giữ khoá dòng
+`FOR UPDATE` từ lúc đọc tới lúc commit, nên một tài khoản bắn `PUT /api/auth/me` liên tục cũng không làm
+lệnh khoá trượt; tiến trình xoá dữ liệu khoá lô của nó bằng `SKIP LOCKED` để không đè lên tài khoản đang
+được khôi phục. (`UserConfiguration`, `UserRepository.LockForUpdateAsync`, `ExceptionMiddleware`)
 
 **Giáo viên chỉ thấy học sinh mình phụ trách.** `GET /api/students` của giáo viên chỉ trả các em ở lớp họ
 được phân công và lớp đã công bố — cùng tập với danh sách lớp của họ. Lọc theo lớp người khác, lớp nháp
@@ -191,7 +203,7 @@ từng chạy môi trường Development trên database thật thì phải xoá 
 | `ConnectionStrings:DefaultConnection` | `ConnectionStrings__DefaultConnection`, hoặc `DATABASE_URL` dạng URI | bắt buộc |
 | `Jwt:SecretKey` | `Jwt__SecretKey` hoặc `JWT_SECRET_KEY` | bắt buộc, tối thiểu 32 byte |
 | `Jwt:Issuer`, `Jwt:Audience`, `Jwt:ExpiryMinutes` | `Jwt__*` | `Anthill`, `Anthill.Client`, 120 phút |
-| `Cors:AllowedOrigins` | `Cors__AllowedOrigins__0`, `__1`, ... | mặc định `https://anthill.vercel.app`, `https://*.vercel.app`; deploy thì đặt lại |
+| `Cors:AllowedOrigins` | `Cors__AllowedOrigins__0`, `__1`, ... | không có mặc định; **bắt buộc** ở Production, thiếu thì API dừng lúc khởi động |
 | `AutoSubmit:Enabled`, `IntervalSeconds`, `BatchSize` | `AutoSubmit__*` | `true`, 30, 50 |
 | `FileStorage:MaxBytes` | `FileStorage__MaxBytes` | 4 MB |
 
@@ -201,13 +213,14 @@ trống, và được tự chuyển sang chuỗi kết nối Npgsql. Hai điều
 - **`Jwt:SecretKey` trong `appsettings.Development.json` chỉ dùng cho dev.** Nó nằm trong git nên coi như
   công khai. Production phải đặt khoá riêng qua biến môi trường (`openssl rand -base64 48`); thiếu hoặc
   ngắn hơn 32 byte thì API dừng ngay lúc khởi động, kèm thông điệp chỉ rõ chỗ sửa.
-- **CORS không được dùng `*`.** SignalR cần `AllowCredentials`, mà trình duyệt từ chối cặp
-  `AllowAnyOrigin` + `AllowCredentials`. Phải liệt kê origin cụ thể; riêng phần subdomain thì chấp nhận
-  một dấu sao (`https://*.vercel.app`) cho địa chỉ preview đổi theo từng lần deploy. Dấu sao chấp nhận
-  được vì API không dùng cookie: token đi bằng header `Authorization` (hub dùng query `access_token`),
-  nên CORS ở đây không phải lớp bảo mật. Mảng cấu hình bị đè theo từng chỉ số: chỉ đặt
-  `Cors__AllowedOrigins__0` thì phần tử `__1` (dấu sao) vẫn còn. Không muốn nhận địa chỉ preview thì đặt
-  cả `__1`, ví dụ trùng với `__0`.
+- **CORS không được dùng `*`, và không có địa chỉ mặc định nào.** SignalR cần `AllowCredentials`, mà
+  trình duyệt từ chối cặp `AllowAnyOrigin` + `AllowCredentials`, nên origin phải liệt kê cụ thể. Phần
+  subdomain chấp nhận một dấu sao (`https://*.vercel.app`) để chạy thử các bản preview đổi địa chỉ theo
+  từng lần deploy — nhưng chỉ vậy thôi: `appsettings.json` để danh sách rỗng, còn `https://*.vercel.app`
+  là "mọi trang bất kỳ ai deploy lên Vercel". Ở Production, danh sách rỗng làm API dừng ngay lúc khởi
+  động kèm tên biến phải đặt, và một mẫu có dấu sao còn sót lại thì hiện ra trong log dưới dạng lỗi.
+  Danh sách rỗng ở file gốc cũng gỡ luôn cái bẫy của mảng cấu hình: mảng bị đè theo từng chỉ số, nên
+  trước đây đặt `Cors__AllowedOrigins__0` mà quên `__1` là dấu sao vẫn còn hiệu lực.
 
 ## Kiểm thử
 

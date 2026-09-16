@@ -1,3 +1,5 @@
+using Anthill.Domain.Constants;
+
 namespace Anthill.Infrastructure.FileStorage;
 
 /// <summary>
@@ -19,8 +21,13 @@ public sealed class FileStorageOptions
     /// <summary>Thư mục con dành cho file người dùng tải lên, nằm trong <see cref="RootPath"/>.</summary>
     public string UploadFolder { get; set; } = "uploads";
 
-    /// <summary>Tiền tố URL công khai. Phải khớp đường dẫn mà middleware phục vụ file tĩnh gắn vào.</summary>
-    public string RequestPath { get; set; } = "/uploads";
+    /// <summary>
+    /// Tiền tố URL công khai. Phải khớp đường dẫn mà middleware phục vụ file tĩnh gắn vào, và
+    /// khớp <see cref="FileStorageConstants.PublicRequestPathPrefix"/> mà
+    /// <c>SaveQuestionRequestValidator</c> dùng để chấp nhận <c>ImageUrl</c> — đổi giá trị này
+    /// trong cấu hình mà không đổi cả hằng số kia thì ảnh hợp lệ sẽ bị validator từ chối.
+    /// </summary>
+    public string RequestPath { get; set; } = FileStorageConstants.PublicRequestPathPrefix;
 
     /// <summary>
     /// Trần dung lượng mỗi ảnh. 4 MB đủ cho một ảnh chụp đề bài, và đủ nhỏ để một học sinh dùng

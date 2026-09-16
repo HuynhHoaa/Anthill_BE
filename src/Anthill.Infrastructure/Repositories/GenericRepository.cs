@@ -80,8 +80,11 @@ public class GenericRepository<T> : IGenericRepository<T> where T : BaseEntity
     /// một cách.
     /// </para>
     /// <para>
-    /// Hai request cùng sửa <b>một</b> cột thì bên ghi sau vẫn thắng. Đóng nốt khe đó cần concurrency
-    /// token trên bảng, không phải việc của hàm này.
+    /// Hai request cùng sửa <b>một</b> dòng thì hàm này không phân xử được ai thắng. Bảng <c>Users</c> có
+    /// concurrency token (<c>xmin</c>, xem <c>UserConfiguration</c>): bên ghi trên bản đã cũ nhận
+    /// <c>DbUpdateConcurrencyException</c>. Hệ quả cho nhánh Detached: entity <c>User</c> đọc bằng
+    /// <c>AsNoTracking</c> không mang theo giá trị <c>xmin</c> (thuộc tính ẩn không nằm trên đối tượng),
+    /// nên đem nó vào đây thì lần lưu luôn bị coi là xung đột — tài khoản phải được nạp có theo dõi.
     /// </para>
     /// </remarks>
     public virtual void Update(T entity)

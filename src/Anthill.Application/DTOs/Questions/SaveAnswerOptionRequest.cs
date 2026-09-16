@@ -21,7 +21,7 @@ public sealed record SaveAnswerOptionRequest
 
     /// <summary>
     /// URL trả về từ <c>POST /api/uploads/images</c>. <b>Không nhận data URI</b> (§1) — frontend
-    /// hiện nhét thẳng chuỗi <c>data:image/png;base64,...</c> vào đây và phải đổi.
+    /// upload ảnh trước rồi gửi URL nhận được vào đây.
     /// </summary>
     public string? ImageUrl { get; init; }
 

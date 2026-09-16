@@ -279,6 +279,11 @@ public static class ServiceCollectionExtensions
         // Scoped có chủ đích: nó cắt kết nối lúc scope của lời gọi hub bị dispose, xem lớp đó.
         services.AddScoped<RevokedConnectionCloser>();
 
+        // Một sổ cho cả tiến trình: hub ghi vào, các lối xoay SecurityStamp đọc ra qua IUserConnectionCloser.
+        // Đăng ký hai lần trỏ về cùng một thể hiện — hai thể hiện riêng là một sổ ghi mà không ai đọc.
+        services.AddSingleton<UserConnectionRegistry>();
+        services.AddSingleton<IUserConnectionCloser>(provider => provider.GetRequiredService<UserConnectionRegistry>());
+
         // Dạy SignalR biết Clients.User(id) tra theo claim "sub".
         services.AddSingleton<IUserIdProvider, SubClaimUserIdProvider>();
 

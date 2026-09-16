@@ -303,6 +303,14 @@ public sealed class StudentGroupService : IStudentGroupService
 
         // Một lần ghi cho cả mẻ: mạng đứt giữa chừng thì không em nào vào nhóm, thay vì mười em vào
         // và mười em không.
+        //
+        // Cố ý không khoá dòng như các lối ghi quyết định phiên đăng nhập (xem
+        // IUserRepository.LockForUpdateAsync). Ở đây chỉ có GroupId và UpdatedAt được ghi, nên thứ
+        // duy nhất concurrency token gây ra là: đúng lúc lưu mà một trong các em vừa bị ghi bởi
+        // request khác thì cả mẻ nhận 409 "hãy tải lại rồi thử lại" — không em nào vào nhầm nửa
+        // chừng. Đổi lấy điều đó là không phải khoá vài chục dòng cùng lúc trong một request, mà
+        // khoá theo lô thì thứ tự khoá do bộ tối ưu quyết định, tức là mở cửa cho deadlock giữa hai
+        // lần xếp lớp có giao nhau — một lỗi 500 thay cho một lời mời thử lại.
         if (added > 0)
         {
             await _unitOfWork.SaveChangesAsync(cancellationToken);

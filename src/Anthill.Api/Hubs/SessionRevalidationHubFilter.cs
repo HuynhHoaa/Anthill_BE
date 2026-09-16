@@ -28,7 +28,8 @@ namespace Anthill.Api.Hubs;
 /// </para>
 /// <para>
 /// Bộ lọc này không che được sự kiện server <b>đẩy</b> xuống một kết nối đã mở: việc gửi đi không đi
-/// qua phương thức hub nào. Khe hở còn lại đó ghi ở <see cref="NotificationHub"/>.
+/// qua phương thức hub nào. Phần đó do <c>UserConnectionRegistry</c> lo — nó cắt kết nối ngay lúc stamp
+/// xoay. Bộ lọc vẫn giữ vì sổ kết nối chỉ biết kết nối của tiến trình mình (xem lớp đó).
 /// </para>
 /// </remarks>
 public sealed class SessionRevalidationHubFilter : IHubFilter

@@ -14,6 +14,24 @@ public sealed class PasswordHasher : IPasswordHasher
 {
     private const int WorkFactor = 12;
 
+    /// <summary>
+    /// Chuỗi băm giả, sinh một lần cho cả tiến trình bằng đúng <see cref="WorkFactor"/> ở trên.
+    /// </summary>
+    /// <remarks>
+    /// Sinh chứ không viết cứng: chuỗi viết cứng đóng băng work factor của ngày nó được dán vào, nên
+    /// nâng work factor thật lên là lặng lẽ mở lại đúng kênh dò thời gian mà nó sinh ra để bịt. Nội
+    /// dung băm là một chuỗi ngẫu nhiên không ai biết, và không tài khoản nào mang chuỗi băm này.
+    /// <para>
+    /// <see cref="Lazy{T}"/> tĩnh: băm ở work factor 12 tốn khoảng 250ms, trả giá đó đúng một lần ở
+    /// lần đăng nhập sai tên đầu tiên chứ không phải mỗi lần khởi tạo lớp.
+    /// </para>
+    /// </remarks>
+    private static readonly Lazy<string> DecoyHash = new(
+        () => BCrypt.Net.BCrypt.HashPassword(Guid.NewGuid().ToString("N"), WorkFactor));
+
+    /// <inheritdoc />
+    public string TimingDecoyHash => DecoyHash.Value;
+
     public string Hash(string password)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(password);

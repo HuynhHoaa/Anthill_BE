@@ -1,5 +1,6 @@
 using Anthill.Application.Common;
 using Anthill.Application.DTOs.Students;
+using Anthill.Application.Interfaces.Realtime;
 using Anthill.Application.Interfaces.Security;
 using Anthill.Application.Interfaces.Services;
 using Anthill.Application.Interfaces.UnitOfWork;
@@ -42,14 +43,19 @@ public sealed class StudentService : IStudentService
     /// </summary>
     private readonly ICurrentUser _currentUser;
 
+    /// <summary>Cắt kết nối realtime đang mở mỗi khi một lối ghi ở đây xoay <c>SecurityStamp</c>.</summary>
+    private readonly IUserConnectionCloser _connections;
+
     public StudentService(
         IUnitOfWork unitOfWork,
         IPasswordHasher passwordHasher,
-        ICurrentUser currentUser)
+        ICurrentUser currentUser,
+        IUserConnectionCloser connections)
     {
         _unitOfWork = unitOfWork;
         _passwordHasher = passwordHasher;
         _currentUser = currentUser;
+        _connections = connections;
     }
 
     /// <inheritdoc />
@@ -180,10 +186,13 @@ public sealed class StudentService : IStudentService
     {
         ArgumentNullException.ThrowIfNull(request);
 
-        // Đường ghi dùng GetByIdAsync để lấy entity trần do DbContext theo dõi, nên SaveChanges chỉ
-        // ghi đúng các cột gán dưới đây (xem GenericRepository.Update) — một lần sửa hồ sơ chạy song
-        // song không đè mất mật khẩu vừa cấp lại hay stamp vừa xoay.
-        var student = await _unitOfWork.Users.GetByIdAsync(id, cancellationToken);
+        // Khoá dòng tài khoản tới lúc commit, vì request này có thể khoá tài khoản (xem
+        // IUserRepository.LockForUpdateAsync). Entity khoá xong vẫn do DbContext theo dõi, nên
+        // SaveChanges chỉ ghi đúng các cột gán dưới đây. Các nhánh trả về sớm chưa ghi gì: rời khối
+        // using là transaction tự cuộn lại.
+        await using var transaction = await _unitOfWork.BeginTransactionAsync(cancellationToken);
+
+        var student = await _unitOfWork.Users.LockForUpdateAsync(id, cancellationToken);
         if (!IsStudent(student))
         {
             return Result.NotFound<StudentDto>(NotFoundMessage);
@@ -211,6 +220,7 @@ public sealed class StudentService : IStudentService
         }
 
         var newStatus = ParseStatusOrDefault(request.Status, account.Status);
+        var stampBefore = account.SecurityStamp;
 
         account.FullName = fields.FullName;
         account.Email = fields.Email;
@@ -225,6 +235,8 @@ public sealed class StudentService : IStudentService
 
         _unitOfWork.Users.Update(account);
         await _unitOfWork.SaveChangesAsync(cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
+        CloseConnectionsIfStampRotated(account, stampBefore);
 
         return Result.Success(await BuildDtoAsync(
             account,
@@ -238,7 +250,9 @@ public sealed class StudentService : IStudentService
         UserStatus status,
         CancellationToken cancellationToken = default)
     {
-        var student = await _unitOfWork.Users.GetByIdAsync(id, cancellationToken);
+        await using var transaction = await _unitOfWork.BeginTransactionAsync(cancellationToken);
+
+        var student = await _unitOfWork.Users.LockForUpdateAsync(id, cancellationToken);
         if (!IsStudent(student))
         {
             return Result.NotFound<StudentDto>(NotFoundMessage);
@@ -253,11 +267,14 @@ public sealed class StudentService : IStudentService
 
         if (account.Status != status)
         {
+            var stampBefore = account.SecurityStamp;
             ApplyStatus(account, status);
             account.UpdatedAt = DateTime.UtcNow;
 
             _unitOfWork.Users.Update(account);
             await _unitOfWork.SaveChangesAsync(cancellationToken);
+            await transaction.CommitAsync(cancellationToken);
+            CloseConnectionsIfStampRotated(account, stampBefore);
         }
 
         // Đặt lại đúng trạng thái đang có không phải lỗi: giáo viên bấm nhầm hai lần, hoặc hai tab
@@ -276,7 +293,9 @@ public sealed class StudentService : IStudentService
     {
         ArgumentNullException.ThrowIfNull(request);
 
-        var student = await _unitOfWork.Users.GetByIdAsync(id, cancellationToken);
+        await using var transaction = await _unitOfWork.BeginTransactionAsync(cancellationToken);
+
+        var student = await _unitOfWork.Users.LockForUpdateAsync(id, cancellationToken);
         if (!IsStudent(student))
         {
             return Result.NotFound<StudentDto>(NotFoundMessage);
@@ -308,6 +327,8 @@ public sealed class StudentService : IStudentService
 
         _unitOfWork.Users.Update(account);
         await _unitOfWork.SaveChangesAsync(cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
+        _connections.CloseConnectionsOf(account.Id);
 
         return Result.Success(await BuildDtoAsync(
             account,
@@ -320,7 +341,12 @@ public sealed class StudentService : IStudentService
         int id,
         CancellationToken cancellationToken = default)
     {
-        var student = await _unitOfWork.Users.GetByIdAsync(id, cancellationToken);
+        // Khoá dòng để không chạy chéo với tiến trình xoá: nó bỏ qua dòng đang bị khoá, còn nếu nó
+        // khoá trước thì lần đọc này chờ rồi thấy trạng thái Deleted. Không bao giờ có chuyện khôi
+        // phục xong rồi mới bị ẩn danh hoá đè lên.
+        await using var transaction = await _unitOfWork.BeginTransactionAsync(cancellationToken);
+
+        var student = await _unitOfWork.Users.LockForUpdateAsync(id, cancellationToken);
         if (!IsStudent(student))
         {
             return Result.NotFound<StudentDto>(NotFoundMessage);
@@ -354,6 +380,7 @@ public sealed class StudentService : IStudentService
 
         _unitOfWork.Users.Update(account);
         await _unitOfWork.SaveChangesAsync(cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
 
         return Result.Success(await BuildDtoAsync(
             account,
@@ -372,7 +399,10 @@ public sealed class StudentService : IStudentService
         }
 
         var now = DateTime.UtcNow;
-        var due = await _unitOfWork.Users.GetDueForDeletionAsync(
+
+        await using var transaction = await _unitOfWork.BeginTransactionAsync(cancellationToken);
+
+        var due = await _unitOfWork.Users.LockDueForDeletionAsync(
             now.AddDays(-StudentAnonymizer.RetentionDays),
             batchSize,
             cancellationToken);
@@ -382,11 +412,13 @@ public sealed class StudentService : IStudentService
             return Result.Success(0);
         }
 
+        var purged = new List<int>(due.Count);
+
         foreach (var account in due)
         {
-            // Kiểm lại lần nữa trên chính bản ghi vừa đọc. Truy vấn đã lọc theo mốc thời gian,
-            // nhưng giữa lúc đọc và lúc ghi có thể có người vừa bấm khôi phục — và ẩn danh hoá là
-            // thao tác không hoàn tác được, nên đáng để hỏi lại một câu.
+            // Kiểm lại lần nữa trên chính bản ghi vừa đọc. Dòng đã bị khoá nên không ai khôi phục chen
+            // vào được nữa, nhưng ẩn danh hoá là thao tác không hoàn tác được — một câu hỏi lại trong
+            // bộ nhớ rẻ hơn nhiều so với tin tuyệt đối vào câu SQL phía trên.
             if (!StudentAnonymizer.IsDue(account, now))
             {
                 continue;
@@ -394,11 +426,20 @@ public sealed class StudentService : IStudentService
 
             StudentAnonymizer.Anonymize(account, now);
             _unitOfWork.Users.Update(account);
+            purged.Add(account.Id);
         }
 
         await _unitOfWork.SaveChangesAsync(cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
 
-        return Result.Success(due.Count);
+        // Tài khoản chờ xoá đã bị cắt kết nối từ lúc được đưa vào diện xoá, nên thường không còn gì để
+        // cắt. Vẫn gọi: ẩn danh hoá cũng xoay stamp, và mọi lối xoay stamp đi theo cùng một quy tắc.
+        foreach (var userId in purged)
+        {
+            _connections.CloseConnectionsOf(userId);
+        }
+
+        return Result.Success(purged.Count);
     }
 
     /// <inheritdoc />
@@ -406,7 +447,9 @@ public sealed class StudentService : IStudentService
         int id,
         CancellationToken cancellationToken = default)
     {
-        var student = await _unitOfWork.Users.GetByIdAsync(id, cancellationToken);
+        await using var transaction = await _unitOfWork.BeginTransactionAsync(cancellationToken);
+
+        var student = await _unitOfWork.Users.LockForUpdateAsync(id, cancellationToken);
         if (!IsStudent(student))
         {
             return Result.NotFound<ResetPasswordResponse>(NotFoundMessage);
@@ -432,6 +475,8 @@ public sealed class StudentService : IStudentService
 
         _unitOfWork.Users.Update(account);
         await _unitOfWork.SaveChangesAsync(cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
+        _connections.CloseConnectionsOf(account.Id);
 
         return Result.Success(new ResetPasswordResponse
         {
@@ -559,6 +604,22 @@ public sealed class StudentService : IStudentService
         if (status == UserStatus.Locked)
         {
             account.SecurityStamp = NewSecurityStamp();
+        }
+    }
+
+    /// <summary>
+    /// Cắt kết nối realtime của tài khoản nếu lần ghi vừa commit đã xoay stamp. Gọi sau commit, xem
+    /// <see cref="IUserConnectionCloser"/>.
+    /// </summary>
+    /// <remarks>
+    /// So stamp thay vì so trạng thái: quy tắc "khi nào xoay" nằm ở <see cref="ApplyStatus"/>, và hỏi thẳng
+    /// kết quả của nó thì hai nơi không thể hiểu khác nhau.
+    /// </remarks>
+    private void CloseConnectionsIfStampRotated(User account, string stampBefore)
+    {
+        if (!string.Equals(account.SecurityStamp, stampBefore, StringComparison.Ordinal))
+        {
+            _connections.CloseConnectionsOf(account.Id);
         }
     }
 
