@@ -563,7 +563,7 @@ public sealed class StudentGroupService : IStudentGroupService
     /// </remarks>
     private async Task<StudentGroup?> LoadReadableAsync(int id, CancellationToken cancellationToken)
     {
-        var group = await _unitOfWork.StudentGroups.GetByIdAsync(id, cancellationToken);
+        var group = await _unitOfWork.StudentGroups.GetWithTeachersAsync(id, cancellationToken);
         if (group is null)
         {
             return null;
@@ -598,7 +598,7 @@ public sealed class StudentGroupService : IStudentGroupService
             return Result.Forbidden<StudentGroup>(AdminOnlyMessage);
         }
 
-        var group = await _unitOfWork.StudentGroups.GetByIdAsync(id, cancellationToken);
+        var group = await _unitOfWork.StudentGroups.GetWithTeachersAsync(id, cancellationToken);
 
         return group is not null
             ? Result.Success(group)
