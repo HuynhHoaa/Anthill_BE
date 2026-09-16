@@ -34,6 +34,18 @@ public sealed record StudentExamItemDto
 
     public required int TotalQuestions { get; init; }
 
+    /// <summary>
+    /// Điểm mỗi câu. Không phải blueprint (tỷ lệ ba mức độ) mà chỉ là con số hiển thị ở màn giới
+    /// thiệu để em tính được thang điểm — an toàn, không lộ cấu trúc đề.
+    /// </summary>
+    public required decimal PointPerQuestion { get; init; }
+
+    /// <summary>Đề có xáo thứ tự câu hỏi giữa các lượt làm hay không — chỉ để hiển thị, không phải blueprint.</summary>
+    public required bool ShuffleQuestions { get; init; }
+
+    /// <summary>Đề có xáo thứ tự đáp án giữa các lượt làm hay không — chỉ để hiển thị, không phải blueprint.</summary>
+    public required bool ShuffleAnswers { get; init; }
+
     public required DateTime OpenAt { get; init; }
 
     public required DateTime CloseAt { get; init; }

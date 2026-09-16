@@ -110,6 +110,14 @@ public static class ExamAttemptMappingExtensions
 
             DurationMinutes = exam.DurationMinutes,
             TotalQuestions = totalQuestions,
+
+            // Ba trường dưới đây CHỈ để màn giới thiệu tính thang điểm và hiển thị, không phải
+            // blueprint (tỷ lệ ba mức độ) mà class doc ở trên nói học sinh không có lý do đọc —
+            // an toàn để trả ra.
+            PointPerQuestion = exam.PointPerQuestion,
+            ShuffleQuestions = exam.ShuffleQuestions,
+            ShuffleAnswers = exam.ShuffleAnswers,
+
             // Hai mốc này là thứ học sinh nhìn thấy trên thẻ bài và dùng để đếm ngược, nên phải là
             // giờ THẬT của em đó — tức lịch riêng của lớp nếu có, ngược lại mới là lịch chung.
             OpenAt = effectiveOpenAt.ToUtc(),
