@@ -5,9 +5,8 @@ namespace Anthill.Application.Interfaces.Services;
 
 /// <summary>Upload ảnh cho câu hỏi và đáp án — <c>POST /api/uploads/images</c> (§4.5).</summary>
 /// <remarks>
-/// Điểm chuyển đổi quan trọng (§1): frontend hiện đọc file bằng <c>FileReader.readAsDataURL</c>
-/// rồi nhét thẳng data URI vào payload. API <b>không nhận data URI</b> — phải upload trước,
-/// nhận URL, rồi mới gửi URL kèm câu hỏi.
+/// Luồng ảnh (§1): frontend upload ảnh trước qua service này, nhận về URL, rồi mới gửi URL đó
+/// kèm câu hỏi. API <b>không nhận data URI</b> trong payload câu hỏi.
 /// <see cref="FileUploadRequest"/> nhận luồng byte và tên file gốc, không nhận <c>IFormFile</c>:
 /// tầng Application không được biết ASP.NET Core.
 /// Ràng buộc: chặn theo phần mở rộng <b>và</b> magic bytes, giới hạn dung lượng,

@@ -65,6 +65,20 @@ section "Data URI bi tu choi (§1)"
 expect_status "gui data URI thay vi URL → 400" 400 \
   "$(call POST /api/questions "$TEACHER" "{\"content\":\"Cau data uri\",\"topic\":\"$TOPIC\",\"difficulty\":\"easy\",\"defaultPoint\":1,\"imageUrl\":\"data:image/png;base64,iVBORw0KGgo=\",\"answers\":[{\"content\":\"A\",\"isCorrect\":true},{\"content\":\"B\",\"isCorrect\":false}]}")"
 
+section "URL anh tuyet doi bi tu choi (bao mat)"
+# ImageUrl chi duoc nhan khi la duong dan tuong doi do chinh /api/uploads/images cap. Khong chan thi
+# mot loi goi API truc tiep (ngoai giao dien) co the gan mot URL tuyet doi toi may chu khac — trinh
+# duyet cua moi hoc sinh mo de se tai URL do luc lam bai, lo IP va thoi diem lam bai cho ben thu ba.
+expect_status "imageUrl tuyet doi (https) o cau hoi → 400" 400 \
+  "$(call POST /api/questions "$TEACHER" "{\"content\":\"Cau url ngoai $STAMP\",\"topic\":\"$TOPIC\",\"difficulty\":\"easy\",\"defaultPoint\":1,\"imageUrl\":\"https://third-party.example/pixel.png\",\"answers\":[{\"content\":\"A\",\"isCorrect\":true},{\"content\":\"B\",\"isCorrect\":false}]}")"
+expect_status "imageUrl noi giao thuc (//host) o cau hoi → 400" 400 \
+  "$(call POST /api/questions "$TEACHER" "{\"content\":\"Cau url ngoai $STAMP\",\"topic\":\"$TOPIC\",\"difficulty\":\"easy\",\"defaultPoint\":1,\"imageUrl\":\"//third-party.example/pixel.png\",\"answers\":[{\"content\":\"A\",\"isCorrect\":true},{\"content\":\"B\",\"isCorrect\":false}]}")"
+expect_status "imageUrl tuyet doi o dap an → 400" 400 \
+  "$(call POST /api/questions "$TEACHER" "{\"content\":\"Cau url ngoai dap an $STAMP\",\"topic\":\"$TOPIC\",\"difficulty\":\"easy\",\"defaultPoint\":1,\"answers\":[{\"imageUrl\":\"https://third-party.example/pixel.png\",\"isCorrect\":true},{\"content\":\"Sai\",\"isCorrect\":false}]}")"
+expect_status "imageUrl tuong doi dung /uploads → 200" 200 \
+  "$(call POST /api/questions "$TEACHER" "{\"content\":\"Cau url dung $STAMP\",\"topic\":\"$TOPIC\",\"difficulty\":\"easy\",\"defaultPoint\":1,\"imageUrl\":\"/uploads/202601/hop-le.png\",\"answers\":[{\"content\":\"A\",\"isCorrect\":true},{\"content\":\"B\",\"isCorrect\":false}]}")"
+Q3=$(json_field id); QUESTION_IDS+=("$Q3")
+
 section "Pham vi to bo mon (§6)"
 expect_status "hoc sinh doc ngan hang → 403" 403 "$(call GET /api/questions "$STUDENT")"
 expect_status "hoc sinh tao cau hoi → 403" 403 "$(call POST /api/questions "$STUDENT" "$(question_body 1 4)")"
