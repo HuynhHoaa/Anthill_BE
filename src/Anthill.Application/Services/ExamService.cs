@@ -52,12 +52,18 @@ public sealed class ExamService : IExamService
     private readonly IUnitOfWork _unitOfWork;
     private readonly ICurrentUser _currentUser;
     private readonly IExamGeneratorService _generator;
+    private readonly IExamScheduleNotifier _scheduleNotifier;
 
-    public ExamService(IUnitOfWork unitOfWork, ICurrentUser currentUser, IExamGeneratorService generator)
+    public ExamService(
+        IUnitOfWork unitOfWork,
+        ICurrentUser currentUser,
+        IExamGeneratorService generator,
+        IExamScheduleNotifier scheduleNotifier)
     {
         _unitOfWork = unitOfWork;
         _currentUser = currentUser;
         _generator = generator;
+        _scheduleNotifier = scheduleNotifier;
     }
 
     /// <summary>Câu từ chối khi request đổi cấu hình của một đề đã có em bắt đầu làm.</summary>
@@ -105,11 +111,11 @@ public sealed class ExamService : IExamService
 
         // Một lời gọi cho cả trang thay vì mỗi đề một lần: mười đề trên màn hình danh sách vốn là
         // hai mươi truy vấn đếm.
-        var counters = await _unitOfWork.ExamAssignments.CountByExamsAsync(
-            page.Items.Select(exam => exam.Id),
-            cancellationToken);
+        var examIds = page.Items.Select(exam => exam.Id).ToList();
+        var counters = await _unitOfWork.ExamAssignments.CountByExamsAsync(examIds, cancellationToken);
+        var windowRows = await _unitOfWork.ExamAssignments.GetWindowRowsByExamsAsync(examIds, cancellationToken);
 
-        return Result.Success(page.Map(exam => ToDto(exam, asOf, counters)));
+        return Result.Success(page.Map(exam => ToDto(exam, asOf, counters, windowRows)));
     }
 
     /// <inheritdoc />
@@ -221,6 +227,10 @@ public sealed class ExamService : IExamService
             return Result.NotFound<ExamDto>(NotFoundMessage);
         }
 
+        // Chụp lịch và thời lượng SAU khi khoá và đọc lại đề: so với lần đọc kiểm quyền thì một lần sửa vừa
+        // commit xen giữa sẽ bị tính là "đổi giờ" lần nữa, và các em nhận hai thông báo cho một lần đổi.
+        var timingBefore = AssignmentSchedule.ExamTiming.Of(exam);
+
         var assignments = await _unitOfWork.ExamAssignments.LockByExamAsync(exam.Id, cancellationToken);
         var startedCount = assignments.Count == 0
             ? 0
@@ -324,10 +334,36 @@ public sealed class ExamService : IExamService
             await _unitOfWork.Exams.RemovePapersAsync(exam.Id, cancellationToken);
         }
 
+        var notices = await StageScheduleNoticesAsync(exam, timingBefore, now, cancellationToken);
+
         await _unitOfWork.SaveChangesAsync(cancellationToken);
+        await _scheduleNotifier.CollectUnreadCountsAsync(notices, cancellationToken);
         await transaction.CommitAsync(cancellationToken);
 
+        await _scheduleNotifier.PublishAsync(notices, cancellationToken);
+
         return Result.Success(await ToDtoAsync(exam, now, cancellationToken));
+    }
+
+    /// <summary>Thêm thông báo cho những em chưa bắt đầu mà lần sửa đề này dời giờ hoặc đổi thời lượng.</summary>
+    /// <remarks>
+    /// Gọi sau khi đã gán cấu hình mới lên đề và trước lần lưu cuối, trong transaction đang khoá các dòng giao
+    /// bài: em không thể bắt đầu xen giữa lúc đếm và lúc báo, nên không em nào vừa vào thi lại nhận tin "giờ
+    /// đã đổi". Lưu tên, mô tả hay tuỳ chọn hiện kết quả không tạo thông báo nào.
+    /// </remarks>
+    private async Task<ScheduleNoticeBatch> StageScheduleNoticesAsync(
+        Exam exam,
+        AssignmentSchedule.ExamTiming timingBefore,
+        DateTime now,
+        CancellationToken cancellationToken)
+    {
+        var pending = await _unitOfWork.ExamAssignments.GetNotStartedByExamAsync(exam.Id, cancellationToken);
+
+        var notices = pending
+            .Select(assignment => ScheduleNotice.FromExamEdit(assignment, timingBefore, exam, now))
+            .ToList();
+
+        return await _scheduleNotifier.StageExamUpdatedAsync(exam, notices, now, cancellationToken);
     }
 
     /// <summary>Bỏ mọi bản đề đã sinh của đề rồi sinh lại cho đúng những lượt giao đang có.</summary>
@@ -367,6 +403,15 @@ public sealed class ExamService : IExamService
 
         var exam = found.ValueOrThrow;
 
+        // Khoá dòng đề như lần sửa cả đề: hai lần dời lịch cùng lúc thì lần sau phải so với lịch lần trước
+        // vừa ghi, nếu không những em theo lịch chung nhận thông báo cho một lần đổi không còn đúng nữa.
+        await using var transaction = await _unitOfWork.BeginTransactionAsync(cancellationToken);
+
+        if (await _unitOfWork.Exams.LockForEditAsync(exam.Id, cancellationToken) is null)
+        {
+            return Result.NotFound<ExamDto>(NotFoundMessage);
+        }
+
         // Cùng phép kiểm của SaveExamRequestValidator, nhưng ở đây thời lượng đến từ đề chứ không
         // từ request — validator không nhìn thấy nó nên không kiểm hộ được.
         if (exam.DurationMinutes > (request.CloseAt - request.OpenAt).TotalMinutes)
@@ -376,14 +421,25 @@ public sealed class ExamService : IExamService
                 + "Hãy nới lịch ra, hoặc rút ngắn thời gian làm bài ở phần sửa đề.");
         }
 
+        // Khoá các dòng giao bài như lần sửa cả đề, để danh sách em "chưa bắt đầu" được báo không lệch với
+        // một em đang bấm "Vào thi" đúng lúc này.
+        await _unitOfWork.ExamAssignments.LockByExamAsync(exam.Id, cancellationToken);
+
+        var timingBefore = AssignmentSchedule.ExamTiming.Of(exam);
         var now = DateTime.UtcNow;
 
         exam.OpenAt = request.OpenAt.ToUtc();
         exam.CloseAt = request.CloseAt.ToUtc();
         exam.UpdatedAt = now;
 
-        _unitOfWork.Exams.Update(exam);
+        var notices = await StageScheduleNoticesAsync(exam, timingBefore, now, cancellationToken);
+
+        // Không gọi Update(): đề đã được theo dõi từ lúc khoá, theo dõi thay đổi tự nhận ra hai cột vừa đổi.
         await _unitOfWork.SaveChangesAsync(cancellationToken);
+        await _scheduleNotifier.CollectUnreadCountsAsync(notices, cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
+
+        await _scheduleNotifier.PublishAsync(notices, cancellationToken);
 
         return Result.Success(await ToDtoAsync(exam, now, cancellationToken));
     }
@@ -765,17 +821,24 @@ public sealed class ExamService : IExamService
         var assigned = await _unitOfWork.ExamAssignments.CountByExamAsync(exam.Id, cancellationToken);
         var submitted = await _unitOfWork.ExamAssignments.CountSubmittedByExamAsync(exam.Id, cancellationToken);
         var started = await _unitOfWork.ExamAssignments.CountStartedByExamAsync(exam.Id, cancellationToken);
+        var windowRows = await _unitOfWork.ExamAssignments.GetWindowRowsByExamsAsync([exam.Id], cancellationToken);
 
-        return exam.ToDto(asOf, assigned, submitted, started);
+        return exam.ToDto(asOf, assigned, submitted, started, AssignmentWindowSummary.Build(exam, windowRows, asOf));
     }
 
     private static ExamDto ToDto(
         Exam exam,
         DateTime asOf,
-        IReadOnlyDictionary<int, (int Assigned, int Submitted, int Started)> counters)
+        IReadOnlyDictionary<int, (int Assigned, int Submitted, int Started)> counters,
+        IReadOnlyList<AssignmentWindowRow> windowRows)
     {
         var counts = counters.TryGetValue(exam.Id, out var value) ? value : (Assigned: 0, Submitted: 0, Started: 0);
-        return exam.ToDto(asOf, counts.Assigned, counts.Submitted, counts.Started);
+        return exam.ToDto(
+            asOf,
+            counts.Assigned,
+            counts.Submitted,
+            counts.Started,
+            AssignmentWindowSummary.Build(exam, windowRows, asOf));
     }
 
     /// <summary>Bản nháp khi client gửi <c>lifecycle: "draft"</c>; bỏ trống nghĩa là đề có hiệu lực thật.</summary>

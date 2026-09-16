@@ -35,9 +35,48 @@ public sealed class AssignExamRequestValidator : AbstractValidator<AssignExamReq
     public AssignExamRequestValidator()
     {
         RuleFor(request => request)
-            .Must(request => request.StudentIds is { Count: > 0 } || request.GroupIds is { Count: > 0 })
+            .Must(request => request.StudentIds is { Count: > 0 }
+                             || request.GroupIds is { Count: > 0 }
+                             || request.Classes is { Count: > 0 })
             .WithName(nameof(AssignExamRequest.StudentIds))
             .WithMessage("Hãy chọn ít nhất một học sinh hoặc một nhóm lớp.");
+
+        // Một lớp chỉ được nói tới một lần. Nằm ở cả GroupIds lẫn Classes, hay hai lần trong Classes với hai
+        // khung giờ, là hai câu trả lời cho cùng một câu hỏi "lớp này làm lúc nào" — chọn lặng lẽ một bên
+        // là giao sai giờ cho cả lớp mà không ai biết.
+        RuleFor(request => request)
+            .Must(request => AllGroupIds(request).Count == AllGroupIds(request).Distinct().Count())
+            .WithName(nameof(AssignExamRequest.Classes))
+            .WithMessage("Mỗi lớp chỉ được chọn một lần trong một lần giao, kèm đúng một khung giờ.");
+
+        RuleFor(request => request)
+            .Must(request => AllGroupIds(request).Count <= MaxGroupsPerRequest)
+            .WithName(nameof(AssignExamRequest.Classes))
+            .WithMessage($"Mỗi lần chỉ chọn được tối đa {MaxGroupsPerRequest} nhóm lớp.");
+
+        // NotNull đứng riêng trước ChildRules: bộ kiểm con bỏ qua phần tử null, nên "classes": [null] sẽ lọt
+        // tới service và thành NullReferenceException.
+        RuleForEach(request => request.Classes)
+            .NotNull()
+            .WithMessage("Danh sách lớp chứa một mục rỗng.")
+            .ChildRules(target =>
+            {
+                target.RuleFor(item => item.GroupId)
+                    .GreaterThan(0)
+                    .WithMessage("Danh sách lớp chứa mã không hợp lệ.");
+
+                target.RuleFor(item => item)
+                    .Must(item => item.OpenAt.HasValue == item.CloseAt.HasValue)
+                    .WithName(nameof(AssignClassTarget.OpenAt))
+                    .WithMessage("Đặt giờ riêng cho lớp thì phải có đủ cả giờ mở và giờ đóng.");
+
+                target.RuleFor(item => item)
+                    .Must(item => item.OpenAt < item.CloseAt)
+                    .WithName(nameof(AssignClassTarget.CloseAt))
+                    .WithMessage("Giờ đóng bài của lớp phải sau giờ mở bài.")
+                    .When(item => item.OpenAt.HasValue && item.CloseAt.HasValue);
+            })
+            .When(request => request.Classes is not null);
 
         // Hai mốc đi cùng cặp. Gửi một nửa là trạng thái không ai có ý định tạo ra, và im lặng
         // ghép nửa gửi lên với nửa lấy từ đề sẽ sinh ra một khung giờ chẳng giống ý ai cả. Thời lượng
@@ -64,13 +103,14 @@ public sealed class AssignExamRequestValidator : AbstractValidator<AssignExamReq
             .When(request => request.StudentIds is { Count: > 0 });
 
         RuleFor(request => request.GroupIds)
-            .Must(ids => ids!.Count <= MaxGroupsPerRequest)
-            .WithMessage($"Mỗi lần chỉ chọn được tối đa {MaxGroupsPerRequest} nhóm lớp.")
-            .When(request => request.GroupIds is { Count: > 0 });
-
-        RuleFor(request => request.GroupIds)
             .Must(ids => ids!.All(id => id > 0))
             .WithMessage("Danh sách nhóm lớp chứa mã không hợp lệ.")
             .When(request => request.GroupIds is { Count: > 0 });
     }
+
+    /// <summary>Mọi mã lớp của request, gộp hai danh sách và giữ nguyên các lần lặp để còn đếm được.</summary>
+    private static List<int> AllGroupIds(AssignExamRequest request) =>
+        (request.GroupIds ?? [])
+            .Concat((request.Classes ?? []).Where(target => target is not null).Select(target => target.GroupId))
+            .ToList();
 }

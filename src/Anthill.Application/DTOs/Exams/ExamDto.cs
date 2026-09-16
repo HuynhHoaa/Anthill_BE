@@ -83,5 +83,16 @@ public sealed record ExamDto
     /// </summary>
     public required bool BlueprintFrozen { get; init; }
 
+    /// <summary>
+    /// Khung giờ đang áp cho từng lớp đã giao, rồi tới các nhóm học sinh chọn lẻ theo từng khung giờ.
+    /// Mảng rỗng khi đề chưa giao cho ai.
+    /// </summary>
+    /// <remarks>
+    /// <see cref="OpenAt"/>/<see cref="CloseAt"/> và <see cref="Lifecycle"/> ở trên vẫn là lịch <b>mặc định</b>
+    /// của đề (bộ lọc vòng đời của danh sách đề đọc theo nó). Một đề mà lịch chung đã đóng vẫn có thể đang mở
+    /// với một lớp — trường này là nơi giáo viên thấy điều đó.
+    /// </remarks>
+    public required IReadOnlyList<AssignmentWindowDto> AssignmentWindows { get; init; }
+
     public required DateTime CreatedAt { get; init; }
 }

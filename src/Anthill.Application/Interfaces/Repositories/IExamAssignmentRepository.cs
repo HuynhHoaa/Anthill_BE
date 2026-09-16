@@ -1,3 +1,4 @@
+using Anthill.Application.Common;
 using Anthill.Domain.Entities;
 
 namespace Anthill.Application.Interfaces.Repositories;
@@ -49,6 +50,13 @@ public interface IExamAssignmentRepository : IGenericRepository<ExamAssignment>
     /// </summary>
     /// <remarks>Xem <c>ResultMappingExtensions.ResolveAnswerVisibility</c>.</remarks>
     Task<DateTime?> GetAnswersReleaseAtAsync(int examId, CancellationToken cancellationToken = default);
+
+    /// <summary>Các bản ghi của đề mà em chưa bắt đầu làm bài, không theo dõi thay đổi.</summary>
+    /// <remarks>
+    /// Đúng những em một lần sửa lịch hay thời lượng còn tác động tới — em đã bắt đầu giữ hạn nộp đã chốt.
+    /// Gọi trong transaction đang khoá các dòng giao bài để danh sách không lệch với lần sửa.
+    /// </remarks>
+    Task<IReadOnlyList<ExamAssignment>> GetNotStartedByExamAsync(int examId, CancellationToken cancellationToken = default);
 
     /// <summary>Học sinh nào trong tập này đã được giao rồi — để khử trùng lặp trước khi ghi.</summary>
     Task<IReadOnlyList<int>> GetAssignedStudentIdsAsync(
@@ -105,6 +113,46 @@ public interface IExamAssignmentRepository : IGenericRepository<ExamAssignment>
     /// <para>Trả NULL khi dòng giao bài đã bị thu hồi trong lúc chờ. Phải gọi bên trong transaction.</para>
     /// </remarks>
     Task<ExamAssignment?> LockForStartAsync(int assignmentId, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Khoá ghi (<c>FOR UPDATE</c>) một dòng giao bài để dời giờ, rồi nạp đề, hồ sơ học sinh kèm lớp, lớp đã
+    /// giao qua và lượt làm bài — tất cả đọc <b>sau</b> khi đã cầm khoá.
+    /// </summary>
+    /// <remarks>
+    /// Khoá này xung đột với khoá chia sẻ của <see cref="LockForStartAsync"/>, nên em đang bấm "Vào thi"
+    /// hoặc đã vào trước và lượt làm bài được thấy ở đây, hoặc phải chờ lần dời giờ commit rồi đọc khung
+    /// giờ mới. Không khoá thì lần dời giờ có thể ghi đè khung giờ của một em vừa bắt đầu, và thẻ bài với
+    /// đồng hồ của em nói hai giờ khác nhau. Trả NULL khi dòng không còn. Phải gọi bên trong transaction.
+    ///
+    /// Tiến trình nhắc sắp hết giờ cũng dùng hàm này: nó cần đúng những dữ liệu đó, và cần chính khoá đó để
+    /// hai instance cùng quét không gửi hai lời nhắc cho một em.
+    /// </remarks>
+    Task<ExamAssignment?> LockForRescheduleAsync(int assignmentId, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Những lượt giao có thể tới lúc nhắc "sắp hết giờ": chưa bắt đầu, đề đã xuất bản, tài khoản đang hoạt
+    /// động, và giờ đóng có hiệu lực nằm trong khoảng từ bây giờ tới <paramref name="horizon"/> nữa.
+    /// </summary>
+    /// <remarks>
+    /// Lọc thô ở database rồi để <see cref="Common.DeadlineReminder"/> quyết từng dòng: mốc nhắc phụ thuộc
+    /// thời lượng của từng đề nên không viết gọn được thành một điều kiện SQL, còn kéo cả bảng về để lọc
+    /// trong bộ nhớ thì mỗi phút một lần là quá tốn. Sắp theo giờ đóng gần nhất, để một lượt quét bị trần
+    /// chặn lại vẫn xử lý những em gấp nhất trước.
+    /// </remarks>
+    Task<IReadOnlyList<ExamAssignment>> GetDeadlineReminderCandidatesAsync(
+        DateTime utcNow,
+        TimeSpan horizon,
+        int batchSize,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Bản ghi giao bài của nhiều đề, gom theo (đề, lớp đã giao qua, cặp giờ thô, đã bắt đầu hay chưa) — nguyên
+    /// liệu cho <c>AssignmentWindowSummary</c>.
+    /// </summary>
+    /// <remarks>Gom trong SQL: màn hình danh sách chín đề, mỗi đề vài trăm em, chỉ kéo về vài chục dòng.</remarks>
+    Task<IReadOnlyList<AssignmentWindowRow>> GetWindowRowsByExamsAsync(
+        IEnumerable<int> examIds,
+        CancellationToken cancellationToken = default);
 
     /// <summary>Ba con số dẫn xuất cho nhiều đề cùng lúc, tránh N+1 ở màn hình danh sách đề.</summary>
     Task<IReadOnlyDictionary<int, (int Assigned, int Submitted, int Started)>> CountByExamsAsync(

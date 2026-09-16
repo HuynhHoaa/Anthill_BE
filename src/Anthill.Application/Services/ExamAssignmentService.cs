@@ -11,7 +11,7 @@ using Anthill.Domain.Enums;
 namespace Anthill.Application.Services;
 
 /// <summary>
-/// Cài đặt <see cref="IExamAssignmentService"/> — ba endpoint giao bài của §4.6.
+/// Cài đặt <see cref="IExamAssignmentService"/> — bốn endpoint giao bài của §4.6.
 /// </summary>
 /// <remarks>
 /// Bốn điều quyết định nằm ở file này:
@@ -44,17 +44,20 @@ public sealed class ExamAssignmentService : IExamAssignmentService
     private readonly ICurrentUser _currentUser;
     private readonly IExamGeneratorService _generator;
     private readonly IRealtimeNotificationService _realtime;
+    private readonly IExamScheduleNotifier _scheduleNotifier;
 
     public ExamAssignmentService(
         IUnitOfWork unitOfWork,
         ICurrentUser currentUser,
         IExamGeneratorService generator,
-        IRealtimeNotificationService realtime)
+        IRealtimeNotificationService realtime,
+        IExamScheduleNotifier scheduleNotifier)
     {
         _unitOfWork = unitOfWork;
         _currentUser = currentUser;
         _generator = generator;
         _realtime = realtime;
+        _scheduleNotifier = scheduleNotifier;
     }
 
     private int CurrentUserId => _currentUser.RequireUserId();
@@ -166,22 +169,80 @@ public sealed class ExamAssignmentService : IExamAssignmentService
             .Where(student => !alreadyAssigned.Contains(student.Id))
             .ToList();
 
+        // Khung giờ riêng của từng lớp trong Classes, chỉ với lớp giáo viên này được giao bài. Kiểm thời lượng
+        // ở đây — sau khi biết tên lớp — để câu từ chối chỉ đúng lớp nào đang đặt khung quá ngắn; lớp ngoài
+        // phạm vi đã bị loại và được đếm, khung giờ của nó không bao giờ được ghi nên không cần kiểm.
+        var classWindows = new Dictionary<int, (DateTime? OpenAt, DateTime? CloseAt)>();
+        foreach (var target in request.Classes ?? [])
+        {
+            var group = targets.OwnedGroups.FirstOrDefault(owned => owned.Id == target.GroupId);
+            if (group is null)
+            {
+                continue;
+            }
+
+            if (target.OpenAt is { } classOpen && target.CloseAt is { } classClose
+                && !AssignmentSchedule.FitsDuration(classOpen, classClose, exam.DurationMinutes))
+            {
+                return Result.Failure<AssignExamResponse>(
+                    $"Đề này cho làm bài {exam.DurationMinutes} phút, dài hơn khung giờ vừa chọn cho lớp {group.Name}. "
+                    + "Hãy nới khung giờ của lớp đó ra, hoặc rút ngắn thời gian làm bài ở phần sửa đề.");
+            }
+
+            classWindows[group.Id] = (target.OpenAt.ToUtc(), target.CloseAt.ToUtc());
+        }
+
         // Gửi lại một lớp kèm khung giờ là cách giáo viên sửa giờ cho lớp đó. Chỉ đụng tới những em được
-        // giao QUA lớp ấy và chưa bắt đầu làm bài. Request không kèm khung giờ thì không xoá khung giờ nào:
-        // giao bổ sung một em vào lớp mà xoá luôn giờ riêng của cả lớp là mất dữ liệu trong im lặng.
+        // giao QUA lớp ấy và chưa bắt đầu làm bài. Lớp trong GroupIds mà request không kèm khung giờ thì
+        // không xoá khung giờ nào: giao bổ sung một em vào lớp mà xoá luôn giờ riêng của cả lớp là mất dữ
+        // liệu trong im lặng. Lớp trong Classes thì nói trọn khung giờ của nó, kể cả "theo lịch đề".
         //
         // Không gọi Update() trên các bản ghi này: DbSet.Update đi hết đồ thị và đánh dấu luôn Attempt đã
         // Include là Modified — ghi đè một bản cũ của lượt đang làm lên những lần lưu nháp đồng thời.
         // Theo dõi thay đổi tự nhận ra OpenAt/CloseAt đã đổi.
-        var rescheduled = new AssignmentSchedule.RescheduleOutcome(0, 0);
-        if (request.OpenAt is { } newOpenAt && request.CloseAt is { } newCloseAt && targets.OwnedGroupIds.Count > 0)
+        // Khoá các dòng giao bài trước khi đọc chúng, cùng thứ tự khoá với lần sửa đề (dòng đề trước, dòng
+        // giao bài sau). Em bấm "Vào thi" phải cầm khoá chia sẻ trên dòng của mình, nên hoặc em vào trước và
+        // lần gửi lại này thấy em đã bắt đầu, hoặc em phải chờ. Không khoá thì một em vừa vào thi bị dời
+        // khung giờ dưới tay — và nhận một thông báo "giờ đã đổi" trong lúc đang làm bài.
+        if (targets.OwnedGroups.Count > 0)
         {
-            var viaGroupRows = await _unitOfWork.ExamAssignments.GetByExamViaGroupsAsync(
-                exam.Id,
-                targets.OwnedGroupIds,
-                cancellationToken);
+            await _unitOfWork.ExamAssignments.LockByExamAsync(exam.Id, cancellationToken);
+        }
 
-            rescheduled = AssignmentSchedule.Reschedule(viaGroupRows, newOpenAt, newCloseAt);
+        IReadOnlyList<ExamAssignment> viaGroupRows = targets.OwnedGroups.Count == 0
+            ? []
+            : await _unitOfWork.ExamAssignments.GetByExamViaGroupsAsync(exam.Id, targets.OwnedGroupIds, cancellationToken);
+
+        var rowsByGroup = viaGroupRows
+            .GroupBy(row => row.AssignedViaGroupId!.Value)
+            .ToDictionary(group => group.Key, group => group.ToList());
+
+        var rescheduled = AssignmentSchedule.RescheduleOutcome.None;
+        foreach (var groupId in targets.OwnedGroupIds)
+        {
+            if (!rowsByGroup.TryGetValue(groupId, out var rows))
+            {
+                continue;
+            }
+
+            AssignmentSchedule.RescheduleOutcome outcome;
+            if (classWindows.TryGetValue(groupId, out var classWindow))
+            {
+                outcome = AssignmentSchedule.Reschedule(rows, classWindow.OpenAt, classWindow.CloseAt);
+            }
+            else if (request.OpenAt.HasValue && request.CloseAt.HasValue)
+            {
+                outcome = AssignmentSchedule.Reschedule(rows, request.OpenAt, request.CloseAt);
+            }
+            else
+            {
+                continue;
+            }
+
+            rescheduled = new AssignmentSchedule.RescheduleOutcome(
+                rescheduled.Updated + outcome.Updated,
+                rescheduled.KeptStarted + outcome.KeptStarted,
+                [.. rescheduled.Changes, .. outcome.Changes]);
         }
 
         var response = new AssignExamResponse
@@ -217,35 +278,64 @@ public sealed class ExamAssignmentService : IExamAssignmentService
         {
             exam.RandomizePerStudent = requestedRandomize!.Value;
             exam.UpdatedAt = now;
-            _unitOfWork.Exams.Update(exam);
+
+            // Không gọi Exams.Update(exam): đề đang được theo dõi từ lúc khoá, và các dòng giao bài vừa khoá
+            // đã được EF gắn vào exam.Assignments. Update() đi hết đồ thị đó và đánh dấu cả những dòng — kể
+            // cả lượt làm bài đã nạp kèm — là đã sửa, tức ghi đè một bản cũ lên những lần lưu nháp đồng thời.
         }
+
+        // Những em vừa bị dời giờ phải được báo, kể cả khi giáo viên không tích "gửi thông báo": ô tích đó
+        // nói về việc giao bài mới, còn đây là giờ thi của em vừa dịch đi — im lặng ở đây là em đến muộn.
+        var scheduleNotices = await StageScheduleNoticesAsync(exam, rescheduled.Changes, now, cancellationToken);
 
         if (newcomers.Count == 0)
         {
             await _unitOfWork.SaveChangesAsync(cancellationToken);
+            await _scheduleNotifier.CollectUnreadCountsAsync(scheduleNotices, cancellationToken);
             await transaction.CommitAsync(cancellationToken);
+
+            await _scheduleNotifier.PublishAsync(scheduleNotices, cancellationToken);
             return Result.Success(response);
         }
 
+        // Khung giờ lớp đang theo, cho những lớp trong GroupIds được gửi lại mà không kèm giờ. Không có nó
+        // thì em vừa được xếp vào 12A1 nhận lịch chung cả tuần của đề trong khi cả lớp làm tiết 2 thứ Ba.
+        // Tính sau bước dời giờ ở trên, trên chính các bản ghi đã được cập nhật trong bộ nhớ.
+        var inheritedWindows = rowsByGroup.ToDictionary(
+            group => group.Key,
+            group => AssignmentSchedule.RepresentativeWindow(group.Value.Select(row => new AssignmentSchedule.WindowSample(
+                row.OpenAt,
+                row.CloseAt,
+                Started: row.Attempt is not null,
+                Count: 1,
+                LatestAssignedAt: row.AssignedAt))));
+
         var assignments = newcomers
-            .Select(student => new ExamAssignment
+            .Select(student =>
             {
-                ExamId = exam.Id,
-                StudentId = student.Id,
-                AssignedAt = now,
-                CreatedAt = now,
-
                 // NULL khi giáo viên chọn đích danh em này thay vì chọn cả lớp.
-                AssignedViaGroupId = targets.ViaGroup.TryGetValue(student.Id, out var groupId)
-                    ? groupId
-                    : null,
+                int? viaGroupId = targets.ViaGroup.TryGetValue(student.Id, out var groupId) ? groupId : null;
+                var (openAt, closeAt) = AssignmentSchedule.WindowForNewAssignment(
+                    viaGroupId,
+                    (request.OpenAt, request.CloseAt),
+                    classWindows,
+                    inheritedWindows);
 
-                // Lịch riêng của lượt giao này. NULL nghĩa là theo lịch chung của đề — không chép
-                // sẵn lịch đề vào đây, vì chép rồi thì sửa lịch đề sẽ không còn lan tới những lớp
-                // vốn không đặt giờ riêng. Quy về UTC ngay để giá trị trong bộ nhớ khớp với thứ sẽ
-                // nằm trong database, và khớp với phép so của Reschedule.
-                OpenAt = request.OpenAt.ToUtc(),
-                CloseAt = request.CloseAt.ToUtc()
+                return new ExamAssignment
+                {
+                    ExamId = exam.Id,
+                    StudentId = student.Id,
+                    AssignedAt = now,
+                    CreatedAt = now,
+                    AssignedViaGroupId = viaGroupId,
+
+                    // Lịch riêng của lượt giao này. NULL nghĩa là theo lịch chung của đề — không chép
+                    // sẵn lịch đề vào đây, vì chép rồi thì sửa lịch đề sẽ không còn lan tới những lớp
+                    // vốn không đặt giờ riêng. Quy về UTC ngay để giá trị trong bộ nhớ khớp với thứ sẽ
+                    // nằm trong database, và khớp với phép so của Reschedule.
+                    OpenAt = openAt.ToUtc(),
+                    CloseAt = closeAt.ToUtc()
+                };
             })
             .ToList();
 
@@ -289,6 +379,8 @@ public sealed class ExamAssignmentService : IExamAssignmentService
             }
         }
 
+        await _scheduleNotifier.CollectUnreadCountsAsync(scheduleNotices, cancellationToken);
+
         await transaction.CommitAsync(cancellationToken);
 
         // SAU khi commit, không sớm hơn một dòng nào. Bắn trước commit thì có lúc học sinh nhận
@@ -299,7 +391,108 @@ public sealed class ExamAssignmentService : IExamAssignmentService
             await PublishAssignedAsync(exam, assignments, teacherName, unreadCounts, cancellationToken);
         }
 
+        await _scheduleNotifier.PublishAsync(scheduleNotices, cancellationToken);
+
         return Result.Success(response);
+    }
+
+    /// <summary>Thêm thông báo đổi giờ cho những lượt giao vừa bị dời sang khung khác.</summary>
+    /// <remarks>
+    /// Gọi trong transaction đang khoá các dòng giao bài, sau khi khung giờ mới đã được gán trong bộ nhớ:
+    /// <see cref="ScheduleNotice.FromReschedule"/> so khung giờ có hiệu lực trước và sau, nên đặt giờ riêng
+    /// trùng khít lịch đề không sinh thông báo nào.
+    /// </remarks>
+    private async Task<ScheduleNoticeBatch> StageScheduleNoticesAsync(
+        Exam exam,
+        IReadOnlyList<AssignmentSchedule.RescheduleChange> changes,
+        DateTime now,
+        CancellationToken cancellationToken)
+    {
+        if (changes.Count == 0)
+        {
+            return ScheduleNoticeBatch.Empty;
+        }
+
+        var notices = changes
+            .Select(change => ScheduleNotice.FromReschedule(change, exam, now))
+            .ToList();
+
+        return await _scheduleNotifier.StageExamUpdatedAsync(exam, notices, now, cancellationToken);
+    }
+
+    /// <inheritdoc />
+    public async Task<Result<ExamAssignmentDto>> RescheduleAsync(
+        int examId,
+        int assignmentId,
+        UpdateAssignmentScheduleRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+
+        var found = await FindOwnedExamAsync(examId, cancellationToken);
+        if (found.IsFailure)
+        {
+            return Result.Failure<ExamAssignmentDto>(found.Error!, found.ErrorCode);
+        }
+
+        // Cùng thứ tự khoá với giao bài: dòng đề trước, dòng giao bài sau. Khoá dòng đề để lần dời giờ này
+        // xếp hàng với lần sửa đề (có thể đổi thời lượng mà phép kiểm bên dưới đang dựa vào) và với lần gửi
+        // lại lớp; khoá dòng giao bài để xếp hàng với chính em đang bấm "Vào thi".
+        await using var transaction = await _unitOfWork.BeginTransactionAsync(cancellationToken);
+
+        var exam = await _unitOfWork.Exams.LockForEditAsync(examId, cancellationToken);
+        if (exam is null)
+        {
+            return Result.NotFound<ExamAssignmentDto>(ExamNotFoundMessage);
+        }
+
+        var assignment = await _unitOfWork.ExamAssignments.LockForRescheduleAsync(assignmentId, cancellationToken);
+
+        // Kiểm cả examId: thiếu vế này thì đổi số trên thanh địa chỉ là dời được giờ của một đề khác.
+        if (assignment is null || assignment.ExamId != examId)
+        {
+            return Result.NotFound<ExamAssignmentDto>(AssignmentNotFoundMessage);
+        }
+
+        if (assignment.AssignedViaGroupId is not null)
+        {
+            var className = assignment.AssignedViaGroup?.Name ?? "đã giao bài cho em";
+            return Result.Conflict<ExamAssignmentDto>(
+                $"Em này được giao bài qua lớp {className}, nên em làm bài theo khung giờ của cả lớp. "
+                + "Hãy đổi khung giờ của lớp ở trang giao bài.");
+        }
+
+        if (assignment.Attempt is not null)
+        {
+            return Result.Conflict<ExamAssignmentDto>(
+                "Em này đã bắt đầu làm bài nên hạn nộp đã chốt lúc vào thi, không dời giờ được nữa.");
+        }
+
+        if (request.OpenAt is { } openAt && request.CloseAt is { } closeAt
+            && !AssignmentSchedule.FitsDuration(openAt, closeAt, exam.DurationMinutes))
+        {
+            return Result.Failure<ExamAssignmentDto>(
+                $"Đề này cho làm bài {exam.DurationMinutes} phút, dài hơn khung giờ vừa chọn. "
+                + "Hãy nới khung giờ ra, hoặc rút ngắn thời gian làm bài ở phần sửa đề.");
+        }
+
+        var outcome = AssignmentSchedule.Reschedule([assignment], request.OpenAt, request.CloseAt);
+        var now = DateTime.UtcNow;
+
+        if (outcome.Updated > 0)
+        {
+            var notices = await StageScheduleNoticesAsync(exam, outcome.Changes, now, cancellationToken);
+
+            // Không gọi Update(): dòng đã được theo dõi từ lúc khoá, và Update() sẽ đánh dấu luôn đề, học sinh
+            // đã nạp kèm là Modified rồi ghi đè chúng bằng bản vừa đọc.
+            await _unitOfWork.SaveChangesAsync(cancellationToken);
+            await _scheduleNotifier.CollectUnreadCountsAsync(notices, cancellationToken);
+            await transaction.CommitAsync(cancellationToken);
+
+            await _scheduleNotifier.PublishAsync(notices, cancellationToken);
+        }
+
+        return Result.Success(assignment.ToDto(now));
     }
 
     /// <inheritdoc />
@@ -351,7 +544,9 @@ public sealed class ExamAssignmentService : IExamAssignmentService
         public required IReadOnlyDictionary<int, int> ViaGroup { get; init; }
 
         /// <summary>Các lớp trong request mà giáo viên này được giao bài — cũng là các lớp được phép sửa khung giờ.</summary>
-        public required IReadOnlyList<int> OwnedGroupIds { get; init; }
+        public required IReadOnlyList<StudentGroup> OwnedGroups { get; init; }
+
+        public IReadOnlyList<int> OwnedGroupIds => OwnedGroups.Select(group => group.Id).ToList();
 
         public required int LockedCount { get; init; }
 
@@ -388,7 +583,12 @@ public sealed class ExamAssignmentService : IExamAssignmentService
         // HashSet ngay từ đầu: màn hình giao bài cho chọn một em rồi chọn luôn cả nhóm chứa em đó,
         // nên trùng lặp là tình huống thường gặp chứ không phải ngoại lệ.
         var requestedIds = new HashSet<int>(request.StudentIds ?? []);
-        var requestedGroupIds = (request.GroupIds ?? []).Distinct().ToList();
+        // Hai danh sách lớp gộp làm một ở bước chọn người nhận: khác nhau chỉ ở khung giờ, còn phạm vi, đếm
+        // lớp bị loại và ghi dấu "giao qua lớp nào" là như nhau. Validator đã chặn một lớp nằm ở cả hai.
+        var requestedGroupIds = (request.GroupIds ?? [])
+            .Concat((request.Classes ?? []).Select(target => target.GroupId))
+            .Distinct()
+            .ToList();
 
         // Lớp mà giáo viên này không được phân công bị loại ngay tại đây, và lớp còn ở dạng nháp
         // cũng vậy: repository chỉ trả về lớp thoả cả hai điều kiện, nên một id đoán bừa không kéo
@@ -429,7 +629,7 @@ public sealed class ExamAssignmentService : IExamAssignmentService
             {
                 InScope = [],
                 ViaGroup = viaGroup,
-                OwnedGroupIds = ownedGroups.Select(group => group.Id).ToList(),
+                OwnedGroups = ownedGroups,
                 LockedCount = 0,
                 RetiredCount = 0,
                 OutOfScopeCount = 0,
@@ -477,7 +677,7 @@ public sealed class ExamAssignmentService : IExamAssignmentService
         {
             InScope = inScope,
             ViaGroup = viaGroup,
-            OwnedGroupIds = ownedGroups.Select(group => group.Id).ToList(),
+            OwnedGroups = ownedGroups,
             LockedCount = locked,
             RetiredCount = retired,
             OutOfScopeCount = outOfScope,

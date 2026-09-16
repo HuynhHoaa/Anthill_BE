@@ -10,7 +10,16 @@ public sealed record AssignExamRequest
     public IReadOnlyList<int> StudentIds { get; init; } = [];
 
     /// <summary>Giao cho toàn bộ học sinh của những nhóm này, tính tại thời điểm gọi.</summary>
+    /// <remarks>
+    /// Các lớp ở đây dùng cặp giờ chung <see cref="OpenAt"/>/<see cref="CloseAt"/> của request. Không kèm
+    /// giờ thì khung giờ đã đặt cho lớp được giữ nguyên, và em mới vào lớp nhận đúng khung giờ lớp đang
+    /// theo. Muốn mỗi lớp một khung giờ trong cùng một lần gọi thì dùng <see cref="Classes"/>; một lớp
+    /// không được nằm ở cả hai danh sách.
+    /// </remarks>
     public IReadOnlyList<int> GroupIds { get; init; } = [];
+
+    /// <summary>Các lớp giao kèm khung giờ của riêng từng lớp — xem <see cref="AssignClassTarget"/>.</summary>
+    public IReadOnlyList<AssignClassTarget> Classes { get; init; } = [];
 
     /// <summary>
     /// Bật: mỗi em một bản đề riêng. Tắt: cả lớp chung một bản đề.
@@ -50,8 +59,9 @@ public sealed record AssignExamRequest
     /// </para>
     /// <para>
     /// Gửi lại một lớp đã giao kèm khung giờ thì khung giờ của những em được giao qua lớp đó mà chưa
-    /// bắt đầu làm bài cũng được đổi theo; em chọn đích danh không bị đổi; bỏ trống thì không đụng
-    /// tới khung giờ đã đặt.
+    /// bắt đầu làm bài cũng được đổi theo; em chọn đích danh đã có bài không bị đổi (dời giờ từng em bằng
+    /// <c>PATCH .../assignments/{id}/schedule</c>); bỏ trống thì không đụng tới khung giờ đã đặt.
+    /// Cặp giờ này không áp cho các lớp trong <see cref="Classes"/> — mỗi lớp ở đó mang giờ của riêng nó.
     /// </para>
     /// </remarks>
     public DateTime? OpenAt { get; init; }

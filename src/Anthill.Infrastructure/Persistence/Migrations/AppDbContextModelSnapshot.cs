@@ -167,6 +167,9 @@ namespace Anthill.Infrastructure.Persistence.Migrations
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
 
+                    b.Property<DateTime?>("DeadlineNoticeCloseAt")
+                        .HasColumnType("timestamp with time zone");
+
                     b.Property<int>("ExamId")
                         .HasColumnType("integer");
 

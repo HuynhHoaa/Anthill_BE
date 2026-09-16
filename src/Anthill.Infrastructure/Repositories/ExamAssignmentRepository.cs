@@ -1,3 +1,4 @@
+using Anthill.Application.Common;
 using Anthill.Application.Interfaces.Repositories;
 using Anthill.Domain.Entities;
 using Anthill.Domain.Enums;
@@ -113,6 +114,50 @@ public class ExamAssignmentRepository : GenericRepository<ExamAssignment>, IExam
             .Include(a => a.Attempt)
             .Include(a => a.Paper)
             .FirstOrDefaultAsync(a => a.Id == assignmentId, cancellationToken);
+
+    public async Task<IReadOnlyList<ExamAssignment>> GetNotStartedByExamAsync(
+        int examId,
+        CancellationToken cancellationToken = default) =>
+        await DbSet
+            .AsNoTracking()
+            .Where(a => a.ExamId == examId && a.Attempt == null)
+            .OrderBy(a => a.Id)
+            .ToListAsync(cancellationToken);
+
+    /// <inheritdoc />
+    public async Task<IReadOnlyList<ExamAssignment>> GetDeadlineReminderCandidatesAsync(
+        DateTime utcNow,
+        TimeSpan horizon,
+        int batchSize,
+        CancellationToken cancellationToken = default)
+    {
+        if (batchSize <= 0)
+        {
+            return [];
+        }
+
+        var until = utcNow.Add(horizon);
+
+        // Vế "giờ đóng có hiệu lực" viết lại bằng SQL, đúng như GetAnswersReleaseAtAsync: có đủ cặp giờ
+        // riêng thì lấy giờ riêng, còn lại lấy giờ của đề. Không có nó thì lớp học buổi chiều bị nhắc theo
+        // lịch chung của cả tuần.
+        return await DbSet
+            .AsNoTracking()
+            .Include(a => a.Exam)
+            .Where(a => a.Attempt == null
+                        && !a.Exam.IsDraft
+                        && a.Student.Status == UserStatus.Active
+                        && (a.OpenAt != null && a.CloseAt != null ? a.OpenAt.Value : a.Exam.OpenAt) <= utcNow
+                        && (a.OpenAt != null && a.CloseAt != null ? a.CloseAt.Value : a.Exam.CloseAt) > utcNow
+                        && (a.OpenAt != null && a.CloseAt != null ? a.CloseAt.Value : a.Exam.CloseAt) <= until
+                        && (a.DeadlineNoticeCloseAt == null
+                            || a.DeadlineNoticeCloseAt
+                               != (a.OpenAt != null && a.CloseAt != null ? a.CloseAt.Value : a.Exam.CloseAt)))
+            .OrderBy(a => a.OpenAt != null && a.CloseAt != null ? a.CloseAt!.Value : a.Exam.CloseAt)
+            .ThenBy(a => a.Id)
+            .Take(batchSize)
+            .ToListAsync(cancellationToken);
+    }
 
     public async Task<IReadOnlyList<int>> GetAssignedStudentIdsAsync(
         int examId,
@@ -230,6 +275,88 @@ public class ExamAssignmentRepository : GenericRepository<ExamAssignment>, IExam
         }
 
         return assignment;
+    }
+
+    /// <inheritdoc />
+    public async Task<ExamAssignment?> LockForRescheduleAsync(
+        int assignmentId,
+        CancellationToken cancellationToken = default)
+    {
+        var rows = await DbSet
+            .FromSql($"""SELECT * FROM "ExamAssignments" WHERE "Id" = {assignmentId} FOR UPDATE""")
+            .ToListAsync(cancellationToken);
+
+        if (rows.Count == 0)
+        {
+            return null;
+        }
+
+        var assignment = rows[0];
+        var entry = Context.Entry(assignment);
+
+        // Mỗi lần nạp là một câu lệnh mới sau khi đã cầm khoá, nên ở READ COMMITTED chúng thấy lượt làm bài
+        // của em vừa commit. Người gọi chưa đọc dòng này trước đó, nên không có bản cũ nào nằm trong change
+        // tracker phải đọc lại.
+        await entry.Reference(a => a.Exam).LoadAsync(cancellationToken);
+        await entry.Reference(a => a.Attempt).LoadAsync(cancellationToken);
+        await entry.Reference(a => a.AssignedViaGroup).LoadAsync(cancellationToken);
+        await entry.Reference(a => a.Student).LoadAsync(cancellationToken);
+
+        if (assignment.Student is not null)
+        {
+            await Context.Entry(assignment.Student).Reference(s => s.Group).LoadAsync(cancellationToken);
+        }
+
+        return assignment;
+    }
+
+    /// <inheritdoc />
+    public async Task<IReadOnlyList<AssignmentWindowRow>> GetWindowRowsByExamsAsync(
+        IEnumerable<int> examIds,
+        CancellationToken cancellationToken = default)
+    {
+        var ids = examIds.Distinct().ToList();
+        if (ids.Count == 0)
+        {
+            return [];
+        }
+
+        var rows = await DbSet
+            .AsNoTracking()
+            .Where(a => ids.Contains(a.ExamId))
+            .GroupBy(a => new
+            {
+                a.ExamId,
+                a.AssignedViaGroupId,
+                GroupName = a.AssignedViaGroup != null ? a.AssignedViaGroup.Name : null,
+                a.OpenAt,
+                a.CloseAt,
+                Started = a.Attempt != null
+            })
+            .Select(group => new
+            {
+                group.Key.ExamId,
+                group.Key.AssignedViaGroupId,
+                group.Key.GroupName,
+                group.Key.OpenAt,
+                group.Key.CloseAt,
+                group.Key.Started,
+                Count = group.Count(),
+                LatestAssignedAt = group.Max(a => a.AssignedAt)
+            })
+            .ToListAsync(cancellationToken);
+
+        return rows
+            .Select(row => new AssignmentWindowRow(
+                row.ExamId,
+                row.AssignedViaGroupId,
+                row.GroupName,
+                row.OpenAt,
+                row.CloseAt,
+                row.Started,
+                row.Count,
+                row.LatestAssignedAt))
+            .ToList();
     }
 
     /// <summary>

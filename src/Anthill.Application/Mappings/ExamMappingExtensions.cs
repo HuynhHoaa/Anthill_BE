@@ -33,19 +33,29 @@ public static class ExamMappingExtensions
     {
         ArgumentNullException.ThrowIfNull(exam);
 
-        if (exam.IsDraft)
+        return ResolveWindowLifecycle(exam.IsDraft, exam.OpenAt, exam.CloseAt, asOfUtc);
+    }
+
+    /// <summary>Phép so vòng đời dùng chung cho đề, cho từng lượt giao và cho khung giờ của một lớp.</summary>
+    /// <remarks>
+    /// Một chỗ duy nhất, vì ba nơi đọc cùng một khung giờ mà so theo ba cách thì màn hình giáo viên báo lớp
+    /// "đang mở" trong khi học sinh của lớp đó bị chặn. Bằng giờ đóng vẫn còn mở; nháp thắng mọi mốc giờ.
+    /// </remarks>
+    public static ExamLifecycle ResolveWindowLifecycle(bool isDraft, DateTime openAt, DateTime closeAt, DateTime asOfUtc)
+    {
+        if (isDraft)
         {
             return ExamLifecycle.Draft;
         }
 
         var now = asOfUtc.ToUtc();
 
-        if (now < exam.OpenAt.ToUtc())
+        if (now < openAt.ToUtc())
         {
             return ExamLifecycle.Scheduled;
         }
 
-        return now > exam.CloseAt.ToUtc() ? ExamLifecycle.Closed : ExamLifecycle.Open;
+        return now > closeAt.ToUtc() ? ExamLifecycle.Closed : ExamLifecycle.Open;
     }
 
     /// <summary>
@@ -69,28 +79,20 @@ public static class ExamMappingExtensions
 
         // Cờ nháp chỉ nằm trên đề, nên hàm này cần Exam kể cả khi bản ghi có đủ giờ riêng — khác
         // Resolve, vốn tính được lịch mà không cần đề trong trường hợp đó.
-        if (AssignmentSchedule.RequireExam(assignment).IsDraft)
-        {
-            return ExamLifecycle.Draft;
-        }
-
+        var isDraft = AssignmentSchedule.RequireExam(assignment).IsDraft;
         var (openAt, closeAt) = AssignmentSchedule.Resolve(assignment);
-        var now = asOfUtc.ToUtc();
 
-        if (now < openAt.ToUtc())
-        {
-            return ExamLifecycle.Scheduled;
-        }
-
-        return now > closeAt.ToUtc() ? ExamLifecycle.Closed : ExamLifecycle.Open;
+        return ResolveWindowLifecycle(isDraft, openAt, closeAt, asOfUtc);
     }
 
+    /// <param name="assignmentWindows">Khung giờ theo lớp đã dựng sẵn; bỏ trống khi đề chưa giao cho ai.</param>
     public static ExamDto ToDto(
         this Exam exam,
         DateTime asOfUtc,
         int assignedCount,
         int submittedCount,
-        int startedCount)
+        int startedCount,
+        IReadOnlyList<AssignmentWindowDto>? assignmentWindows = null)
     {
         ArgumentNullException.ThrowIfNull(exam);
 
@@ -123,6 +125,7 @@ public static class ExamMappingExtensions
 
             // Cùng một phép so với ExamEditPolicy: đã có lượt làm bài là khoá.
             BlueprintFrozen = startedCount > 0,
+            AssignmentWindows = assignmentWindows ?? [],
 
             CreatedAt = exam.CreatedAt.ToUtc()
         };
