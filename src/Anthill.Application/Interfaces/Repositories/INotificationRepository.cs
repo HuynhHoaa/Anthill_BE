@@ -26,4 +26,13 @@ public interface INotificationRepository : IGenericRepository<Notification>
 
     /// <summary>Đánh dấu tất cả đã đọc, trả về số bản ghi vừa đổi.</summary>
     Task<int> MarkAllReadAsync(int userId, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Thông báo có <c>TargetType = nameof(ExamAttempt)</c> trỏ tới một lượt làm bài của
+    /// <paramref name="studentId"/> — dùng lúc xoá dữ liệu học sinh (§5) để tìm những dòng có thể còn
+    /// mang tên thật của em, qua khoá ngoại thay vì so khớp chuỗi trong <c>Message</c>.
+    /// </summary>
+    /// <remarks>Trả về entity có theo dõi (không <c>AsNoTracking</c>): người gọi sửa trực tiếp rồi để
+    /// <c>IUnitOfWork.SaveChangesAsync</c> ghi xuống, cùng transaction với phần còn lại của lượt xoá.</remarks>
+    Task<List<Notification>> GetByAttemptOwnerAsync(int studentId, CancellationToken cancellationToken = default);
 }

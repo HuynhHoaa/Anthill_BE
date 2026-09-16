@@ -147,4 +147,84 @@ public class StudentAnonymizerTests
 
         StudentAnonymizer.IsDue(deleted, DateTime.UtcNow.AddYears(1)).Should().BeFalse();
     }
+
+    private static Notification BuildTeacherFacingNotification(int recipientTeacherId, string message) => new()
+    {
+        RecipientUserId = recipientTeacherId,
+        Type = NotificationType.ExamSubmitted,
+        Title = "Học sinh vừa nộp bài",
+        Message = message,
+        TargetType = "ExamAttempt",
+        TargetId = 501,
+        IsRead = false
+    };
+
+    /// <summary>
+    /// H22: `AddSubmissionNotificationsAsync` ghi cứng tên học sinh vào thông báo nộp bài gửi cho
+    /// giáo viên — purge phải xoá được đúng chỗ đó, không để tên thật sống lại sau khi tài khoản đã
+    /// ẩn danh hoá.
+    /// </summary>
+    [Fact]
+    public void RedactSubmissionMessage_thay_ten_that_bang_ten_an_danh()
+    {
+        var notification = BuildTeacherFacingNotification(
+            recipientTeacherId: 99,
+            message: "Nguyễn Văn Bê vừa nộp bài \"Kiểm tra giữa kỳ\".");
+
+        StudentAnonymizer.RedactSubmissionMessage(notification, studentId: 42, previousFullName: "Nguyễn Văn Bê");
+
+        notification.Message.Should().Be($"{StudentAnonymizer.DisplayName} vừa nộp bài \"Kiểm tra giữa kỳ\".");
+    }
+
+    /// <summary>
+    /// Bản tự nhận về lượt của chính học sinh ("Hết giờ làm bài... Hệ thống đã nộp phần bạn làm
+    /// được.") không viết tên ai — đụng vào không được đổi gì, vì không có gì để xoá.
+    /// </summary>
+    [Fact]
+    public void RedactSubmissionMessage_khong_dung_toi_thong_bao_hoc_sinh_tu_nhan()
+    {
+        const string original = "Hết giờ làm bài \"Kiểm tra giữa kỳ\". Hệ thống đã nộp phần bạn làm được.";
+        var notification = new Notification
+        {
+            RecipientUserId = 42,
+            Type = NotificationType.AutoSubmitted,
+            Title = "Bài kiểm tra đã hết giờ",
+            Message = original,
+            TargetType = "ExamAttempt",
+            TargetId = 501,
+            IsRead = false
+        };
+
+        StudentAnonymizer.RedactSubmissionMessage(notification, studentId: 42, previousFullName: "Nguyễn Văn Bê");
+
+        notification.Message.Should().Be(original);
+    }
+
+    /// <summary>Không có tên cũ nào để thay thì không đụng vào message — tránh xoá nhầm khi dữ liệu thiếu.</summary>
+    [Fact]
+    public void RedactSubmissionMessage_bo_qua_khi_khong_co_ten_cu()
+    {
+        const string original = "Một học sinh vừa nộp bài \"Kiểm tra giữa kỳ\".";
+        var notification = BuildTeacherFacingNotification(recipientTeacherId: 99, message: original);
+
+        StudentAnonymizer.RedactSubmissionMessage(notification, studentId: 42, previousFullName: "");
+
+        notification.Message.Should().Be(original);
+    }
+
+    /// <summary>Chạy hai lần (hai lượt purge, hoặc test lặp lại) không được xoá sạch quá tay.</summary>
+    [Fact]
+    public void RedactSubmissionMessage_chay_hai_lan_khong_lam_hong_them()
+    {
+        var notification = BuildTeacherFacingNotification(
+            recipientTeacherId: 99,
+            message: "Nguyễn Văn Bê vừa nộp bài \"Kiểm tra giữa kỳ\".");
+
+        StudentAnonymizer.RedactSubmissionMessage(notification, studentId: 42, previousFullName: "Nguyễn Văn Bê");
+        var afterFirst = notification.Message;
+
+        StudentAnonymizer.RedactSubmissionMessage(notification, studentId: 42, previousFullName: "Nguyễn Văn Bê");
+
+        notification.Message.Should().Be(afterFirst);
+    }
 }

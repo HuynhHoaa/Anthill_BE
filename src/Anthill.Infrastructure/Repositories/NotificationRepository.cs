@@ -67,4 +67,29 @@ public class NotificationRepository : GenericRepository<Notification>, INotifica
 
         return unread.Count;
     }
+
+    /// <summary>
+    /// Hai bước: trước hết tìm id các lượt làm bài của <paramref name="studentId"/> (nối qua
+    /// <c>ExamAttempt.Assignment.StudentId</c> — không có navigation thẳng từ <c>Notification</c> sang
+    /// <c>ExamAttempt</c> vì <c>TargetType</c>/<c>TargetId</c> cố ý là tham chiếu đa hình, không phải
+    /// khoá ngoại thật), rồi lọc thông báo theo đúng những id đó.
+    /// </summary>
+    public async Task<List<Notification>> GetByAttemptOwnerAsync(
+        int studentId,
+        CancellationToken cancellationToken = default)
+    {
+        var attemptIds = await Context.ExamAttempts
+            .Where(a => a.Assignment.StudentId == studentId)
+            .Select(a => a.Id)
+            .ToListAsync(cancellationToken);
+
+        if (attemptIds.Count == 0)
+        {
+            return new List<Notification>();
+        }
+
+        return await DbSet
+            .Where(n => n.TargetType == nameof(ExamAttempt) && n.TargetId != null && attemptIds.Contains(n.TargetId.Value))
+            .ToListAsync(cancellationToken);
+    }
 }
