@@ -190,7 +190,6 @@ public sealed class ExamAssignmentService : IExamAssignmentService
             SkippedAlreadyAssigned = alreadyAssigned.Count,
             SkippedLocked = targets.LockedCount,
             SkippedRetired = targets.RetiredCount,
-            SkippedNotFound = targets.NotFoundCount,
             SkippedOutOfScope = targets.OutOfScopeCount,
             SkippedOutOfScopeGroups = targets.OutOfScopeGroupCount,
             ScheduleUpdatedCount = rescheduled.Updated,
@@ -354,8 +353,6 @@ public sealed class ExamAssignmentService : IExamAssignmentService
         /// <summary>Các lớp trong request mà giáo viên này được giao bài — cũng là các lớp được phép sửa khung giờ.</summary>
         public required IReadOnlyList<int> OwnedGroupIds { get; init; }
 
-        public required int NotFoundCount { get; init; }
-
         public required int LockedCount { get; init; }
 
         /// <summary>Số em đang chờ xoá — đếm riêng khỏi <see cref="LockedCount"/>.</summary>
@@ -365,7 +362,11 @@ public sealed class ExamAssignmentService : IExamAssignmentService
         /// </remarks>
         public required int RetiredCount { get; init; }
 
-        /// <summary>Số <b>học sinh</b> không thuộc nhóm nào của giáo viên này.</summary>
+        /// <summary>
+        /// Số id bị loại vì không thuộc nhóm nào của giáo viên này — <b>kể cả</b> id không trỏ tới tài
+        /// khoản học sinh nào. Xem <c>AssignExamResponse.SkippedOutOfScope</c>: hai lý do trả lời khác
+        /// nhau là một cách dò xem id nào là học sinh thật của lớp người khác.
+        /// </summary>
         public required int OutOfScopeCount { get; init; }
 
         /// <summary>Số <b>nhóm lớp</b> bị loại vì không do giáo viên này quản lý.</summary>
@@ -376,9 +377,9 @@ public sealed class ExamAssignmentService : IExamAssignmentService
     /// Gom học sinh chọn lẻ với học sinh của các nhóm đã chọn, khử trùng lặp, rồi sàng bốn lớp.
     /// </summary>
     /// <remarks>
-    /// Thứ tự sàng có ý nghĩa: <b>không tồn tại</b> → <b>ngoài phạm vi</b> → <b>đã rời trường</b> →
-    /// <b>đang khoá</b>. Một em vừa ngoài phạm vi vừa bị khoá thì chỉ được đếm một lần, ở lý do đầu
-    /// tiên chạm tới — xem <see cref="AssignmentTargetFilter"/>.
+    /// Thứ tự sàng có ý nghĩa: <b>ngoài phạm vi</b> (id không tồn tại đếm chung vào đây) → <b>đã rời
+    /// trường</b> → <b>đang khoá</b>. Một em vừa ngoài phạm vi vừa bị khoá thì chỉ được đếm một lần, ở
+    /// lý do đầu tiên chạm tới — xem <see cref="AssignmentTargetFilter"/>.
     /// </remarks>
     private async Task<Targets> ResolveTargetsAsync(
         AssignExamRequest request,
@@ -429,7 +430,6 @@ public sealed class ExamAssignmentService : IExamAssignmentService
                 InScope = [],
                 ViaGroup = viaGroup,
                 OwnedGroupIds = ownedGroups.Select(group => group.Id).ToList(),
-                NotFoundCount = 0,
                 LockedCount = 0,
                 RetiredCount = 0,
                 OutOfScopeCount = 0,
@@ -437,9 +437,12 @@ public sealed class ExamAssignmentService : IExamAssignmentService
             };
         }
 
-        // Chỉ trả về id có thật và đúng vai trò Student. Chênh lệch số lượng chính là số id lạ.
+        // Chỉ trả về id có thật và đúng vai trò Student. Chênh lệch số lượng chính là số id lạ, và nó
+        // là điểm xuất phát của bộ đếm "ngoài phạm vi": id không tồn tại và học sinh của lớp người khác
+        // phải cho ra cùng một câu trả lời, nếu không thì đếm chênh lệch giữa hai lần gọi là đủ để dò
+        // ra id nào là học sinh thật (xem AssignExamResponse.SkippedOutOfScope).
         var students = await _unitOfWork.Users.GetStudentsByIdsAsync(requestedIds, cancellationToken);
-        var notFound = requestedIds.Count - students.Count;
+        var outOfScope = requestedIds.Count - students.Count;
 
         // Phạm vi: em phải thuộc một lớp mà giáo viên này được phân công dạy. Không có hàng rào
         // này thì đoán id là giao được bài cho lớp của đồng nghiệp.
@@ -448,7 +451,6 @@ public sealed class ExamAssignmentService : IExamAssignmentService
             .ToHashSet();
 
         var inScope = new List<User>(students.Count);
-        var outOfScope = 0;
         var locked = 0;
         var retired = 0;
 
@@ -476,7 +478,6 @@ public sealed class ExamAssignmentService : IExamAssignmentService
             InScope = inScope,
             ViaGroup = viaGroup,
             OwnedGroupIds = ownedGroups.Select(group => group.Id).ToList(),
-            NotFoundCount = notFound,
             LockedCount = locked,
             RetiredCount = retired,
             OutOfScopeCount = outOfScope,

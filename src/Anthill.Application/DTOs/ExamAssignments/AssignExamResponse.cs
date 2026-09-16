@@ -5,7 +5,7 @@ namespace Anthill.Application.DTOs.ExamAssignments;
 /// </summary>
 /// <remarks>
 /// <para>
-/// Frontend hiện chỉ đọc <see cref="AssignedCount"/>. Bốn con số còn lại vẫn được trả về vì im
+/// Frontend hiện chỉ đọc <see cref="AssignedCount"/>. Các con số còn lại vẫn được trả về vì im
 /// lặng ở đây là im lặng đúng chỗ nguy hiểm nhất: giáo viên chọn cả lớp 40 em, hệ thống báo "đã
 /// giao", nhưng 3 em có tài khoản đang khoá thì không hề có bài. Đến hôm thi mới phát hiện thì đã
 /// muộn. Cùng khuôn với <c>AddMembersResponse</c> của bước 2.
@@ -37,16 +37,27 @@ public sealed record AssignExamResponse
     /// </remarks>
     public required int SkippedRetired { get; init; }
 
-    /// <summary>Id không tồn tại, hoặc tồn tại nhưng không phải tài khoản học sinh.</summary>
-    public required int SkippedNotFound { get; init; }
-
     /// <summary>
-    /// Học sinh không thuộc nhóm nào do chính giáo viên này quản lý.
+    /// Số id không giao được: không thuộc lớp nào do chính giáo viên này quản lý, <b>hoặc</b> không
+    /// trỏ tới tài khoản học sinh nào.
     /// </summary>
     /// <remarks>
+    /// <para>
     /// Bỏ qua trong im lặng thay vì trả 403 cho cả request: giáo viên chọn nhầm một em trong danh
     /// sách vài chục người thì phần còn lại vẫn phải giao được. Con số này cho họ biết có chuyện
     /// gì đã xảy ra.
+    /// </para>
+    /// <para>
+    /// <b>Một con số cho cả hai lý do là có chủ đích.</b> Tách "id không tồn tại" khỏi "có thật nhưng
+    /// ngoài phạm vi" là dựng sẵn một máy dò: bắn từng id một rồi đọc xem con số nào tăng, giáo viên
+    /// đọc ra id nào là học sinh thật của đồng nghiệp — đúng thứ mà phép kiểm phạm vi sinh ra để giấu.
+    /// Gộp lại thì hai trường hợp trả lời giống hệt nhau, mà câu trả lời vẫn đủ dùng: "những em này
+    /// không thuộc lớp bạn phụ trách, hãy kiểm tra lại danh sách chọn".
+    /// </para>
+    /// <para>
+    /// Cùng cách xử lý với <see cref="SkippedOutOfScopeGroups"/>, vốn cũng đã gộp lớp không tồn tại
+    /// với lớp của người khác. Số lớp thì đếm riêng vì khác đơn vị, không phải vì khác lý do.
+    /// </para>
     /// </remarks>
     public required int SkippedOutOfScope { get; init; }
 

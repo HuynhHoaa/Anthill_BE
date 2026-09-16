@@ -232,17 +232,59 @@ public class UserRepository : GenericRepository<User>, IUserRepository
             .ThenBy(u => u.Id)
             .ToListAsync(cancellationToken);
 
-    public async Task<IReadOnlyList<User>> GetDueForDeletionAsync(
+    /// <inheritdoc />
+    /// <remarks>
+    /// <c>SELECT *</c> không trả cột hệ thống, nên <c>xmin</c> phải ghi tường minh: thiếu nó EF không
+    /// dựng được entity, và concurrency token cũng không có giá trị gốc để so.
+    /// </remarks>
+    public async Task<User?> LockForUpdateAsync(int userId, CancellationToken cancellationToken = default)
+    {
+        // Phải hỏi trước khi truy vấn, vì ngay sau nó thì dòng nào cũng đã nằm trong change tracker.
+        var trackedBefore = Context.ChangeTracker
+            .Entries<User>()
+            .Any(entry => entry.Entity.Id == userId);
+
+        var rows = await DbSet
+            .FromSql($"""SELECT *, xmin FROM "Users" WHERE "Id" = {userId} FOR UPDATE""")
+            .ToListAsync(cancellationToken);
+
+        if (rows.Count == 0)
+        {
+            return null;
+        }
+
+        var user = rows[0];
+
+        if (trackedBefore)
+        {
+            // Cùng lý do với ExamAttemptRepository.LockForUpdateAsync: entity đã theo dõi giữ giá trị
+            // của lần đọc trước lúc xếp hàng chờ khoá. Đọc lại khi đã giữ khoá thì không ai chen được.
+            await Context.Entry(user).ReloadAsync(cancellationToken);
+        }
+
+        return user;
+    }
+
+    /// <inheritdoc />
+    public async Task<IReadOnlyList<User>> LockDueForDeletionAsync(
         DateTime dueBeforeUtc,
         int batchSize,
-        CancellationToken cancellationToken = default) =>
-        await DbSet
-            .Where(u => u.Status == UserStatus.PendingDeletion
-                        && u.DeletionRequestedAt != null
-                        && u.DeletionRequestedAt <= dueBeforeUtc)
-            .OrderBy(u => u.DeletionRequestedAt)
-            .Take(batchSize)
+        CancellationToken cancellationToken = default)
+    {
+        var pending = nameof(UserStatus.PendingDeletion);
+
+        return await DbSet
+            .FromSql($"""
+                SELECT *, xmin FROM "Users"
+                WHERE "Status" = {pending}
+                  AND "DeletionRequestedAt" IS NOT NULL
+                  AND "DeletionRequestedAt" <= {dueBeforeUtc}
+                ORDER BY "DeletionRequestedAt", "Id"
+                LIMIT {batchSize}
+                FOR UPDATE SKIP LOCKED
+                """)
             .ToListAsync(cancellationToken);
+    }
 
     public async Task<IReadOnlyList<User>> GetAssignableTeachersAsync(
         int groupId,

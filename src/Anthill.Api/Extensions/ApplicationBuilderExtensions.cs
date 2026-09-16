@@ -112,7 +112,9 @@ public static class ApplicationBuilderExtensions
     /// </summary>
     /// <remarks>
     /// Thiếu khoá ký mà để tới lúc chạy mới phát hiện thì lỗi hiện ra dưới dạng 500 ở một endpoint
-    /// ngẫu nhiên, rất mất thời gian lần. Chết ngay lúc boot với thông điệp rõ ràng thì hơn.
+    /// ngẫu nhiên, rất mất thời gian lần. Chết ngay lúc boot với thông điệp rõ ràng thì hơn. Danh sách
+    /// origin cũng vậy: ở Production, để trống là frontend không gọi nổi API, mà cách chữa cháy nhanh
+    /// nhất lại là dán một mẫu có dấu sao vào — nên thà dừng và nói rõ phải đặt biến nào.
     /// </remarks>
     public static WebApplication ValidateSecurityConfiguration(this WebApplication app)
     {
@@ -126,15 +128,38 @@ public static class ApplicationBuilderExtensions
         var cors = app.Services.GetRequiredService<CorsPolicyOptions>();
         if (cors.IsEmpty)
         {
-            // Không chặn khởi động: một API gọi từ máy chủ khác (hoặc chỉ dùng Swagger) không cần CORS.
-            // Nhưng đây là nguyên nhân số một của "gọi API từ frontend thì trình duyệt báo lỗi CORS",
-            // nên phải nói thật to.
+            // Ở Production thì dừng hẳn. Danh sách rỗng nghĩa là chưa ai khai địa chỉ frontend, và cách
+            // thoát duy nhất mà người vội hay chọn là dán lại một mẫu "*" — đúng thứ vừa bị gỡ khỏi
+            // appsettings.json. Chết ngay lúc boot kèm tên biến môi trường phải đặt thì không ai phải đoán.
+            if (app.Environment.IsProduction())
+            {
+                throw new InvalidOperationException(
+                    "Cors:AllowedOrigins đang trống. Đặt địa chỉ thật của frontend bằng biến môi trường "
+                    + "Cors__AllowedOrigins__0 (ví dụ https://anthill.vercel.app), thêm __1, __2... nếu có "
+                    + "nhiều địa chỉ. Không dùng mẫu có dấu sao cho địa chỉ chính thức: nó cho phép mọi "
+                    + "trang cùng tên miền cấp trên gọi API từ trình duyệt của người đang đăng nhập.");
+            }
+
+            // Ngoài Production thì chỉ cảnh báo: một API gọi từ máy chủ khác (hoặc chỉ dùng Swagger)
+            // không cần CORS. Nhưng đây là nguyên nhân số một của "gọi API từ frontend thì trình duyệt
+            // báo lỗi CORS", nên phải nói thật to.
             logger.LogWarning(
                 "Cors:AllowedOrigins đang trống — mọi request từ trình duyệt ở origin khác sẽ bị chặn.");
+
+            return app;
         }
-        else
+
+        logger.LogInformation("CORS cho phép origin: {Origins}", string.Join(", ", cors.All));
+
+        // Mẫu có dấu sao là để chạy thử bản preview, nơi địa chỉ đổi theo từng lần deploy. Trên
+        // Production nó là một cánh cửa mở cho mọi trang nằm dưới cùng tên miền cấp trên đó, nên nếu
+        // vẫn còn thì phải hiện ra trong log chứ không nằm im.
+        if (cors.WildcardPatterns.Count > 0 && app.Environment.IsProduction())
         {
-            logger.LogInformation("CORS cho phép origin: {Origins}", string.Join(", ", cors.All));
+            logger.LogError(
+                "CORS đang chấp nhận mẫu {Patterns} ở Production: mọi trang khớp mẫu này đều gọi được API "
+                + "từ trình duyệt của người đang đăng nhập. Hãy khai đúng địa chỉ frontend.",
+                string.Join(", ", cors.WildcardPatterns));
         }
 
         return app;

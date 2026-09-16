@@ -154,8 +154,16 @@ expect_json "  skippedAlreadyAssigned = 3"   skippedAlreadyAssigned 3
 expect_status "học sinh ngoài nhóm + id lạ → 200" 200 \
   "$(call POST "/api/exams/$EXAM_ID/assignments" "$TEACHER" "{\"studentIds\":[$OUTSIDER,999999],\"groupIds\":[],\"randomizePerStudent\":false,\"notify\":false}")"
 expect_json "  assignedCount = 0"        assignedCount 0
-expect_json "  skippedOutOfScope = 1"    skippedOutOfScope 1
-expect_json "  skippedNotFound = 1"      skippedNotFound 1
+expect_json "  skippedOutOfScope = 2 (em lop khac + id la, gop lam mot)" skippedOutOfScope 2
+expect_status "  khong con truong skippedNotFound de doi chieu" absent \
+  "$(body | python -c 'import json,sys;print("present" if "skippedNotFound" in json.load(sys.stdin) else "absent")')"
+
+# Doi chung: hai id lac, khong id nao la hoc sinh that, cho ra dung con so nhu tren. Tach hai ly do
+# ra thanh hai con so la giao vien ban tung id mot roi doc xem id nao la hoc sinh that cua lop nguoi
+# khac — dung thu ma phep kiem pham vi sinh ra de giau.
+expect_status "hai id la, khong em nao co that → 200" 200 \
+  "$(call POST "/api/exams/$EXAM_ID/assignments" "$TEACHER" '{"studentIds":[999998,999999],"groupIds":[],"randomizePerStudent":false,"notify":false}')"
+expect_json "  skippedOutOfScope = 2, khong phan biet duoc voi truong hop tren" skippedOutOfScope 2
 
 # Chọn một em lẻ đã nằm trong nhóm vừa giao: khử trùng lặp phải nhận ra.
 expect_status "chọn lẻ em đã có bài → 200" 200 \

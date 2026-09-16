@@ -1,5 +1,6 @@
 using Anthill.Application.Common;
 using Anthill.Application.DTOs.Auth;
+using Anthill.Application.Interfaces.Realtime;
 using Anthill.Application.Interfaces.Security;
 using Anthill.Application.Interfaces.Services;
 using Anthill.Application.Interfaces.UnitOfWork;
@@ -32,29 +33,24 @@ public sealed class AuthService : IAuthService
     private const string CurrentPasswordField = "currentPassword";
     private const string NewPasswordField = "newPassword";
 
-    /// <summary>
-    /// Chuỗi băm hợp lệ nhưng không thuộc tài khoản nào, dùng để đốt đúng lượng thời gian mà một lần
-    /// đối chiếu mật khẩu thật tiêu tốn. Không có nó, nhánh "tài khoản không tồn tại" trả lời sau vài
-    /// mili giây còn nhánh "sai mật khẩu" sau vài trăm — dùng chung một thông điệp thì vẫn dò ra được
-    /// tài khoản nào có thật, chỉ bằng đồng hồ bấm giây.
-    /// </summary>
-    private const string TimingDecoyHash = "$2a$11$N9qo8uLOickgx2ZMRZoMyeIjZAgcfl7p92ldGxad68LJZdL17lhWy";
-
     private readonly IUnitOfWork _unitOfWork;
     private readonly IPasswordHasher _passwordHasher;
     private readonly IJwtTokenGenerator _jwtTokenGenerator;
     private readonly ICurrentUser _currentUser;
+    private readonly IUserConnectionCloser _connections;
 
     public AuthService(
         IUnitOfWork unitOfWork,
         IPasswordHasher passwordHasher,
         IJwtTokenGenerator jwtTokenGenerator,
-        ICurrentUser currentUser)
+        ICurrentUser currentUser,
+        IUserConnectionCloser connections)
     {
         _unitOfWork = unitOfWork;
         _passwordHasher = passwordHasher;
         _jwtTokenGenerator = jwtTokenGenerator;
         _currentUser = currentUser;
+        _connections = connections;
     }
 
     /// <inheritdoc />
@@ -170,7 +166,9 @@ public sealed class AuthService : IAuthService
         // Đường ghi dùng GetByIdAsync: entity trần do DbContext theo dõi là đủ. Vì nó đang được theo
         // dõi, SaveChanges chỉ ghi đúng các cột gán dưới đây (xem GenericRepository.Update) — lần lưu
         // hồ sơ này không thể ghi đè Status, SecurityStamp hay PasswordHash mà quản trị viên vừa đổi
-        // trong lúc request đang chạy, tức là không thể làm một lệnh khoá biến mất.
+        // trong lúc request đang chạy, tức là không thể làm một lệnh khoá biến mất. Cố ý không khoá dòng:
+        // nếu quản trị viên ghi chen vào giữa lúc đọc và lúc lưu, concurrency token (xmin) biến lần lưu
+        // này thành 409 — bên ghi trên bản đã cũ là bên phải làm lại, không phải lệnh khoá.
         var user = await _unitOfWork.Users.GetByIdAsync(userId, cancellationToken);
 
         var guard = GuardAccountState(user);
@@ -238,7 +236,12 @@ public sealed class AuthService : IAuthService
             return Result.Unauthorized(SessionExpiredMessage);
         }
 
-        var user = await _unitOfWork.Users.GetByIdAsync(userId, cancellationToken);
+        // Khoá dòng từ lúc đọc tới lúc commit (xem IUserRepository.LockForUpdateAsync): quản trị viên
+        // cấp lại mật khẩu đúng lúc này thì một trong hai bên phải chờ bên kia, không có chuyện bên ghi
+        // sau lặng lẽ đè mất mật khẩu bên kia vừa đặt.
+        await using var transaction = await _unitOfWork.BeginTransactionAsync(cancellationToken);
+
+        var user = await _unitOfWork.Users.LockForUpdateAsync(userId, cancellationToken);
 
         var guard = GuardAccountState(user);
         if (guard.IsFailure)
@@ -287,6 +290,11 @@ public sealed class AuthService : IAuthService
 
         _unitOfWork.Users.Update(account);
         await _unitOfWork.SaveChangesAsync(cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
+
+        // Sau commit, không phải trước: xem IUserConnectionCloser. Kết nối ở chính tab vừa đổi mật khẩu
+        // cũng bị cắt — nó đang cầm token vừa chết, như mọi tab khác.
+        _connections.CloseConnectionsOf(account.Id);
 
         return Result.Success();
     }
@@ -404,11 +412,17 @@ public sealed class AuthService : IAuthService
     /// Đối chiếu mật khẩu với một chuỗi băm giả để nhánh "không có tài khoản" tốn xấp xỉ cùng thời
     /// gian với nhánh "sai mật khẩu". Kết quả cố tình bỏ đi.
     /// </summary>
+    /// <remarks>
+    /// Chuỗi băm giả lấy từ chính <see cref="IPasswordHasher"/> nên nó luôn mang đúng work factor mà
+    /// mật khẩu thật đang dùng. Không có nó, nhánh "tài khoản không tồn tại" trả lời sau vài mili giây
+    /// còn nhánh "sai mật khẩu" sau vài trăm — dùng chung một thông điệp thì vẫn dò ra được tài khoản
+    /// nào có thật, chỉ bằng đồng hồ bấm giây.
+    /// </remarks>
     private void BurnPasswordVerificationTime(string password)
     {
         try
         {
-            _ = _passwordHasher.Verify(password, TimingDecoyHash);
+            _ = _passwordHasher.Verify(password, _passwordHasher.TimingDecoyHash);
         }
         catch
         {

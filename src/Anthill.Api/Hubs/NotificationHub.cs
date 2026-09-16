@@ -1,5 +1,8 @@
 using System.Globalization;
+using Anthill.Api.Realtime;
 using Anthill.Api.Security;
+using Anthill.Application.Common;
+using Anthill.Application.Interfaces.Security;
 using Anthill.Application.Interfaces.UnitOfWork;
 using Anthill.Domain.Enums;
 using Microsoft.AspNetCore.Authorization;
@@ -22,17 +25,18 @@ namespace Anthill.Api.Hubs;
 /// <c>ServiceCollectionExtensions.AddJwtAuthentication</c>.
 /// </para>
 /// <para>
-/// Phiên bị thu hồi (khoá, đưa vào diện xoá, đổi hay cấp lại mật khẩu) bị chặn ở ba chỗ: negotiate và
-/// request mở kết nối nhận 401 từ <c>OnTokenValidated</c>; mỗi lời gọi phương thức hub trên một kết nối
-/// đã mở bị <see cref="SessionRevalidationHubFilter"/> từ chối và kết nối bị cắt; và kết nối tự đóng
-/// khi token của nó hết hạn (<c>CloseOnAuthenticationExpiration</c> ở <c>Program.cs</c>).
+/// Phiên bị thu hồi (khoá, đưa vào diện xoá, đổi hay cấp lại mật khẩu) bị chặn ở bốn chỗ: negotiate và
+/// request mở kết nối nhận 401 từ <c>OnTokenValidated</c>; kết nối đang mở bị cắt ngay khi stamp xoay,
+/// qua <see cref="UserConnectionRegistry"/>; mỗi lời gọi phương thức hub bị
+/// <see cref="SessionRevalidationHubFilter"/> kiểm lại; và kết nối tự đóng khi token của nó hết hạn
+/// (<c>CloseOnAuthenticationExpiration</c> ở <c>Program.cs</c>).
 /// </para>
 /// <para>
-/// <b>Khe hở còn lại:</b> sự kiện server đẩy xuống một kết nối mở <i>trước</i> lúc thu hồi không đi qua
-/// phương thức hub nào, nên không bị kiểm. Kết nối đó vẫn nhận sự kiện của group <c>user:{id}</c>
-/// (và <c>exam:{id}</c> nếu đã vào) cho tới khi client gọi một phương thức hub — lúc đó bộ lọc cắt nó —
-/// hoặc token hết hạn, lâu nhất là hết thời hạn token (120 phút). Đóng hẳn khe này cần ghi lại
-/// connectionId của từng tài khoản và cắt chúng ngay lúc xoay stamp.
+/// Cắt ngay là thứ đóng khe cũ: sự kiện server đẩy xuống không đi qua phương thức hub nào, nên trước
+/// đây một kết nối mở trước lúc khoá vẫn nhận thông báo cá nhân (và luồng nộp bài của group
+/// <c>exam:{id}</c>) cho tới lần gọi hub kế tiếp hoặc khi token hết hạn. Sổ kết nối chỉ đúng khi API chạy
+/// một tiến trình — giới hạn đó ghi ở <see cref="UserConnectionRegistry"/>; hai hàng rào sau vẫn đứng
+/// cho trường hợp nhiều tiến trình.
 /// </para>
 /// </remarks>
 [Authorize]
@@ -41,11 +45,19 @@ public sealed class NotificationHub : Hub
     public const string Route = "/hubs/notifications";
 
     private readonly IUnitOfWork _unitOfWork;
+    private readonly IAccountSessionReader _sessionReader;
+    private readonly UserConnectionRegistry _connections;
     private readonly ILogger<NotificationHub> _logger;
 
-    public NotificationHub(IUnitOfWork unitOfWork, ILogger<NotificationHub> logger)
+    public NotificationHub(
+        IUnitOfWork unitOfWork,
+        IAccountSessionReader sessionReader,
+        UserConnectionRegistry connections,
+        ILogger<NotificationHub> logger)
     {
         _unitOfWork = unitOfWork;
+        _sessionReader = sessionReader;
+        _connections = connections;
         _logger = logger;
     }
 
@@ -71,10 +83,23 @@ public sealed class NotificationHub : Hub
             return;
         }
 
-        // Không tra lại tài khoản ở đây. Token của tài khoản bị khoá, chờ xoá hay đã xoay stamp bị
-        // OnTokenValidated (AddJwtAuthentication) chặn ngay ở request negotiate và request mở kết
-        // nối, trước khi hub được dựng — nên một phép tra ở đây không bao giờ còn gặp token cũ. Thu
-        // hồi xảy ra SAU lúc này thì do SessionRevalidationHubFilter lo, ở lời gọi hub kế tiếp.
+        // Ghi vào sổ TRƯỚC, kiểm phiên SAU. OnTokenValidated đã kiểm lúc mở kết nối, nhưng stamp có thể
+        // xoay trong khoảng từ lúc đó tới đây — và lệnh cắt chạy lúc ấy không thấy kết nối chưa có trong
+        // sổ. Với thứ tự này, lệnh cắt nào chạy sau khi ghi sổ đều tìm thấy kết nối; còn lệnh cắt chạy
+        // trước khi ghi sổ thì transaction của nó đã commit, nên phép kiểm ngay dưới thấy stamp mới.
+        _connections.Register(userId.Value, Context.ConnectionId, Context.Abort);
+
+        var verdict = await SessionValidation.CheckAsync(
+            Context.User?.FindFirst(CurrentUser.UserIdClaimType)?.Value,
+            Context.User?.FindFirst(CurrentUser.SecurityStampClaimType)?.Value,
+            _sessionReader,
+            Context.ConnectionAborted);
+        if (verdict != SessionVerdict.Valid)
+        {
+            Context.Abort();
+            return;
+        }
+
         await Groups.AddToGroupAsync(Context.ConnectionId, UserGroup(userId.Value), Context.ConnectionAborted);
         await base.OnConnectedAsync();
     }
@@ -128,10 +153,15 @@ public sealed class NotificationHub : Hub
 
     /// <summary>
     /// SignalR không tự dọn group khi kết nối đóng — nhưng nó cũng không cần: group chỉ là danh sách
-    /// connectionId, và connectionId chết thì bị loại khỏi mọi group.
+    /// connectionId, và connectionId chết thì bị loại khỏi mọi group. Sổ kết nối thì phải tự xoá.
     /// </summary>
     public override Task OnDisconnectedAsync(Exception? exception)
     {
+        if (GetUserId() is { } userId)
+        {
+            _connections.Unregister(userId, Context.ConnectionId);
+        }
+
         if (exception is not null)
         {
             _logger.LogDebug(exception, "Kết nối hub {ConnectionId} đóng do lỗi.", Context.ConnectionId);
