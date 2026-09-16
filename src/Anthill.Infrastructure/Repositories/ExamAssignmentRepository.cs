@@ -230,7 +230,7 @@ public class ExamAssignmentRepository : GenericRepository<ExamAssignment>, IExam
             .Any(entry => entry.Entity.Id == assignmentId);
 
         var rows = await DbSet
-            .FromSql($"""SELECT * FROM "ExamAssignments" WHERE "Id" = {assignmentId} FOR SHARE""")
+            .FromSql($"""SELECT * FROM "ExamAssignments" WHERE "Id" = {assignmentId} FOR UPDATE""")
             .ToListAsync(cancellationToken);
 
         if (rows.Count == 0)
