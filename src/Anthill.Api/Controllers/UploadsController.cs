@@ -13,11 +13,10 @@ namespace Anthill.Api.Controllers;
 /// </summary>
 /// <remarks>
 /// <para>
-/// <b>Điểm chuyển đổi so với frontend</b> (§1): hiện tại frontend đọc file bằng
-/// <c>FileReader.readAsDataURL</c> rồi nhét thẳng chuỗi <c>data:image/png;base64,...</c> vào
-/// payload câu hỏi. Cách đó phình payload lên khoảng 4/3 kích thước ảnh, và cột <c>ImageUrl</c>
-/// chỉ dài 512 ký tự nên sẽ vỡ ngay ở ảnh đầu tiên. Luồng đúng là: upload trước ở đây → nhận URL →
-/// gửi URL kèm câu hỏi.
+/// <b>Luồng ảnh</b> (§1): upload trước ở đây → nhận URL → gửi URL kèm câu hỏi. Frontend upload
+/// ngay lúc giáo viên chọn ảnh chứ không nhúng chuỗi <c>data:image/png;base64,...</c> vào payload
+/// câu hỏi: cách đó phình payload lên khoảng 4/3 kích thước ảnh, và cột <c>ImageUrl</c> chỉ dài 512
+/// ký tự nên sẽ vỡ ngay ở ảnh đầu tiên — vì vậy validator câu hỏi từ chối data URI.
 /// </para>
 /// <para>
 /// Chỉ giáo viên và quản trị viên gọi được. Cho học sinh upload nghĩa là mở một chỗ ghi file công

@@ -26,7 +26,7 @@ Ngày lập: 06/09/2026 · Nguồn: 9 service, ~50 hàm · Hiện tại: **69 en
 
 **Ngày giờ.** FE hiện dùng chuỗi `'DD/MM/YYYY HH:mm'` theo giờ máy người dùng. API phải dùng ISO 8601 UTC. Chỗ chuyển đổi đặt ở `src/lib/apiClient.ts` — parse khi nhận, format khi gửi. Không sửa rải rác trong page.
 
-**Ảnh.** FE hiện đọc file bằng `FileReader.readAsDataURL` và nhét thẳng data URI vào payload. API **không nhận data URI** — phải upload trước qua `POST /api/uploads/images` rồi gửi URL.
+**Ảnh.** API **không nhận data URI** — ảnh phải upload trước qua `POST /api/uploads/images` (multipart, trường `file`, PNG/JPEG/GIF/WebP, tối đa `FileStorage:MaxBytes` = 4 MB, loại ảnh xét theo đuôi file lẫn magic bytes) rồi gửi URL kèm câu hỏi. Response `{ url, fileName, sizeBytes, contentType }`, trong đó `url` là **đường dẫn tương đối** (`/uploads/202609/<guid>.png`) do origin của API phục vụ. FE upload ngay khi giáo viên chọn ảnh (`ImageUploader` → `uploadService`), khoá nút lưu câu hỏi trong lúc ảnh đang tải, lưu nguyên đường dẫn tương đối, và chỉ ghép với `VITE_API_BASE_URL` lúc hiển thị (`resolveMediaUrl` trong `src/lib/apiClient.ts`); URL tuyệt đối được giữ nguyên.
 
 **Phân trang lách.** Năm chỗ ở FE đang truyền `pageSize` rất lớn (500) để lấy trọn tập dữ liệu rồi tự tính thống kê. BE nên chặn trên `pageSize` tối đa 200 và cung cấp endpoint thống kê riêng.
 
