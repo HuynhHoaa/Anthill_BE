@@ -51,6 +51,14 @@ public class Exam : BaseEntity
 
     public DateTime? PublishedAt { get; set; }
 
+    /// <summary>
+    /// Mốc mở đáp án đã CHỐT — chỉ tiến, không lùi (H10). NULL nghĩa là chưa từng chốt. Xem
+    /// <see cref="Anthill.Application.Common.AnswersReleaseStamp"/> cho lý do tồn tại của cột này:
+    /// không có nó thì tính lại theo <c>MAX(CloseAt)</c> mỗi lần đọc khiến một lượt giao MỚI với giờ
+    /// đóng muộn hơn giấu lại đáp án của những em đã hợp lệ xem rồi.
+    /// </summary>
+    public DateTime? AnswersReleasedAt { get; set; }
+
     /// <summary>Môn của đề suy ra từ đây (CreatedBy.SubjectId) — Exam cố ý không có SubjectId.</summary>
     public int CreatedByUserId { get; set; }
 

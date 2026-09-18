@@ -159,4 +159,54 @@ public class SaveExamRequestValidatorTests
         // phải nháp hay không nên thuộc về ExamService, không thuộc về validator.
         _validator.Validate(Valid(easy: 10, medium: 10, hard: 10)).IsValid.Should().BeTrue();
     }
+
+    // ── H6: tích số câu × điểm mỗi câu phải vừa numeric(6,2), và điểm mỗi câu tối đa 2 chữ số thập phân ──
+
+    [Fact]
+    public void Tich_so_cau_va_diem_dung_bang_tran_thi_hop_le()
+    {
+        // Biên hợp lệ: 3 câu × 3333.33 điểm = 9999.99 đúng bằng trần numeric(6,2), không hơn không kém.
+        _validator.Validate(Valid(totalQuestions: 3, pointPerQuestion: 3333.33m)).IsValid.Should().BeTrue();
+    }
+
+    [Fact]
+    public void Tich_so_cau_va_diem_vuot_tran_numeric_6_2_du_it_bi_tu_choi()
+    {
+        // 3 câu × 3333.34 = 10000.02, vượt trần đúng 0.03 — đúng ca báo cáo mô tả (PostgresException
+        // 22003 lúc học sinh đầu tiên bắt đầu làm, vì MaxScore không còn vừa numeric(6,2)). Không so
+        // chuỗi "9999.99": dấu thập phân trong thông điệp phụ thuộc văn hoá (culture) của máy chạy test.
+        ErrorsOf(Valid(totalQuestions: 3, pointPerQuestion: 3333.34m))
+            .Should().Contain(message => message.Contains("Tổng điểm bài kiểm tra"));
+    }
+
+    [Fact]
+    public void Tich_vuot_tran_du_tung_truong_rieng_van_hop_le_van_bi_tu_choi()
+    {
+        // Đúng ví dụ 100×100 mà báo cáo H6 nêu: 100 câu nằm trong [1, 500], 100 điểm/câu nằm trong
+        // (0, 9999.99] — cả hai trần riêng đều thoả từng cái một, chỉ luật tích (10000 > 9999.99) mới
+        // chặn được tổ hợp này.
+        ErrorsOf(Valid(totalQuestions: 100, pointPerQuestion: 100m, windowHours: 999))
+            .Should().Contain(message => message.Contains("Tổng điểm bài kiểm tra"));
+    }
+
+    [Theory]
+    [InlineData(0.125)]
+    [InlineData(1.999)]
+    [InlineData(0.001)]
+    public void Diem_qua_hai_chu_so_thap_phan_bi_tu_choi(decimal pointPerQuestion)
+    {
+        // Báo cáo H6: 0.125 bị numeric(6,2) làm tròn âm thầm thành 0.13 lúc lưu nếu không chặn ở đây.
+        ErrorsOf(Valid(pointPerQuestion: pointPerQuestion))
+            .Should().Contain(message => message.Contains("tối đa 2 chữ số thập phân"));
+    }
+
+    [Theory]
+    [InlineData(0.5)]
+    [InlineData(1)]
+    [InlineData(1.1)]
+    [InlineData(2.25)]
+    public void Diem_toi_da_hai_chu_so_thap_phan_thi_hop_le(decimal pointPerQuestion)
+    {
+        _validator.Validate(Valid(pointPerQuestion: pointPerQuestion)).IsValid.Should().BeTrue();
+    }
 }

@@ -65,9 +65,12 @@ public sealed class AuthController : ApiControllerBase
     /// <summary>Hồ sơ của người đang đăng nhập, suy từ JWT.</summary>
     /// <remarks>
     /// Token của tài khoản bị khoá hay chờ xoá nhận <b>403</b> kèm lý do ở đây, trong khi mọi endpoint
-    /// nghiệp vụ trả 401 — xem <see cref="ReportsBlockedAccountAttribute"/>.
+    /// nghiệp vụ trả 401 — xem <see cref="ReportsBlockedAccountAttribute"/>. Còn dùng được khi tài
+    /// khoản đang phải đổi mật khẩu (§5): frontend cần hồ sơ này để dựng màn hình bắt buộc đổi mật
+    /// khẩu — xem <see cref="AllowWhileMustChangePasswordAttribute"/>.
     /// </remarks>
     [ReportsBlockedAccount]
+    [AllowWhileMustChangePassword]
     [HttpGet("me")]
     [ProducesResponseType<UserProfileDto>(StatusCodes.Status200OK)]
     [ProducesResponseType<ApiErrorResponse>(StatusCodes.Status401Unauthorized)]
@@ -97,9 +100,14 @@ public sealed class AuthController : ApiControllerBase
     /// Sai mật khẩu hiện tại là <b>400</b> kèm <c>errors.currentPassword</c>. 401 chỉ dành cho phiên đã
     /// chết, vì frontend đăng xuất người dùng ngay khi gặp nó.
     /// </para>
+    /// <para>
+    /// Đây là lối thoát duy nhất khi tài khoản đang phải đổi mật khẩu (§5), nên luôn gọi được bất kể
+    /// cờ đó — xem <see cref="AllowWhileMustChangePasswordAttribute"/>.
+    /// </para>
     /// </remarks>
     [ReportsBlockedAccount]
     [EnableRateLimiting("auth")]
+    [AllowWhileMustChangePassword]
     [HttpPost("change-password")]
     [ProducesResponseType<ApiMessageResponse>(StatusCodes.Status200OK)]
     [ProducesResponseType<ApiErrorResponse>(StatusCodes.Status400BadRequest)]
@@ -114,6 +122,11 @@ public sealed class AuthController : ApiControllerBase
             "Đổi mật khẩu thành công. Vui lòng đăng nhập lại.");
 
     /// <summary>Thu hồi phiên hiện tại.</summary>
+    /// <remarks>
+    /// Tài khoản đang phải đổi mật khẩu (§5) vẫn đăng xuất được — xem
+    /// <see cref="AllowWhileMustChangePasswordAttribute"/>.
+    /// </remarks>
+    [AllowWhileMustChangePassword]
     [HttpPost("logout")]
     [ProducesResponseType<ApiMessageResponse>(StatusCodes.Status200OK)]
     [ProducesResponseType<ApiErrorResponse>(StatusCodes.Status401Unauthorized)]

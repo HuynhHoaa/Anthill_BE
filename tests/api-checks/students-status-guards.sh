@@ -208,7 +208,10 @@ section "Giao vien thay trang thai tai khoan tren bang theo doi va bang ket qua"
 # Em con hoc vao lam bai, roi roi truong. Bai va diem giu nguyen, nhung dong cua em phai mang nhan —
 # khong thi giao vien doc no nhu mot em dang hoc binh thuong. De co luot lam bai thi khong xoa duoc,
 # nen lan chay nay de lai mot de (giong flow-class-to-student.sh).
-STAYER_TOKEN=$(login "g${STAMP}d" "anthill123")
+# Tai khoan vua tao mang MustChangePassword=true (Sec.5): mat khau quan tri vien go luc tao chi
+# dung duoc de doi mat khau, khong lam bai duoc. Doi ngay sang mat khau rieng truoc khi dung token
+# nay cho nghiep vu — dung nhu mot hoc sinh that se lam sau khi bi bat doi mat khau lan dau.
+STAYER_TOKEN=$(login_and_clear_must_change "g${STAMP}d" "anthill123" "StayerPw$STAMP")
 call GET /api/my/exams "$STAYER_TOKEN" > /dev/null
 AID=$(body | python -c "import json,sys;print(next(x['assignmentId'] for x in json.load(sys.stdin) if x['examId'] == $EID))")
 expect_status "em con hoc bat dau lam bai → 200" 200 \

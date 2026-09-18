@@ -270,7 +270,9 @@ expect_status "  lop A gio la lich de, dang mo" open  "$(window_of lifecycle "$G
 expect_status "  lop A: hai em"                 2     "$(window_of assignedCount "$G_A")"
 
 section "Em da bat dau chi bi dem khi khung that su khac"
-TOK_C=$(login "q${STAMP}c" "anthill123")
+# Tai khoan vua tao mang MustChangePassword=true (Sec.5) — doi ngay sang mat khau rieng truoc khi
+# dung token cho nghiep vu, dung nhu mot hoc sinh that lam sau lan dang nhap dau tien.
+TOK_C=$(login_and_clear_must_change "q${STAMP}c" "anthill123" "Qc$STAMP")
 call GET /api/my/exams "$TOK_C" > /dev/null
 AID_C=$(my_field assignmentId "$EID")
 expect_status "em lop C vao lam → 200" 200 "$(call POST /api/exam-attempts "$TOK_C" "{\"assignmentId\":$AID_C}")"
@@ -292,7 +294,7 @@ expect_status "PATCH em D, 2..4 gio nua → 200" 200 \
 expect_json   "  tra ve dong cua em: hasScheduleOverride" hasScheduleOverride true
 expect_status "  openAt dung gio vua dat" true "$(field_near openAt "$D_OPEN")"
 expect_json   "  status = assigned" status assigned
-TOK_D=$(login "q${STAMP}d" "anthill123")
+TOK_D=$(login_and_clear_must_change "q${STAMP}d" "anthill123" "Qd$STAMP")
 expect_status "em D doc danh sach → 200" 200 "$(call GET /api/my/exams "$TOK_D")"
 expect_status "  em thay lifecycle = scheduled" scheduled "$(my_field lifecycle "$EID")"
 expect_status "  em thay canStart = false"      false     "$(my_field canStart "$EID")"
@@ -341,9 +343,11 @@ expect_status "giao lop F (gio rieng), lop G (lich de), em H chon le → 200" 20
   "$(call POST "/api/exams/$EID_N/assignments" "$TEACHER" "$NOTIFY_BODY")"
 expect_json   "  assignedCount = 3" assignedCount 3
 
-TOK_F=$(login "q${STAMP}f" "anthill123")
-TOK_G=$(login "q${STAMP}g" "anthill123")
-TOK_H=$(login "q${STAMP}h" "anthill123")
+# Tai khoan vua tao mang MustChangePassword=true (Sec.5) — doi ngay sang mat khau rieng truoc khi
+# dung token cho nghiep vu.
+TOK_F=$(login_and_clear_must_change "q${STAMP}f" "anthill123" "Qf$STAMP")
+TOK_G=$(login_and_clear_must_change "q${STAMP}g" "anthill123" "Qg$STAMP")
+TOK_H=$(login_and_clear_must_change "q${STAMP}h" "anthill123" "Qh$STAMP")
 expect_status "khong ai co thong bao nao (notify=false)" "0 0 0" \
   "$(notice_count "$TOK_F") $(notice_count "$TOK_G") $(notice_count "$TOK_H")"
 
@@ -415,7 +419,7 @@ expect_status "lop L: khung da qua → 200" 200 \
   "$(call POST "/api/exams/$EID_DA/assignments" "$TEACHER" \
     "{\"studentIds\":[],\"classes\":[$(class_entry "$G_L" "$(at_hours -3)" "$(at_hours -2)")],\"notify\":false}")"
 
-TOK_K=$(login "q${STAMP}k" "anthill123")
+TOK_K=$(login_and_clear_must_change "q${STAMP}k" "anthill123" "Qk$STAMP")
 call GET /api/my/exams "$TOK_K" > /dev/null
 AID_K=$(my_field assignmentId "$EID_DA")
 expect_status "em lop K vao lam → 200" 200 "$(call POST /api/exam-attempts "$TOK_K" "{\"assignmentId\":$AID_K}")"

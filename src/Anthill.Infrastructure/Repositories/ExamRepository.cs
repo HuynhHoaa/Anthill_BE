@@ -136,6 +136,15 @@ public class ExamRepository : GenericRepository<Exam>, IExamRepository
         Context.ExamPapers.RemoveRange(papers);
     }
 
+    public async Task<IReadOnlyList<int>> GetExamIdsUsingQuestionAsync(
+        int questionId,
+        CancellationToken cancellationToken = default) =>
+        await Context.ExamPaperQuestions
+            .Where(paperQuestion => paperQuestion.QuestionId == questionId)
+            .Select(paperQuestion => paperQuestion.ExamPaper.ExamId)
+            .Distinct()
+            .ToListAsync(cancellationToken);
+
     public async Task<int> CountAssignedByCreatorAsync(
         int createdByUserId,
         CancellationToken cancellationToken = default) =>

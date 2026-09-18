@@ -1,8 +1,10 @@
+using Anthill.Application.Common;
 using Anthill.Application.Interfaces.Repositories;
 using Anthill.Application.Interfaces.UnitOfWork;
 using Anthill.Infrastructure.Persistence;
 using Anthill.Infrastructure.Repositories;
 using Microsoft.EntityFrameworkCore;
+using Npgsql;
 
 namespace Anthill.Infrastructure.UnitOfWork;
 
@@ -51,8 +53,29 @@ public class UnitOfWork : IUnitOfWork
 
     public INotificationRepository Notifications => _notifications ??= new NotificationRepository(_context);
 
-    public Task<int> SaveChangesAsync(CancellationToken cancellationToken = default) =>
-        _context.SaveChangesAsync(cancellationToken);
+    /// <remarks>
+    /// Bọc riêng vi phạm ràng buộc duy nhất (SQLSTATE <c>23505</c>) thành
+    /// <see cref="UniqueConstraintViolationException"/>: tầng Application không tham chiếu EF Core hay
+    /// Npgsql, nên không tự bắt được <see cref="DbUpdateException"/>/<c>PostgresException</c>. Nơi gọi
+    /// không bắt riêng thì <c>ExceptionMiddleware</c> vẫn dịch ngoại lệ mới này thành 409, giống hệt khi
+    /// nó còn là <see cref="DbUpdateException"/> thô — xem <see cref="UniqueConstraintViolationException"/>.
+    /// </remarks>
+    public async Task<int> SaveChangesAsync(CancellationToken cancellationToken = default)
+    {
+        try
+        {
+            return await _context.SaveChangesAsync(cancellationToken);
+        }
+        catch (DbUpdateException exception) when (IsUniqueViolation(exception))
+        {
+            throw new UniqueConstraintViolationException(
+                "Một ràng buộc duy nhất của database vừa bị vi phạm — hai request cùng ghi một tài nguyên.",
+                exception);
+        }
+    }
+
+    private static bool IsUniqueViolation(DbUpdateException exception) =>
+        exception.InnerException is PostgresException { SqlState: PostgresErrorCodes.UniqueViolation };
 
     /// <summary>
     /// Mở transaction cho ba nghiệp vụ bắt buộc phải nguyên tử: giao bài, nộp bài và xoá đề.

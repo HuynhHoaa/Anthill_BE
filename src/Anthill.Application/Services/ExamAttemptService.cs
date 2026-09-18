@@ -55,6 +55,9 @@ public sealed class ExamAttemptService : IExamAttemptService
     private const string NotInProgressMessage =
         "Lượt làm bài này đã kết thúc. Xem lại ở mục kết quả của bạn.";
 
+    private const string AttemptConflictMessage =
+        "Không tạo được lượt làm bài do xung đột dữ liệu. Hãy tải lại trang rồi thử lại.";
+
     // Bộ đếm ngược trên client bấm nộp NGAY khi còn 0 giây, rồi gói tin mới lên đường — nên request
     // của một lần auto-submit hợp lệ hầu như luôn chạm server sau ExpiresAt, không phải trường hợp
     // hiếm. Cửa sổ này chỉ nới cho đúng cái request mà bộ đếm ngược đã tự kích hoạt không điều kiện
@@ -707,10 +710,33 @@ public sealed class ExamAttemptService : IExamAttemptService
 
         await _unitOfWork.ExamAttempts.AddAsync(attempt, cancellationToken);
 
-        // Unique index trên AssignmentId là chốt chặn cuối cùng: hai tab bấm "Vào thi" cùng lúc thì
-        // cả hai cùng thấy "chưa có lượt nào", và chỉ ràng buộc ở database mới chặn được bản ghi
-        // thứ hai. Lần gọi thua cuộc nhận lỗi và thử lại là vào được nhánh Resume.
-        await _unitOfWork.SaveChangesAsync(cancellationToken);
+        // Unique index trên AssignmentId giờ chỉ còn là lưới đỡ thứ hai, không phải đường chính: FOR
+        // UPDATE ở LockForStartAsync đã tự nó chặn được hai tab bấm "Vào thi" cùng lúc, bằng cách bắt
+        // request thứ hai chờ request thứ nhất commit rồi tự đọc lại thấy lượt vừa tạo (xem remarks
+        // của LockForStartAsync). Tới được đây rồi vẫn đụng ràng buộc này nghĩa là có một đường ghi
+        // khác vào ExamAttempts không đi qua khoá đó — khó xảy ra hôm nay, nhưng rẻ để phòng. Thua thì
+        // đọc lại và trả về ĐÚNG lượt bên thắng vừa tạo, y hệt một request "Vào thi" đến sau vào đúng
+        // lúc — không để lỗi rơi xuống ExceptionMiddleware thành một trang 409 thô cho học sinh, trong
+        // khi lượt làm bài của chính em đó thật ra đã được tạo và đồng hồ đã chạy.
+        try
+        {
+            await _unitOfWork.SaveChangesAsync(cancellationToken);
+        }
+        catch (UniqueConstraintViolationException)
+        {
+            await transaction.RollbackAsync(cancellationToken);
+
+            var resumed = await FindOwnedAssignmentAsync(locked.Id, cancellationToken);
+            if (resumed.IsFailure || resumed.ValueOrThrow.Attempt is null)
+            {
+                // Đọc lại vẫn không thấy lượt nào dù vừa thua đúng ràng buộc duy nhất trên bảng đó —
+                // dữ liệu đổi theo một cách ngoài dự đoán. Không có câu trả lời đúng hơn lúc này.
+                return Result.Conflict<AttemptSessionDto>(AttemptConflictMessage);
+            }
+
+            return await BuildSessionAsync(resumed.ValueOrThrow.Attempt, now, cancellationToken);
+        }
+
         await transaction.CommitAsync(cancellationToken);
 
         // Navigation này chưa được gán vì attempt vừa dựng bằng tay; BuildSession cần nó để đọc

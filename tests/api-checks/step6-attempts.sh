@@ -190,8 +190,10 @@ for pair in easy:1 easy:2 easy:3 easy:4 medium:1 medium:2 medium:3 hard:1 hard:2
   QUESTIONS+=("$(json_field id)")
 done
 
-STUDENT_A=$(login "hs${STAMP}a" "anthill123")
-STUDENT_B=$(login "hs${STAMP}b" "anthill123")
+# Tai khoan vua tao mang MustChangePassword=true (Sec.5) — doi ngay sang mat khau rieng truoc khi
+# dung token cho nghiep vu, dung nhu mot hoc sinh that lam sau lan dang nhap dau tien.
+STUDENT_A=$(login_and_clear_must_change "hs${STAMP}a" "anthill123" "Kt6a$STAMP")
+STUDENT_B=$(login_and_clear_must_change "hs${STAMP}b" "anthill123" "Kt6b$STAMP")
 
 printf '  nhóm %s · 2 học sinh · %d câu hỏi\n' "$GROUP_ID" "${#QUESTIONS[@]}"
 

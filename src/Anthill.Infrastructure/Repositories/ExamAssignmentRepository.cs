@@ -84,17 +84,25 @@ public class ExamAssignmentRepository : GenericRepository<ExamAssignment>, IExam
     /// mặt em ấy.
     /// </para>
     /// </remarks>
-    public async Task<DateTime?> GetAnswersReleaseAtAsync(int examId, CancellationToken cancellationToken = default)
+    public Task<DateTime?> GetAnswersReleaseAtAsync(int examId, CancellationToken cancellationToken = default) =>
+        GetAnswersReleaseAtAsync(examId, [], cancellationToken);
+
+    public async Task<DateTime?> GetAnswersReleaseAtAsync(
+        int examId,
+        IReadOnlyCollection<int> excludeAssignmentIds,
+        CancellationToken cancellationToken = default)
     {
         var latestClose = await DbSet
             .AsNoTracking()
-            .Where(a => a.ExamId == examId)
+            .Where(a => a.ExamId == examId && !excludeAssignmentIds.Contains(a.Id))
             .Select(a => (DateTime?)(a.OpenAt != null && a.CloseAt != null ? a.CloseAt.Value : a.Exam.CloseAt))
             .MaxAsync(cancellationToken);
 
         var latestRunning = await Context.ExamAttempts
             .AsNoTracking()
-            .Where(attempt => attempt.Assignment.ExamId == examId && attempt.Status == AssignmentStatus.InProgress)
+            .Where(attempt => attempt.Assignment.ExamId == examId
+                               && attempt.Status == AssignmentStatus.InProgress
+                               && !excludeAssignmentIds.Contains(attempt.AssignmentId))
             .Select(attempt => (DateTime?)attempt.ExpiresAt)
             .MaxAsync(cancellationToken);
 
@@ -230,7 +238,7 @@ public class ExamAssignmentRepository : GenericRepository<ExamAssignment>, IExam
             .Any(entry => entry.Entity.Id == assignmentId);
 
         var rows = await DbSet
-            .FromSql($"""SELECT * FROM "ExamAssignments" WHERE "Id" = {assignmentId} FOR SHARE""")
+            .FromSql($"""SELECT * FROM "ExamAssignments" WHERE "Id" = {assignmentId} FOR UPDATE""")
             .ToListAsync(cancellationToken);
 
         if (rows.Count == 0)
