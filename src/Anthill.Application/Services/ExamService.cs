@@ -42,9 +42,17 @@ public sealed class ExamService : IExamService
     private const string AdminCannotWriteMessage =
         "Quản trị viên chỉ xem được bài kiểm tra; việc ra đề thuộc về giáo viên phụ trách môn.";
 
-    private const string HasSubmissionsMessage =
-        "Không thể xoá bài kiểm tra đã có học sinh nộp bài. Hãy để đề tự đóng theo lịch thay vì xoá, "
-        + "để kết quả của các em vẫn tra cứu được.";
+    /// <summary>
+    /// Câu từ chối khi xoá một đề đã có em bắt đầu làm — <b>đang làm dở hay đã nộp đều chặn như nhau</b>,
+    /// cùng cách nói với <see cref="ExamAssignmentService.RevokeAsync"/> (§4.6, H8): xoá đề lúc này cascade
+    /// luôn assignment/attempt/answers, nên với em đang làm dở đó là xoá bài giữa chừng, còn với em đã nộp
+    /// đó là mất kết quả đã có. Không tách hai thông điệp vì hành động cần làm là một: đừng xoá, để đề tự
+    /// đóng theo lịch.
+    /// </summary>
+    private const string HasStartedAttemptsMessage =
+        "Không thể xoá bài kiểm tra đã có học sinh bắt đầu làm. Xoá lúc này là xoá luôn phần bài (đang làm "
+        + "dở hoặc đã nộp) của các em. Hãy để đề tự đóng theo lịch thay vì xoá, để kết quả của các em vẫn "
+        + "tra cứu được.";
 
     /// <summary>Hậu tố tên của bản nhân bản — đủ để giáo viên không nhầm hai đề cùng tên trong danh sách.</summary>
     public const string CopyTitleSuffix = " (bản sao)";
@@ -445,6 +453,12 @@ public sealed class ExamService : IExamService
     }
 
     /// <inheritdoc />
+    /// <remarks>
+    /// H8: khoá dòng đề <b>trước</b> khi đếm, đúng thứ tự khoá của <see cref="UpdateAsync"/> (dòng đề
+    /// trước, dòng giao bài sau) — thiếu khoá đó thì một em đang bấm "Vào thi" có thể cầm khoá chia sẻ
+    /// trên dòng giao bài của mình rồi ghi lượt làm bài ngay giữa lúc lệnh xoá này đang đếm
+    /// "chưa ai bắt đầu", và bản ghi vừa tạo bị cascade xoá theo ngay sau đó.
+    /// </remarks>
     public async Task<Result> DeleteAsync(int id, CancellationToken cancellationToken = default)
     {
         var found = await FindOwnedAsync(id, cancellationToken);
@@ -455,16 +469,29 @@ public sealed class ExamService : IExamService
 
         var exam = found.ValueOrThrow;
 
-        var submitted = await _unitOfWork.ExamAssignments.CountSubmittedByExamAsync(exam.Id, cancellationToken);
-        if (submitted > 0)
-        {
-            return Result.Conflict(HasSubmissionsMessage);
-        }
-
         // Ba lệnh xoá phải cùng sống hoặc cùng chết. Xoá assignment xong mà đề còn lại thì học sinh
         // mất bài trong khi giáo viên vẫn thấy đề; xoá đề xong mà bản đề còn lại thì
         // ExamPaperQuestion trỏ vào một đề không tồn tại.
         await using var transaction = await _unitOfWork.BeginTransactionAsync(cancellationToken);
+
+        if (await _unitOfWork.Exams.LockForEditAsync(exam.Id, cancellationToken) is null)
+        {
+            return Result.NotFound(NotFoundMessage);
+        }
+
+        // Khoá luôn các dòng giao bài, cùng lý do với UpdateAsync: em bấm "Vào thi" giữ khoá chia sẻ
+        // trên dòng của mình trước khi tạo lượt làm bài, nên hoặc em vào trước và phép đếm dưới đây
+        // thấy lượt của em, hoặc em phải chờ lệnh xoá này commit (và không còn gì để chờ vào nữa).
+        await _unitOfWork.ExamAssignments.LockByExamAsync(exam.Id, cancellationToken);
+
+        // startedCount, không phải submittedCount: đề đang có em làm dở (InProgress, chưa nộp) trước đây
+        // vẫn xoá được vô điều kiện, trong khi RevokeAsync đã từ chối chính ca đó ở cấp một học sinh. Gộp
+        // về startedCount thay vì giữ hai phép đếm cho hai cách chặn nửa vời.
+        var startedCount = await _unitOfWork.ExamAssignments.CountStartedByExamAsync(exam.Id, cancellationToken);
+        if (startedCount > 0)
+        {
+            return Result.Conflict(HasStartedAttemptsMessage);
+        }
 
         await _unitOfWork.Exams.RemovePapersAsync(exam.Id, cancellationToken);
         await _unitOfWork.ExamAssignments.RemoveByExamAsync(exam.Id, cancellationToken);
