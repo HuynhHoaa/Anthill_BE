@@ -742,7 +742,7 @@ public sealed class ExamAssignmentService : IExamAssignmentService
             Type = NotificationType.ExamAssigned,
             Title = "Bạn có bài kiểm tra mới",
             Message = $"Giáo viên đã giao bài \"{exam.Title}\" cho bạn. Hãy hoàn thành trước hạn nộp.",
-            Link = "/hoc-sinh/bai-kiem-tra",
+            Link = ScheduleNoticeText.StudentExamLink(assignment.Id),
             TargetType = nameof(Exam),
             TargetId = exam.Id,
             IsRead = false,
