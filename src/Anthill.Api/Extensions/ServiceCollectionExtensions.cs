@@ -3,9 +3,11 @@ using System.Text.Encodings.Web;
 using System.Text.Json;
 using System.Text.Json.Serialization;
 using System.Text.Unicode;
+using System.Threading.RateLimiting;
 using Anthill.Api.BackgroundJobs;
 using Anthill.Api.Configuration;
 using Anthill.Api.Hubs;
+using Anthill.Api.RateLimiting;
 using Anthill.Api.Realtime;
 using Anthill.Api.Filters;
 using Anthill.Api.Security;
@@ -19,6 +21,7 @@ using Anthill.Infrastructure.Authentication;
 using FluentValidation;
 using Microsoft.AspNetCore.Authentication.JwtBearer;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 using Microsoft.AspNetCore.SignalR;
 using Microsoft.Extensions.Options;
 using Microsoft.IdentityModel.Tokens;
@@ -87,6 +90,57 @@ public static class ServiceCollectionExtensions
         services.AddCorsPolicy(configuration);
         services.AddSwaggerDocumentation();
         services.AddRealtime();
+        services.AddAuthRateLimiting();
+
+        return services;
+    }
+
+    /// <summary>
+    /// Giới hạn tần suất của <c>POST /api/auth/login</c> và <c>/api/auth/change-password</c> (§H20).
+    /// </summary>
+    /// <remarks>
+    /// Chỉ đăng ký policy có tên "auth" — hai action áp dụng nó qua <c>[EnableRateLimiting("auth")]</c>,
+    /// không bật một giới hạn toàn cục cho mọi endpoint. Khoá phân vùng đọc lại từ
+    /// <c>HttpContext.Items</c>, do <see cref="AuthRateLimitPartitionKeyMiddleware"/> tính trước đó —
+    /// xem chú thích ở lớp đó vì sao việc đọc định danh phải tách khỏi bộ chọn khoá đồng bộ này.
+    /// </remarks>
+    private static IServiceCollection AddAuthRateLimiting(this IServiceCollection services)
+    {
+        services.AddOptions<AuthRateLimitOptions>().BindConfiguration(AuthRateLimitOptions.SectionName);
+
+        services.AddRateLimiter(options =>
+        {
+            // Mặc định của RateLimiter là đóng kết nối không kèm gì cả; nắn về đúng hình dạng
+            // ApiErrorResponse mà frontend đọc trường "message" (§1), giống mọi lỗi khác của API này.
+            options.OnRejected = (context, cancellationToken) =>
+            {
+                context.HttpContext.Response.StatusCode = StatusCodes.Status429TooManyRequests;
+                return new ValueTask(WriteMessageAsync(
+                    context.HttpContext.Response,
+                    "Bạn thao tác quá nhanh, vui lòng thử lại sau ít phút."));
+            };
+
+            options.AddPolicy("auth", httpContext =>
+            {
+                var settings = httpContext.RequestServices
+                    .GetRequiredService<IOptions<AuthRateLimitOptions>>().Value;
+
+                var key = httpContext.Items[AuthRateLimitPartitionKeyMiddleware.ItemKey] as string
+                          ?? httpContext.Connection.RemoteIpAddress?.ToString()
+                          ?? "khong-ro-ip";
+
+                return RateLimitPartition.GetFixedWindowLimiter(key, _ => new FixedWindowRateLimiterOptions
+                {
+                    PermitLimit = settings.PermitLimit,
+                    Window = TimeSpan.FromSeconds(settings.WindowSeconds),
+
+                    // Từ chối ngay khi vượt trần thay vì xếp hàng chờ cửa sổ sau — một request dò mật
+                    // khẩu bị chặn thì phải nhận biết ngay bằng 429, không phải bị giữ lại rồi âm
+                    // thầm xử lý muộn.
+                    QueueLimit = 0
+                });
+            });
+        });
 
         return services;
     }
