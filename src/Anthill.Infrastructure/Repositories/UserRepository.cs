@@ -26,14 +26,21 @@ public class UserRepository : GenericRepository<User>, IUserRepository
             return null;
         }
 
+        // OrderBy(Id) là hàng rào phòng thủ thứ hai: hàng rào thứ nhất là IsEmailTakenAsync /
+        // IsUsernameTakenAsync / IsCodeTakenAsync coi ba cột là MỘT không gian tên khi tạo/sửa, nên
+        // về lý thuyết không còn hai tài khoản nào trùng nhau giữa các cột nữa. Nhưng dữ liệu cũ tạo
+        // trước bản sửa này (hoặc nạp thẳng bằng script, bỏ qua tầng service) vẫn có thể phạm — khi
+        // đó FirstOrDefaultAsync không có ORDER BY sẽ ra bất kỳ dòng nào Postgres tình cờ trả về
+        // trước, đăng nhập sai tài khoản một cách không thể đoán trước. Có ORDER BY thì ít nhất kết
+        // quả cố định (luôn cùng một dòng, luôn cùng một tài khoản) thay vì trồi sụt giữa các lần gọi.
         return await DbSet
             .Include(u => u.Subject)
             .Include(u => u.Group)
-            .FirstOrDefaultAsync(
-                u => u.Email.ToLower() == key
-                     || u.Username.ToLower() == key
-                     || (u.Code != null && u.Code.ToLower() == key),
-                cancellationToken);
+            .Where(u => u.Email.ToLower() == key
+                        || u.Username.ToLower() == key
+                        || (u.Code != null && u.Code.ToLower() == key))
+            .OrderBy(u => u.Id)
+            .FirstOrDefaultAsync(cancellationToken);
     }
 
     public async Task<User?> GetProfileAsync(int userId, CancellationToken cancellationToken = default) =>
@@ -66,36 +73,47 @@ public class UserRepository : GenericRepository<User>, IUserRepository
             : await DbSet.FirstOrDefaultAsync(u => u.Code != null && u.Code.ToLower() == key, cancellationToken);
     }
 
+    /// <summary>
+    /// Email, username và mã học sinh dùng chung MỘT không gian tên: một giá trị đã xuất hiện ở bất
+    /// kỳ cột nào trong ba cột đó, của bất kỳ tài khoản nào, thì không còn dùng được cho cột khác nữa.
+    /// </summary>
+    /// <remarks>
+    /// Trước bản sửa này, ba hàm <c>IsEmailTakenAsync</c>/<c>IsUsernameTakenAsync</c>/<c>IsCodeTakenAsync</c>
+    /// mỗi hàm chỉ soi đúng cột của mình — tạo học sinh với <c>username</c> trùng hệt <c>email</c> của
+    /// một tài khoản khác thì qua được cả kiểm tra khả dụng lẫn bước tạo, vì không hàm nào nhìn sang
+    /// cột bên cạnh. Hậu quả lộ ra ở <see cref="GetByLoginIdentifierAsync"/>: tra theo chuỗi đó ra hai
+    /// dòng, và tài khoản bị khoá nhầm là tài khoản không hề gõ sai gì. Ba hàm dưới đây giờ đều gọi
+    /// chung một điều kiện tra trên cả ba cột, khớp đúng cách <c>GetByLoginIdentifierAsync</c> đã tra.
+    /// </remarks>
     public async Task<bool> IsEmailTakenAsync(
         string email,
         int? excludeUserId = null,
-        CancellationToken cancellationToken = default)
-    {
-        var key = Normalize(email);
-        return key is not null && await DbSet.AnyAsync(
-            u => u.Email.ToLower() == key && (excludeUserId == null || u.Id != excludeUserId),
-            cancellationToken);
-    }
+        CancellationToken cancellationToken = default) =>
+        await IsIdentifierTakenAsync(email, excludeUserId, cancellationToken);
 
     public async Task<bool> IsUsernameTakenAsync(
         string username,
         int? excludeUserId = null,
-        CancellationToken cancellationToken = default)
-    {
-        var key = Normalize(username);
-        return key is not null && await DbSet.AnyAsync(
-            u => u.Username.ToLower() == key && (excludeUserId == null || u.Id != excludeUserId),
-            cancellationToken);
-    }
+        CancellationToken cancellationToken = default) =>
+        await IsIdentifierTakenAsync(username, excludeUserId, cancellationToken);
 
     public async Task<bool> IsCodeTakenAsync(
         string code,
         int? excludeUserId = null,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default) =>
+        await IsIdentifierTakenAsync(code, excludeUserId, cancellationToken);
+
+    private async Task<bool> IsIdentifierTakenAsync(
+        string identifier,
+        int? excludeUserId,
+        CancellationToken cancellationToken)
     {
-        var key = Normalize(code);
+        var key = Normalize(identifier);
         return key is not null && await DbSet.AnyAsync(
-            u => u.Code != null && u.Code.ToLower() == key && (excludeUserId == null || u.Id != excludeUserId),
+            u => (u.Email.ToLower() == key
+                  || u.Username.ToLower() == key
+                  || (u.Code != null && u.Code.ToLower() == key))
+                 && (excludeUserId == null || u.Id != excludeUserId),
             cancellationToken);
     }
 

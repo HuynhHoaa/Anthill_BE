@@ -26,11 +26,22 @@ public interface IUserRepository : IGenericRepository<User>
 
     Task<User?> GetByCodeAsync(string code, CancellationToken cancellationToken = default);
 
-    /// <summary><paramref name="excludeUserId"/> để khi sửa hồ sơ không tự đụng chính mình.</summary>
+    /// <summary>
+    /// <paramref name="excludeUserId"/> để khi sửa hồ sơ không tự đụng chính mình.
+    /// </summary>
+    /// <remarks>
+    /// Email, username và mã học sinh dùng chung MỘT không gian tên: hàm này (và hai hàm dưới) đối
+    /// chiếu <paramref name="email"/> với cả ba cột — <c>Email</c>, <c>Username</c>, <c>Code</c> —
+    /// của mọi tài khoản, không chỉ cột cùng tên. Một giá trị đã là email của người này thì không
+    /// dùng được làm username hay mã học sinh của người khác, khớp đúng cách
+    /// <see cref="GetByLoginIdentifierAsync"/> tra khi đăng nhập.
+    /// </remarks>
     Task<bool> IsEmailTakenAsync(string email, int? excludeUserId = null, CancellationToken cancellationToken = default);
 
+    /// <summary>Cùng quy tắc không gian tên chung với <see cref="IsEmailTakenAsync"/>.</summary>
     Task<bool> IsUsernameTakenAsync(string username, int? excludeUserId = null, CancellationToken cancellationToken = default);
 
+    /// <summary>Cùng quy tắc không gian tên chung với <see cref="IsEmailTakenAsync"/>.</summary>
     Task<bool> IsCodeTakenAsync(string code, int? excludeUserId = null, CancellationToken cancellationToken = default);
 
     /// <summary>Danh sách học sinh có phân trang. Tìm kiếm bỏ dấu, không phân biệt hoa thường (§5).</summary>
