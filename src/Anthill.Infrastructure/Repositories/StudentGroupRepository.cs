@@ -28,6 +28,7 @@ public class StudentGroupRepository : GenericRepository<StudentGroup>, IStudentG
         await DbSet
             .Include(g => g.Teachers)
                 .ThenInclude(t => t.Teacher)
+                    .ThenInclude(u => u.Subject)
             .FirstOrDefaultAsync(g => g.Id == groupId, cancellationToken);
 
     public async Task<IReadOnlyList<StudentGroup>> GetAllAsync(
