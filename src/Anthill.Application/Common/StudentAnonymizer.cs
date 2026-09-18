@@ -73,4 +73,42 @@ public static class StudentAnonymizer
                && user.DeletionRequestedAt is { } requestedAt
                && nowUtc >= requestedAt.AddDays(RetentionDays);
     }
+
+    /// <summary>
+    /// Xoá tên thật khỏi MỘT thông báo trỏ tới lượt làm bài của em này, nếu thông báo đó còn mang tên.
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// <c>ExamAttemptService.AddSubmissionNotificationsAsync</c> ghi cứng tên học sinh vào
+    /// <see cref="Notification.Message"/> lúc tạo (§7, "{tên} vừa nộp bài ..."), gửi cho GIÁO VIÊN chứ
+    /// không phải cho chính em — nên <see cref="Anonymize"/> xoay tên trên <see cref="User"/> không tự
+    /// động dọn được chỗ này; dòng đó thuộc sở hữu của giáo viên và sống độc lập với tài khoản học sinh.
+    /// </para>
+    /// <para>
+    /// Gọi trên MỖI dòng đã được xác định trước là thuộc về em này qua khoá ngoại
+    /// (<c>Notification.TargetId</c> nối sang lượt làm bài, xem <c>INotificationRepository.GetByAttemptOwnerAsync</c>)
+    /// — hàm này chỉ còn việc thay chuỗi, không tự đi tìm ứng viên bằng cách so khớp tên trong toàn
+    /// bảng, vì cách đó không chắc (tên trùng, tên là con chuỗi của chữ khác).
+    /// </para>
+    /// <para>
+    /// Bỏ qua thông báo mà chính em là người nhận: <c>AddSubmissionNotificationsAsync</c> không viết
+    /// tên vào bản tự nhận về lượt của chính mình ("Hết giờ làm bài ... Hệ thống đã nộp phần bạn làm
+    /// được."), nên không có gì để xoá — và <paramref name="previousFullName"/> lúc đó vốn dĩ cũng
+    /// không xuất hiện trong <see cref="Notification.Message"/>.
+    /// </para>
+    /// </remarks>
+    /// <param name="notification">Thông báo đã xác định là trỏ tới lượt làm bài của em này.</param>
+    /// <param name="studentId">Id tài khoản học sinh đang được ẩn danh hoá.</param>
+    /// <param name="previousFullName">Tên thật của em, đọc TRƯỚC khi gọi <see cref="Anonymize"/>.</param>
+    public static void RedactSubmissionMessage(Notification notification, int studentId, string previousFullName)
+    {
+        ArgumentNullException.ThrowIfNull(notification);
+
+        if (notification.RecipientUserId == studentId || string.IsNullOrEmpty(previousFullName))
+        {
+            return;
+        }
+
+        notification.Message = notification.Message.Replace(previousFullName, DisplayName);
+    }
 }

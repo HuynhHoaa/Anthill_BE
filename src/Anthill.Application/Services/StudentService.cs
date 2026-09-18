@@ -424,9 +424,15 @@ public sealed class StudentService : IStudentService
                 continue;
             }
 
+            // Đọc TRƯỚC khi ẩn danh hoá đè lên: đây là tên thật cuối cùng còn dùng được để xoá khỏi
+            // thông báo cũ của giáo viên — sau dòng Anonymize thì FullName đã là tên chung chung rồi.
+            var previousFullName = account.FullName;
+
             StudentAnonymizer.Anonymize(account, now);
             _unitOfWork.Users.Update(account);
             purged.Add(account.Id);
+
+            await RedactSubmissionNotificationsAsync(account.Id, previousFullName, cancellationToken);
         }
 
         await _unitOfWork.SaveChangesAsync(cancellationToken);
@@ -440,6 +446,28 @@ public sealed class StudentService : IStudentService
         }
 
         return Result.Success(purged.Count);
+    }
+
+    /// <summary>
+    /// Dọn tên thật khỏi thông báo nộp bài cũ của giáo viên khi xoá một học sinh (§5, H22).
+    /// </summary>
+    /// <remarks>
+    /// Không gọi <see cref="StudentAnonymizer.RedactSubmissionMessage"/> trực tiếp từ
+    /// <see cref="PurgeDueAccountsAsync"/>: tách riêng để bước tìm-thông-báo (đi database) và bước
+    /// xoá-tên (thuần, đã có unit test ở <c>StudentAnonymizerTests</c>) không lẫn vào nhau trong cùng
+    /// một vòng lặp dài.
+    /// </remarks>
+    private async Task RedactSubmissionNotificationsAsync(
+        int studentId,
+        string previousFullName,
+        CancellationToken cancellationToken)
+    {
+        var notifications = await _unitOfWork.Notifications.GetByAttemptOwnerAsync(studentId, cancellationToken);
+
+        foreach (var notification in notifications)
+        {
+            StudentAnonymizer.RedactSubmissionMessage(notification, studentId, previousFullName);
+        }
     }
 
     /// <inheritdoc />
