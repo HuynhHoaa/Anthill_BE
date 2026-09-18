@@ -40,11 +40,13 @@ public sealed class QuestionService : IQuestionService
 
     private readonly IUnitOfWork _unitOfWork;
     private readonly ICurrentUser _currentUser;
+    private readonly IExamGeneratorService _examGenerator;
 
-    public QuestionService(IUnitOfWork unitOfWork, ICurrentUser currentUser)
+    public QuestionService(IUnitOfWork unitOfWork, ICurrentUser currentUser, IExamGeneratorService examGenerator)
     {
         _unitOfWork = unitOfWork;
         _currentUser = currentUser;
+        _examGenerator = examGenerator;
     }
 
     /// <inheritdoc />
@@ -242,6 +244,10 @@ public sealed class QuestionService : IQuestionService
         _unitOfWork.Questions.Update(question);
         await _unitOfWork.SaveChangesAsync(cancellationToken);
 
+        // H9: nội dung/đáp án vừa đổi (kể cả đáp án đúng) — mọi đề mà bản đề ĐÃ SINH đang chứa câu này
+        // và chưa ai bắt đầu làm phải được sinh lại, để không còn ai bị chấm theo bản chụp cũ.
+        await RegenerateAffectedExamsAsync(question.Id, cancellationToken);
+
         return await ReloadDtoAsync(question.Id, cancellationToken);
     }
 
@@ -288,16 +294,101 @@ public sealed class QuestionService : IQuestionService
 
         if (question.Status != status)
         {
-            // Ẩn chỉ loại câu khỏi lần sinh đề SAU. Đề đã sinh giữ nguyên vì chúng dùng bản chụp,
-            // nên không có chuyện học sinh đang làm bài thì câu hỏi biến mất giữa chừng.
+            // Ẩn loại câu khỏi lần sinh đề SAU (bộ sinh đề chỉ đọc câu Active). Đề đã sinh cho lượt
+            // CHƯA bắt đầu thì không "giữ nguyên vì dùng bản chụp" theo nghĩa tốt — H9: bản chụp đó có
+            // thể vẫn đang chứa chính câu vừa bị ẩn, và học sinh chưa vào thi thì vẫn còn kịp sinh lại
+            // cho đúng ý giáo viên. Học sinh ĐANG làm bài dở thì không đụng: xem RegenerateAffectedExamsAsync.
             question.Status = status;
             question.UpdatedAt = DateTime.UtcNow;
 
             _unitOfWork.Questions.Update(question);
             await _unitOfWork.SaveChangesAsync(cancellationToken);
+
+            if (status == QuestionStatus.Hidden)
+            {
+                await RegenerateAffectedExamsAsync(question.Id, cancellationToken);
+            }
         }
 
         return await ReloadDtoAsync(question.Id, cancellationToken);
+    }
+
+    /// <summary>
+    /// H9: sau khi nội dung câu hỏi vừa đổi (sửa hoặc ẩn), sinh lại bản đề của mọi đề mà bản đề ĐÃ SINH
+    /// đang chứa câu này, cho những đề chưa ai bắt đầu làm — mirror đúng ranh giới "lượt làm bài đầu
+    /// tiên" mà <c>ExamEditPolicy</c> dùng khi sửa cả đề (xem <see cref="ExamEditPolicy.DecidePaperRefresh"/>).
+    /// </summary>
+    /// <remarks>
+    /// <para>
+    /// Cố ý <b>best-effort</b>, không bao giờ làm hỏng lần sửa câu hỏi: nội dung câu hỏi (đã lưu ở lệnh
+    /// gọi trước hàm này) là nguồn sự thật, còn việc sinh lại bản đề của một đề khác là một hệ quả phụ.
+    /// Ngân hàng không đủ câu cho cấu hình của MỘT đề nào đó sau khi câu này đổi — hoàn toàn có thể xảy
+    /// ra và không liên quan gì tới ý định của giáo viên lúc sửa câu hỏi — chỉ khiến đề đó giữ nguyên
+    /// bản đề cũ (đúng hiện trạng trước khi sửa, không tệ hơn), không chặn hay cuộn lại việc sửa câu hỏi.
+    /// </para>
+    /// <para>
+    /// Đề đang có em bắt đầu làm bị bỏ qua hoàn toàn, kể cả không xoá bản đề — đúng ranh giới "khoá sau
+    /// lượt làm bài đầu tiên", và cũng là hành vi mà <c>exam-edit-rules.sh</c> ("ẩn một câu Dễ") đã chốt:
+    /// ẩn một câu đang nằm trong bản đề của đề đã khoá vẫn phải trả 200 mà không đụng gì tới bản đề đó.
+    /// </para>
+    /// </remarks>
+    private async Task RegenerateAffectedExamsAsync(int questionId, CancellationToken cancellationToken)
+    {
+        var examIds = await _unitOfWork.Exams.GetExamIdsUsingQuestionAsync(questionId, cancellationToken);
+
+        foreach (var examId in examIds)
+        {
+            await RegenerateOneExamPapersAsync(examId, cancellationToken);
+        }
+    }
+
+    /// <summary>Sinh lại (hoặc bỏ) bản đề của một đề duy nhất, dưới đúng khoá mà <c>ExamService.UpdateAsync</c> dùng.</summary>
+    private async Task RegenerateOneExamPapersAsync(int examId, CancellationToken cancellationToken)
+    {
+        // Cùng thứ tự khoá với ExamService.UpdateAsync: dòng đề trước, dòng giao bài sau (§5) — để lần
+        // sinh lại này xếp hàng đúng chỗ với một lần sửa đề hay một em đang bấm "Vào thi" trên đề đó.
+        await using var transaction = await _unitOfWork.BeginTransactionAsync(cancellationToken);
+
+        var exam = await _unitOfWork.Exams.LockForEditAsync(examId, cancellationToken);
+        if (exam is null)
+        {
+            // Đề vừa bị xoá giữa chừng — không còn gì để sinh lại. Không commit gì thì Dispose tự rollback.
+            return;
+        }
+
+        var assignments = await _unitOfWork.ExamAssignments.LockByExamAsync(examId, cancellationToken);
+        var startedCount = assignments.Count == 0
+            ? 0
+            : await _unitOfWork.ExamAssignments.CountStartedByExamAsync(examId, cancellationToken);
+
+        var decision = ExamEditPolicy.DecidePaperRefresh(
+            hasAssignments: assignments.Count > 0,
+            hasStartedAttempts: startedCount > 0);
+
+        if (decision == ExamEditPolicy.PaperRefreshDecision.Skip)
+        {
+            return;
+        }
+
+        await _unitOfWork.Exams.RemovePapersAsync(examId, cancellationToken);
+        await _unitOfWork.SaveChangesAsync(cancellationToken);
+
+        if (decision == ExamEditPolicy.PaperRefreshDecision.Regenerate)
+        {
+            var regenerated = await _examGenerator.GeneratePapersAsync(exam, assignments, cancellationToken);
+            if (regenerated.IsFailure)
+            {
+                // Ngân hàng không còn đủ câu cho cấu hình hiện tại của đề NÀY, riêng sau câu hỏi vừa đổi.
+                // Cuộn lại đúng lệnh xoá bản đề của đề này — không kéo theo lần sửa câu hỏi (đã lưu và
+                // commit trước khi hàm này được gọi) hay các đề khác trong cùng lô. Bản đề cũ của đề này
+                // giữ nguyên, đúng hiện trạng trước khi sửa câu hỏi.
+                await transaction.RollbackAsync(cancellationToken);
+                return;
+            }
+        }
+
+        await _unitOfWork.SaveChangesAsync(cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
     }
 
     /// <summary>

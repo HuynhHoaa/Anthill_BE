@@ -208,4 +208,36 @@ public static class ExamEditPolicy
             request.Lifecycle?.Trim(),
             ExamMappingExtensions.DraftLifecycleValue,
             StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>Việc phải làm với bản đề đã sinh của MỘT đề khi nội dung ngân hàng câu hỏi đổi (H9).</summary>
+    public enum PaperRefreshDecision
+    {
+        /// <summary>Sinh lại bản đề cho mọi lượt giao hiện có — chưa em nào cầm bản đề trên tay.</summary>
+        Regenerate,
+
+        /// <summary>Không còn lượt giao nào — bỏ bản đề cũ, không có gì để sinh lại ngay.</summary>
+        DiscardPapers,
+
+        /// <summary>Đã có em bắt đầu làm — giữ nguyên bản đề đang dùng, không đụng tới.</summary>
+        Skip
+    }
+
+    /// <summary>
+    /// Quyết định cho bản đề của MỘT đề khi một câu hỏi trong ngân hàng vừa được sửa nội dung hoặc bị ẩn
+    /// (H9, gọi từ <c>QuestionService</c>). Cùng ranh giới "lượt làm bài đầu tiên" mà <see cref="Decide"/>
+    /// dùng cho lần sửa cả đề — khác đúng một chỗ: <see cref="Decide"/> còn phải hỏi "request này có đổi
+    /// gì mà bộ sinh đề đọc không" (<see cref="ChangesGeneratedPaper"/>); ở đây câu trả lời luôn là có,
+    /// vì người gọi chỉ liệt kê những đề mà bản đề <b>hiện tại</b> đã chứa chính câu hỏi vừa đổi.
+    /// </summary>
+    /// <param name="hasAssignments">Đề đang có ít nhất một lượt giao.</param>
+    /// <param name="hasStartedAttempts">Đã có ít nhất một em bắt đầu làm bài.</param>
+    public static PaperRefreshDecision DecidePaperRefresh(bool hasAssignments, bool hasStartedAttempts)
+    {
+        if (hasStartedAttempts)
+        {
+            return PaperRefreshDecision.Skip;
+        }
+
+        return hasAssignments ? PaperRefreshDecision.Regenerate : PaperRefreshDecision.DiscardPapers;
+    }
 }

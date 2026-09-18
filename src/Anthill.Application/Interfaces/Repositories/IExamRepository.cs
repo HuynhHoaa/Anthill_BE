@@ -62,6 +62,15 @@ public interface IExamRepository : IGenericRepository<Exam>
     /// <summary>Xoá đề kéo theo mọi bản đề đã sinh — nằm trong cùng transaction với xoá assignment (§5).</summary>
     Task RemovePapersAsync(int examId, CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// Id các đề mà bản đề ĐÃ SINH hiện có chứa câu hỏi này (H9) — để <c>QuestionService</c> biết cần
+    /// xét sinh lại bản đề của những đề nào sau khi câu hỏi vừa đổi nội dung hoặc bị ẩn.
+    /// </summary>
+    /// <remarks>Không phân biệt bản đề chung hay bản đề riêng — cả hai đều chứa <c>ExamPaperQuestion</c>.</remarks>
+    Task<IReadOnlyList<int>> GetExamIdsUsingQuestionAsync(
+        int questionId,
+        CancellationToken cancellationToken = default);
+
     /// <summary>Số đề đã giao cho ít nhất một học sinh — khác với tổng số đề đã tạo.</summary>
     /// <remarks>
     /// Hai con số này tách nhau vì chúng trả lời hai câu khác nhau: "tôi đã soạn bao nhiêu đề" và
