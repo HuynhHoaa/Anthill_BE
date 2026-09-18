@@ -271,4 +271,48 @@ public class ExamEditPolicyTests
                 hasStartedAttempts: true)
             .Decision.Should().Be(ExamEditDecision.RejectBackToDraft);
     }
+
+    // ── H9: sinh lại bản đề khi một câu hỏi trong ngân hàng đổi ───────────────────────────────────
+    //
+    // QuestionService gọi DecidePaperRefresh cho MỖI đề mà bản đề đã sinh của nó đang chứa câu hỏi vừa
+    // sửa/ẩn. Cùng ranh giới "lượt làm bài đầu tiên" mà Decide() dùng cho lần sửa cả đề — pin lại ở đây
+    // vì đây là đúng chỗ H9 (đáp án đã sửa nhưng bản đề cũ không cập nhật) có thể tái diễn nếu ai đó nới
+    // lỏng ranh giới này sau này.
+
+    [Fact]
+    public void Da_co_em_bat_dau_thi_bo_qua_du_con_luot_giao()
+    {
+        // Đã khoá cấu hình theo lượt làm bài đầu tiên (giống Decide()): không đụng bản đề đang dùng, dù
+        // đề vẫn còn lượt giao chưa bắt đầu khác — nửa đề cũ nửa đề mới còn tệ hơn giữ nguyên cả đề cũ.
+        ExamEditPolicy.DecidePaperRefresh(hasAssignments: true, hasStartedAttempts: true)
+            .Should().Be(ExamEditPolicy.PaperRefreshDecision.Skip);
+    }
+
+    [Fact]
+    public void Chua_ai_bat_dau_va_con_luot_giao_thi_sinh_lai()
+    {
+        ExamEditPolicy.DecidePaperRefresh(hasAssignments: true, hasStartedAttempts: false)
+            .Should().Be(ExamEditPolicy.PaperRefreshDecision.Regenerate);
+    }
+
+    [Fact]
+    public void Khong_con_luot_giao_nao_thi_bo_ban_de_cu_khong_sinh_lai()
+    {
+        // Thu hồi hết rồi mới sửa câu hỏi: không còn ai để sinh đề cho ngay bây giờ, nhưng bản đề chung
+        // cũ (không gắn với lượt giao nào) vẫn phải bị xoá — để lại thì lần giao sau phát lại bản cũ.
+        ExamEditPolicy.DecidePaperRefresh(hasAssignments: false, hasStartedAttempts: false)
+            .Should().Be(ExamEditPolicy.PaperRefreshDecision.DiscardPapers);
+    }
+
+    [Fact]
+    public void To_hop_khong_the_xay_ra_van_nghieng_ve_an_toan()
+    {
+        // Cả hai lệnh gọi thật (ExamService.UpdateAsync và QuestionService) đều suy hasStartedAttempts
+        // từ CHÍNH danh sách assignments vừa khoá — assignments rỗng thì luôn chốt hasStartedAttempts =
+        // false trước khi tới đây, nên tổ hợp (false, true) không bao giờ xảy ra qua hai đường đó. Đây
+        // là một hàm thuần nên vẫn pin nốt góc còn lại của bảng chân trị: SKIP (không đụng gì) an toàn
+        // hơn DiscardPapers (xoá bản đề) nếu một lời gọi tương lai nào đó tính hai cờ độc lập với nhau.
+        ExamEditPolicy.DecidePaperRefresh(hasAssignments: false, hasStartedAttempts: true)
+            .Should().Be(ExamEditPolicy.PaperRefreshDecision.Skip);
+    }
 }

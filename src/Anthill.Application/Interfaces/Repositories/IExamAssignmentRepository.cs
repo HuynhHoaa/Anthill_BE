@@ -51,6 +51,18 @@ public interface IExamAssignmentRepository : IGenericRepository<ExamAssignment>
     /// <remarks>Xem <c>ResultMappingExtensions.ResolveAnswerVisibility</c>.</remarks>
     Task<DateTime?> GetAnswersReleaseAtAsync(int examId, CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// Như trên, nhưng bỏ qua những lượt giao trong <paramref name="excludeAssignmentIds"/> khi tính MAX
+    /// (H10). Dùng khi đang xét giao THÊM người mới vào một đề dùng bản đề chung: lượt giao mới đã được
+    /// ghi xuống (cần id thật để làm seed nếu là bản đề riêng) nhưng không được tính vào mốc mở đáp án
+    /// của những lượt giao CŨ — nếu không, một lớp mới với giờ đóng muộn hơn sẽ đẩy mốc MAX ra tương lai
+    /// và che mất việc lớp cũ đã thấy đáp án rồi.
+    /// </summary>
+    Task<DateTime?> GetAnswersReleaseAtAsync(
+        int examId,
+        IReadOnlyCollection<int> excludeAssignmentIds,
+        CancellationToken cancellationToken = default);
+
     /// <summary>Các bản ghi của đề mà em chưa bắt đầu làm bài, không theo dõi thay đổi.</summary>
     /// <remarks>
     /// Đúng những em một lần sửa lịch hay thời lượng còn tác động tới — em đã bắt đầu giữ hạn nộp đã chốt.

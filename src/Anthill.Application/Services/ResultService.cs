@@ -181,11 +181,28 @@ public sealed class ResultService : IResultService
         var canSeeScore = attempt.CanRevealScore(isOwningTeacher);
 
         // Mốc mở đáp án là giờ đóng muộn nhất trong MỌI lượt giao của đề, không phải giờ đóng của lớp
-        // em này: lớp làm muộn nhất chưa xong thì đáp án chưa được rời server. Vế dự phòng chỉ để giữ
-        // kiểu không NULL — chính lượt giao của em đã là một dòng trong phép MAX.
-        var releaseAt = await _unitOfWork.ExamAssignments.GetAnswersReleaseAtAsync(
-                            attempt.Assignment.ExamId, cancellationToken)
-                        ?? AssignmentSchedule.Resolve(attempt.Assignment).CloseAt;
+        // em này: lớp làm muộn nhất chưa xong thì đáp án chưa được rời server. H10: mốc đó KHÔNG được
+        // tính lại vô thời hạn — một lượt giao MỚI (một suất thi bù cho lớp khác, chẳng hạn) với giờ
+        // đóng muộn hơn sẽ kéo MAX động ra xa và giấu lại đáp án của những em đã hợp lệ xem rồi. Đọc cột
+        // đã chốt trước; chỉ tính động khi chưa từng chốt, và chốt lại ngay nếu lần này đã qua giờ.
+        var exam = attempt.Assignment.Exam;
+        var dynamicReleaseAt = exam.AnswersReleasedAt is null
+            ? await _unitOfWork.ExamAssignments.GetAnswersReleaseAtAsync(attempt.Assignment.ExamId, cancellationToken)
+            : null;
+        var releaseResolution = AnswersReleaseStamp.Resolve(exam.AnswersReleasedAt, dynamicReleaseAt, DateTime.UtcNow);
+
+        if (releaseResolution.StampToPersist is { } stamp)
+        {
+            // Exam được nạp kèm (tracked) từ chính truy vấn của FindReadableAttemptAsync — gán rồi lưu
+            // là đủ, không cần Exams.Update(exam) hay mở transaction riêng cho một cột duy nhất.
+            exam.AnswersReleasedAt = stamp;
+            await _unitOfWork.SaveChangesAsync(cancellationToken);
+        }
+
+        // Vế dự phòng chỉ để giữ kiểu không NULL khi đề chưa từng giao cho ai — chính lượt giao của em
+        // đang đọc đây đã là một dòng trong phép MAX, nên nhánh này gần như không bao giờ chạm tới.
+        var releaseAt = releaseResolution.EffectiveReleaseAt
+                         ?? AssignmentSchedule.Resolve(attempt.Assignment).CloseAt;
         var answers = attempt.ResolveAnswerVisibility(isOwningTeacher, releaseAt, DateTime.UtcNow);
 
         // Tra cứu theo câu, không duyệt theo câu trả lời: câu học sinh bỏ trống không có dòng nào
