@@ -59,6 +59,11 @@ app.UseRouting();
 app.UseCors(CorsPolicyOptions.PolicyName);
 
 app.UseAuthentication();
+
+// Sau UseAuthentication (cần biết ai đang gọi) và trước UseAuthorization: tài khoản còn phải đổi mật
+// khẩu chỉ đi tiếp được tới ba endpoint gắn [AllowWhileMustChangePassword] (§5).
+app.UseMustChangePasswordGate();
+
 app.UseAuthorization();
 
 app.MapControllers();

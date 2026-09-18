@@ -25,6 +25,15 @@ public static class ApplicationBuilderExtensions
         app.UseMiddleware<RequestLoggingMiddleware>();
 
     /// <summary>
+    /// Chặn mọi endpoint nghiệp vụ cho tài khoản đang phải đổi mật khẩu (§5), trừ ba endpoint gắn
+    /// <c>[AllowWhileMustChangePassword]</c>. Phải đứng SAU <c>UseAuthentication</c> (cần
+    /// <c>HttpContext.User</c> và cờ mà <c>OnTokenValidated</c> ghi vào <c>HttpContext.Items</c>) và
+    /// TRƯỚC <c>UseAuthorization</c> — xem <see cref="Middlewares.MustChangePasswordMiddleware"/>.
+    /// </summary>
+    public static IApplicationBuilder UseMustChangePasswordGate(this IApplicationBuilder app) =>
+        app.UseMiddleware<MustChangePasswordMiddleware>();
+
+    /// <summary>
     /// Phục vụ ảnh câu hỏi đã tải lên, ở đúng đường dẫn mà <c>IFileService</c> đã cấp trong URL.
     /// </summary>
     /// <remarks>

@@ -128,9 +128,11 @@ expect_status "giao ba lop, moi lop mot khung → 200" 200 \
     "{\"studentIds\":[],\"classes\":[{\"groupId\":$G_A,\"openAt\":\"$A_OPEN\",\"closeAt\":\"$A_CLOSE\"},{\"groupId\":$G_B,\"openAt\":\"$B_OPEN\",\"closeAt\":\"$B_CLOSE\"},{\"groupId\":$G_C,\"openAt\":\"$C_OPEN\",\"closeAt\":\"$C_CLOSE\"}],\"notify\":false}")"
 expect_json "  assignedCount = 3" assignedCount 3
 
-TOK_A=$(login "r${STAMP}a" "anthill123")
-TOK_B=$(login "r${STAMP}b" "anthill123")
-TOK_C=$(login "r${STAMP}c" "anthill123")
+# Tai khoan vua tao mang MustChangePassword=true (Sec.5) — doi ngay sang mat khau rieng truoc khi
+# dung token cho nghiep vu, dung nhu mot hoc sinh that lam sau lan dang nhap dau tien.
+TOK_A=$(login_and_clear_must_change "r${STAMP}a" "anthill123" "Ra$STAMP")
+TOK_B=$(login_and_clear_must_change "r${STAMP}b" "anthill123" "Rb$STAMP")
+TOK_C=$(login_and_clear_must_change "r${STAMP}c" "anthill123" "Rc$STAMP")
 
 call GET /api/my/exams "$TOK_B" > /dev/null
 AID_B=$(my_assignment "$EID")

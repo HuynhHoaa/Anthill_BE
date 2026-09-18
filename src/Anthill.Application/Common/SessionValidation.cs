@@ -5,10 +5,17 @@ using Anthill.Domain.Enums;
 namespace Anthill.Application.Common;
 
 /// <summary>
-/// Ba cột của tài khoản mà phép kiểm phiên cần — không hơn. Đọc cả entity cho mỗi request có token
-/// là kéo theo họ tên, email, chuỗi băm mật khẩu chỉ để so hai giá trị.
+/// Các cột của tài khoản mà phép kiểm phiên (và cổng <c>MustChangePassword</c> đi kèm) cần — không
+/// hơn. Đọc cả entity cho mỗi request có token là kéo theo họ tên, email, chuỗi băm mật khẩu chỉ để
+/// so hai giá trị.
 /// </summary>
-public sealed record AccountSessionState(int Id, UserStatus Status, string SecurityStamp);
+/// <remarks>
+/// <c>MustChangePassword</c> không tham gia <see cref="Evaluate"/>: nó không quyết định phiên còn
+/// sống hay không, mà là một hạn chế thêm trên một phiên ĐÃ hợp lệ (xem
+/// <c>Anthill.Api.Middlewares.MustChangePasswordMiddleware</c>). Nằm chung record vì cả hai đều đọc
+/// từ đúng một dòng <c>Users</c>, trong đúng một truy vấn mỗi request.
+/// </remarks>
+public sealed record AccountSessionState(int Id, UserStatus Status, string SecurityStamp, bool MustChangePassword);
 
 /// <summary>Kết luận về một JWT đã qua kiểm chữ ký và hạn dùng.</summary>
 public enum SessionVerdict

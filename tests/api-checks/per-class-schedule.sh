@@ -225,8 +225,9 @@ expect_status "lop sang, gio da qua → 200"      200 "$(assign "$EID" "$G_SANG"
 expect_status "lop chieu, dang trong gio → 200" 200 "$(assign "$EID" "$G_CHIEU" -1 3)"
 
 section "Cung mot de, hai em thay hai trang thai khac nhau"
-TOK_SANG=$(login "p${STAMP}s" "anthill123")
-TOK_CHIEU=$(login "p${STAMP}c" "anthill123")
+# Tai khoan vua tao mang MustChangePassword=true (Sec.5) — doi ngay sang mat khau rieng.
+TOK_SANG=$(login_and_clear_must_change "p${STAMP}s" "anthill123" "Ps$STAMP")
+TOK_CHIEU=$(login_and_clear_must_change "p${STAMP}c" "anthill123" "Pc$STAMP")
 
 expect_status "em lop sang doc danh sach → 200" 200 "$(call GET /api/my/exams "$TOK_SANG")"
 expect_status "  lifecycle = closed" closed "$(field_of_exam lifecycle "$EID")"
@@ -285,7 +286,7 @@ expect_status "gio dong truoc gio mo → 400"  400 "$(assign "$EID" "$G_CHIEU" 3
 section "Khong dat gio rieng thi theo lich chung cua de"
 build_class "Lop thuong $STAMP" "${STAMP}t"; G_THUONG=$BUILT_GID; SID_THUONG=$BUILT_SID
 expect_status "giao khong kem gio rieng → 200" 200 "$(assign "$EID" "$G_THUONG")"
-TOK_THUONG=$(login "p${STAMP}t" "anthill123")
+TOK_THUONG=$(login_and_clear_must_change "p${STAMP}t" "anthill123" "Pt$STAMP")
 expect_status "em lop thuong doc danh sach → 200" 200 "$(call GET /api/my/exams "$TOK_THUONG")"
 expect_status "  lifecycle = open theo lich de" open     "$(field_of_exam lifecycle "$EID")"
 expect_status "  status = assigned"             assigned "$(field_of_exam status "$EID")"
@@ -333,7 +334,7 @@ expect_status "  sap theo gio dong cua lop, khong theo de" true "$SAP_TRUOC"
 
 section "Gui lai mot lop kem khung gio moi thi khung gio duoc sua that"
 build_class "Lop sua gio $STAMP" "${STAMP}u"; G_SUA=$BUILT_GID; SID_SUA=$BUILT_SID
-TOK_SUA=$(login "p${STAMP}u" "anthill123")
+TOK_SUA=$(login_and_clear_must_change "p${STAMP}u" "anthill123" "Pu$STAMP")
 expect_status "giao lan dau, 1..3 gio nua → 200" 200 "$(assign "$EID" "$G_SUA" 1 3)"
 expect_json   "  assignedCount = 1"        assignedCount 1
 expect_json   "  scheduleUpdatedCount = 0" scheduleUpdatedCount 0
@@ -394,7 +395,7 @@ section "Giao kem gio rieng va thong bao: buoc ban su kien sau commit khong hong
 build_class "Lop bao $STAMP" "${STAMP}b"; G_BAO=$BUILT_GID
 BAO_BODY="{\"studentIds\":[],\"groupIds\":[$G_BAO],\"notify\":true,\"openAt\":\"$(at_hours -1)\",\"closeAt\":\"$(at_hours 3)\"}"
 expect_status "giao kem gio rieng, notify=true → 200" 200 "$(call POST "/api/exams/$EID/assignments" "$TEACHER" "$BAO_BODY")"
-TOK_BAO=$(login "p${STAMP}b" "anthill123")
+TOK_BAO=$(login_and_clear_must_change "p${STAMP}b" "anthill123" "Pb$STAMP")
 expect_status "em doc so chua doc → 200" 200 "$(call GET /api/notifications/unread-count "$TOK_BAO")"
 expect_status "  dung 1 thong bao" 1 "$(body)"
 
@@ -411,7 +412,7 @@ expect_status "lop A, dong sau 45 giay → 200" 200 \
 expect_status "lop B, mai moi thi → 200" 200 \
   "$(call POST "/api/exams/$E_DA/assignments" "$TEACHER" "$(assign_body "$G_KB" "$(at_hours 24)" "$KB_CLOSE")")"
 
-TOK_KA=$(login "p${STAMP}ka" "anthill123")
+TOK_KA=$(login_and_clear_must_change "p${STAMP}ka" "anthill123" "Pka$STAMP")
 call GET /api/my/exams "$TOK_KA" > /dev/null
 AID_KA=$(field_of_exam assignmentId "$E_DA")
 expect_status "em lop A vao lam → 200" 200 "$(call POST /api/exam-attempts "$TOK_KA" "{\"assignmentId\":$AID_KA}")"
@@ -447,7 +448,7 @@ expect_status "  answersVisibleAt vang mat"        absent  "$(has_field answersV
 
 section "Xoa lop da tung giao bai khong lam hong bai cua em"
 build_class "Lop xoa $STAMP" "${STAMP}x"; G_XOA=$BUILT_GID; SID_XOA=$BUILT_SID
-TOK_XOA=$(login "p${STAMP}x" "anthill123")
+TOK_XOA=$(login_and_clear_must_change "p${STAMP}x" "anthill123" "Px$STAMP")
 expect_status "giao lop xoa, 2..4 gio nua → 200" 200 "$(assign "$EID" "$G_XOA" 2 4)"
 call GET /api/my/exams "$TOK_XOA" > /dev/null
 OPEN_XOA=$(field_of_exam openAt "$EID")

@@ -256,8 +256,10 @@ for suffix in a b; do
 done
 call POST "/api/student-groups/$GID/teachers" "$ADMIN" "{\"teacherIds\":[$TEACHER_ID]}" > /dev/null
 call POST "/api/student-groups/$GID/publish" "$ADMIN" > /dev/null
-TOK_A=$(login "sd${STAMP}a" "anthill123")
-TOK_B=$(login "sd${STAMP}b" "anthill123")
+# Tai khoan vua tao mang MustChangePassword=true (Sec.5) — doi ngay sang mat khau rieng truoc khi
+# dung token cho nghiep vu.
+TOK_A=$(login_and_clear_must_change "sd${STAMP}a" "anthill123" "SdA$STAMP")
+TOK_B=$(login_and_clear_must_change "sd${STAMP}b" "anthill123" "SdB$STAMP")
 
 # 6 De, 4 Trung binh, 2 Kho trong mot chu de rieng: du cho 4 cau 50/50/0 va 10 cau 60/30/10, khong du
 # cho 12 cau 60/30/10 (can 7 cau De).

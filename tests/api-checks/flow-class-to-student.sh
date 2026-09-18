@@ -72,8 +72,14 @@ expect_status "giao bai theo lop → 200" 200 \
 expect_json   "  giao dung 3 em, tuc ca lop" assignedCount 3
 
 section "5. TUNG em trong lop deu thay bai"
+# Tai khoan vua tao mang MustChangePassword=true (Sec.5): doi ngay sang mat khau rieng, dung nhu
+# mot hoc sinh that lam sau lan dang nhap dau tien — /api/my/exams khong nam trong danh sach cho
+# phep cua tai khoan con giu mat khau tam. Nho lai mat khau moi cua em 0 cho phan 6 dung lai no.
+STUDENT0_PW=""
 for i in 0 1 2; do
-  TOK=$(login "e2e$STAMP$i" "anthill123")
+  NEW_PW="E2e${STAMP}${i}"
+  TOK=$(login_and_clear_must_change "e2e$STAMP$i" "anthill123" "$NEW_PW")
+  [[ "$i" == "0" ]] && STUDENT0_PW="$NEW_PW"
   expect_status "hoc sinh $i doc duoc danh sach bai → 200" 200 "$(call GET /api/my/exams "$TOK")"
   expect_status "  thay de vua duoc giao" true \
     "$(body | python -c "import json,sys;print(str(any(x['examId'] == $EID for x in json.load(sys.stdin))).lower())")"
@@ -82,7 +88,7 @@ for i in 0 1 2; do
 done
 
 section "6. Hoc sinh dau tien lam va nop bai"
-STUDENT=$(login "e2e${STAMP}0" "anthill123")
+STUDENT=$(login "e2e${STAMP}0" "$STUDENT0_PW")
 call GET /api/my/exams "$STUDENT" > /dev/null
 AID=$(body | python -c "import json,sys;print(next(x['assignmentId'] for x in json.load(sys.stdin) if x['examId'] == $EID))")
 expect_status "bat dau lam bai → 200" 200 "$(call POST /api/exam-attempts "$STUDENT" "{\"assignmentId\":$AID}")"
