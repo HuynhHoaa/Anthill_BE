@@ -1,6 +1,7 @@
 using Anthill.Api.Configuration;
 using Anthill.Api.Extensions;
 using Anthill.Api.Hubs;
+using Anthill.Api.RateLimiting;
 using Anthill.Infrastructure;
 
 var builder = WebApplication.CreateBuilder(args);
@@ -65,6 +66,13 @@ app.UseAuthentication();
 app.UseMustChangePasswordGate();
 
 app.UseAuthorization();
+
+// §H20: giới hạn tần suất POST /api/auth/login và /api/auth/change-password. Đứng SAU
+// UseAuthentication vì đổi mật khẩu cần đọc claim "sub" đã xác thực để phân vùng; đăng nhập thì đọc
+// thân request thay vì claim, xem AuthRateLimitPartitionKeyMiddleware. Đứng TRƯỚC MapControllers vì
+// UseRateLimiter phải chặn request lại trước khi nó chạm tới action.
+app.UseMiddleware<AuthRateLimitPartitionKeyMiddleware>();
+app.UseRateLimiter();
 
 app.MapControllers();
 

@@ -453,7 +453,7 @@ section "Em moi vao lop, giao DICH DANH thi ke thua khung gio cua lop (H24)"
 # vi ke thua dung khung gio cua lop, day chinh la H24: em moi thay mot khung gio khac han cac ban.
 build_class "Lop ke thua $STAMP" "${STAMP}k"; G_KETHUA=$BUILT_GID; SID_KETHUA_1=$BUILT_SID
 expect_status "giao lan dau cho lop, kem khung rieng → 200" 200 "$(assign "$EID" "$G_KETHUA" 6 8)"
-call GET /api/my/exams "$(login "p${STAMP}k" "anthill123")" > /dev/null
+call GET /api/my/exams "$(login_and_clear_must_change "p${STAMP}k" "anthill123" "Pk$STAMP")" > /dev/null
 OPEN_KETHUA=$(field_of_exam openAt "$EID")
 
 code=$(call POST /api/students "$ADMIN" "{\"fullName\":\"HS ${STAMP}k2\",\"email\":\"p${STAMP}k2@kiemthu.vn\",\"username\":\"p${STAMP}k2\",\"code\":\"P${STAMP}k2\",\"password\":\"anthill123\",\"groupId\":$G_KETHUA}")
@@ -464,7 +464,7 @@ DIRECT_BODY="{\"studentIds\":[$SID_KETHUA_2],\"groupIds\":[],\"notify\":false}"
 expect_status "giao dich danh em moi, khong kem gio → 200" 200 "$(call POST "/api/exams/$EID/assignments" "$TEACHER" "$DIRECT_BODY")"
 expect_json   "  assignedCount = 1" assignedCount 1
 
-TOK_KETHUA_2=$(login "p${STAMP}k2" "anthill123")
+TOK_KETHUA_2=$(login_and_clear_must_change "p${STAMP}k2" "anthill123" "Pk2$STAMP")
 expect_status "em moi doc danh sach cua minh → 200" 200 "$(call GET /api/my/exams "$TOK_KETHUA_2")"
 expect_status "  nhan DUNG khung gio cua lop, khong phai lich chung cua de" "$OPEN_KETHUA" "$(field_of_exam openAt "$EID")"
 call GET "/api/exams/$EID/assignments" "$TEACHER" > /dev/null

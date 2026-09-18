@@ -38,19 +38,22 @@ public sealed class AuthService : IAuthService
     private readonly IJwtTokenGenerator _jwtTokenGenerator;
     private readonly ICurrentUser _currentUser;
     private readonly IUserConnectionCloser _connections;
+    private readonly IDemoAccountGuard _demoAccountGuard;
 
     public AuthService(
         IUnitOfWork unitOfWork,
         IPasswordHasher passwordHasher,
         IJwtTokenGenerator jwtTokenGenerator,
         ICurrentUser currentUser,
-        IUserConnectionCloser connections)
+        IUserConnectionCloser connections,
+        IDemoAccountGuard demoAccountGuard)
     {
         _unitOfWork = unitOfWork;
         _passwordHasher = passwordHasher;
         _jwtTokenGenerator = jwtTokenGenerator;
         _currentUser = currentUser;
         _connections = connections;
+        _demoAccountGuard = demoAccountGuard;
     }
 
     /// <inheritdoc />
@@ -179,6 +182,14 @@ public sealed class AuthService : IAuthService
 
         var account = user!;
 
+        // §H19: tài khoản demo dùng chung không được tự phá qua đường sửa hồ sơ của chính nó —
+        // kể cả đổi tên hay số điện thoại, không chỉ email. Kiểm trước khi đọc/validate phần còn
+        // lại của request vì đây là một lệnh cấm tuyệt đối, không phụ thuộc nội dung request.
+        if (_demoAccountGuard.IsProtected(account))
+        {
+            return Result.Forbidden<UserProfileDto>(DemoAccountMessages.MutationBlocked);
+        }
+
         var fullName = request.FullName?.Trim() ?? string.Empty;
         if (fullName.Length == 0)
         {
@@ -250,6 +261,14 @@ public sealed class AuthService : IAuthService
         }
 
         var account = user!;
+
+        // §H19: cùng lệnh cấm với UpdateCurrentProfileAsync — tài khoản demo dùng chung không tự
+        // đổi được mật khẩu của chính nó, kể cả khi người gọi biết đúng mật khẩu hiện tại (mật khẩu
+        // đó in công khai trên trang đăng nhập, nên "biết mật khẩu" không chứng minh được gì ở đây).
+        if (_demoAccountGuard.IsProtected(account))
+        {
+            return Result.Forbidden(DemoAccountMessages.MutationBlocked);
+        }
 
         // Mật khẩu không trim: khoảng trắng đầu và cuối là ký tự hợp lệ, cắt đi là âm thầm đổi thứ
         // người dùng đã gõ.

@@ -4,6 +4,7 @@ using Anthill.Application.DTOs.Auth;
 using Anthill.Application.Interfaces.Services;
 using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Mvc;
+using Microsoft.AspNetCore.RateLimiting;
 
 namespace Anthill.Api.Controllers;
 
@@ -33,11 +34,13 @@ public sealed class AuthController : ApiControllerBase
     /// vai trò thật luôn đọc từ database (§3 quy tắc ⑤).
     /// </remarks>
     [AllowAnonymous]
+    [EnableRateLimiting("auth")]
     [HttpPost("login")]
     [ProducesResponseType<LoginResponse>(StatusCodes.Status200OK)]
     [ProducesResponseType<ApiErrorResponse>(StatusCodes.Status400BadRequest)]
     [ProducesResponseType<ApiErrorResponse>(StatusCodes.Status401Unauthorized)]
     [ProducesResponseType<ApiErrorResponse>(StatusCodes.Status403Forbidden)]
+    [ProducesResponseType<ApiErrorResponse>(StatusCodes.Status429TooManyRequests)]
     public async Task<IActionResult> Login(
         [FromBody] LoginRequest request,
         CancellationToken cancellationToken)
@@ -103,12 +106,14 @@ public sealed class AuthController : ApiControllerBase
     /// </para>
     /// </remarks>
     [ReportsBlockedAccount]
+    [EnableRateLimiting("auth")]
     [AllowWhileMustChangePassword]
     [HttpPost("change-password")]
     [ProducesResponseType<ApiMessageResponse>(StatusCodes.Status200OK)]
     [ProducesResponseType<ApiErrorResponse>(StatusCodes.Status400BadRequest)]
     [ProducesResponseType<ApiErrorResponse>(StatusCodes.Status401Unauthorized)]
     [ProducesResponseType<ApiErrorResponse>(StatusCodes.Status403Forbidden)]
+    [ProducesResponseType<ApiErrorResponse>(StatusCodes.Status429TooManyRequests)]
     public async Task<IActionResult> ChangePassword(
         [FromBody] ChangePasswordRequest request,
         CancellationToken cancellationToken)
