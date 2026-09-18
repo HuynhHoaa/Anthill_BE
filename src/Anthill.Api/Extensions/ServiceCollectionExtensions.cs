@@ -44,6 +44,10 @@ public static class ServiceCollectionExtensions
         services.AddHttpContextAccessor();
         services.AddScoped<ICurrentUser, CurrentUser>();
 
+        // Danh sách tài khoản demo cần bảo vệ (§H19) — đọc từ cấu hình, xem DemoAccountProtectionOptions.
+        services.AddOptions<DemoAccountProtectionOptions>().BindConfiguration(DemoAccountProtectionOptions.SectionName);
+        services.AddSingleton<IDemoAccountGuard, DemoAccountGuard>();
+
         // Thêm theo đúng thứ tự của §9. Đã xong bước 1 (Auth + User), bước 2 (Student +
         // StudentGroup), bước 3 (Question), bước 4-5 (Exam + Assignment) và bước 6 (Attempt);
         // các service còn lại nối tiếp vào đây.

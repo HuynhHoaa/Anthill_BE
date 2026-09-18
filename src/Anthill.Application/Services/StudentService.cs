@@ -46,16 +46,21 @@ public sealed class StudentService : IStudentService
     /// <summary>Cắt kết nối realtime đang mở mỗi khi một lối ghi ở đây xoay <c>SecurityStamp</c>.</summary>
     private readonly IUserConnectionCloser _connections;
 
+    /// <summary>Chặn thao tác tự phá trên ba tài khoản demo dùng chung (§H19).</summary>
+    private readonly IDemoAccountGuard _demoAccountGuard;
+
     public StudentService(
         IUnitOfWork unitOfWork,
         IPasswordHasher passwordHasher,
         ICurrentUser currentUser,
-        IUserConnectionCloser connections)
+        IUserConnectionCloser connections,
+        IDemoAccountGuard demoAccountGuard)
     {
         _unitOfWork = unitOfWork;
         _passwordHasher = passwordHasher;
         _currentUser = currentUser;
         _connections = connections;
+        _demoAccountGuard = demoAccountGuard;
     }
 
     /// <inheritdoc />
@@ -204,6 +209,14 @@ public sealed class StudentService : IStudentService
         {
             return Result.Conflict<StudentDto>(retired);
         }
+
+        // §H19: sửa hồ sơ có thể đổi email/username/code hoặc khoá tài khoản demo — chặn cả khối,
+        // không chỉ nhánh đổi trạng thái, vì PUT này ghi đè toàn bộ định danh trong một lần.
+        if (_demoAccountGuard.IsProtected(account))
+        {
+            return Result.Forbidden<StudentDto>(DemoAccountMessages.MutationBlocked);
+        }
+
         var fields = StudentFields.From(request.FullName, request.Email, request.Username, request.Code);
 
         // Loại trừ chính bản ghi đang sửa, nếu không lưu lại hồ sơ mà không đổi gì cũng tự báo trùng.
@@ -265,6 +278,12 @@ public sealed class StudentService : IStudentService
             return Result.Conflict<StudentDto>(retired);
         }
 
+        // §H19: khoá/mở khoá tài khoản demo dùng chung qua đường công khai — chặn 403.
+        if (_demoAccountGuard.IsProtected(account))
+        {
+            return Result.Forbidden<StudentDto>(DemoAccountMessages.MutationBlocked);
+        }
+
         if (account.Status != status)
         {
             var stampBefore = account.SecurityStamp;
@@ -302,6 +321,12 @@ public sealed class StudentService : IStudentService
         }
 
         var account = student!;
+
+        // §H19: yêu cầu xoá tài khoản demo dùng chung — chặn trước khi đụng tới trạng thái.
+        if (_demoAccountGuard.IsProtected(account))
+        {
+            return Result.Forbidden<StudentDto>(DemoAccountMessages.MutationBlocked);
+        }
 
         if (account.Status == UserStatus.Deleted)
         {
@@ -460,6 +485,13 @@ public sealed class StudentService : IStudentService
         if (RetiredAccountError(account) is { } retired)
         {
             return Result.Conflict<ResetPasswordResponse>(retired);
+        }
+
+        // §H19: cấp lại mật khẩu của tài khoản demo dùng chung — chặn 403, cùng lý do với các nhánh
+        // khác của file này.
+        if (_demoAccountGuard.IsProtected(account))
+        {
+            return Result.Forbidden<ResetPasswordResponse>(DemoAccountMessages.MutationBlocked);
         }
 
         var password = PasswordGenerator.Generate();
