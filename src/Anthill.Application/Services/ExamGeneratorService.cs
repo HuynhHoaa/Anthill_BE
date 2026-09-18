@@ -29,6 +29,14 @@ namespace Anthill.Application.Services;
 /// </remarks>
 public sealed class ExamGeneratorService : IExamGeneratorService
 {
+    /// <summary>H10 — xem <see cref="CheckSharedPaperReleaseAsync"/>.</summary>
+    private const string SharedPaperAlreadyReleasedMessage =
+        "Đề này dùng chung một bản đề cho cả lớp, và đáp án của bản đề đó đã tới tay những em được giao "
+        + "trước đây (cửa sổ làm bài của các em đó đã đóng, hoặc lượt làm dở muộn nhất đã hết hạn). Giao "
+        + "thêm học sinh mới vào lúc này sẽ phát cho các em đúng bộ đề mà đáp án đã lộ. Hãy nhân bản đề "
+        + "thành một đề mới rồi giao bản sao, hoặc bật \"mỗi học sinh một đề riêng\" — chỉ áp dụng được "
+        + "cho đề chưa giao ai.";
+
     private readonly IUnitOfWork _unitOfWork;
 
     /// <summary>
@@ -116,6 +124,15 @@ public sealed class ExamGeneratorService : IExamGeneratorService
         ArgumentNullException.ThrowIfNull(exam);
         ArgumentNullException.ThrowIfNull(assignments);
 
+        if (!exam.RandomizePerStudent && assignments.Count > 0)
+        {
+            var releaseCheck = await CheckSharedPaperReleaseAsync(exam, assignments, cancellationToken);
+            if (releaseCheck.IsFailure)
+            {
+                return releaseCheck;
+            }
+        }
+
         foreach (var assignment in assignments)
         {
             var paper = await GetOrCreatePaperAsync(exam, assignment, cancellationToken);
@@ -134,6 +151,60 @@ public sealed class ExamGeneratorService : IExamGeneratorService
         }
 
         return Result.Success();
+    }
+
+    /// <summary>
+    /// H10 — chặn giao thêm người mới vào một đề dùng bản đề chung mà đáp án đã lộ. Xem
+    /// <see cref="PaperReleasePolicy"/> cho lý luận đầy đủ.
+    /// </summary>
+    /// <remarks>
+    /// Chỉ có ý nghĩa ở đường giao bài. <c>ExamService.RegeneratePapersAsync</c> (H9) luôn xoá bản đề
+    /// chung trước khi gọi <see cref="GeneratePapersAsync"/>, nên ở đường sửa đề <c>GetSharedPaperAsync</c>
+    /// dưới đây luôn trả về NULL và hàm này luôn cho qua — sửa đề không bao giờ bị luật này chặn.
+    /// </remarks>
+    private async Task<Result> CheckSharedPaperReleaseAsync(
+        Exam exam,
+        IReadOnlyList<ExamAssignment> assignments,
+        CancellationToken cancellationToken)
+    {
+        var existing = await _unitOfWork.Exams.GetSharedPaperAsync(exam.Id, cancellationToken);
+
+        DateTime? releaseAt;
+        bool hasAnyStartedAttempt;
+
+        if (exam.AnswersReleasedAt is { } stamped)
+        {
+            // H10 (nửa release-flicker, xem AnswersReleaseStamp): đã có ResultService chốt mốc này từ
+            // trước — dùng thẳng, khỏi tính động. Một mốc đã chốt chỉ có thể sinh ra từ việc đọc chi
+            // tiết một attemptId CÓ THẬT, nên suy ra ngay hasAnyStartedAttempt = true.
+            releaseAt = stamped;
+            hasAnyStartedAttempt = true;
+        }
+        else
+        {
+            // Loại các lượt giao ĐANG được xét ra khỏi phép tính mốc mở đáp án: chúng vừa được ghi
+            // xuống để lấy id thật, nhưng giờ đóng của chúng thường muộn hơn các lượt cũ — tính luôn vào
+            // MAX sẽ đẩy mốc "đã mở đáp án" ra tương lai và che mất việc lớp cũ đã thấy đáp án.
+            var excludeIds = assignments.Select(assignment => assignment.Id).ToList();
+            releaseAt = await _unitOfWork.ExamAssignments.GetAnswersReleaseAtAsync(
+                exam.Id, excludeIds, cancellationToken);
+
+            // Lượt giao mới vừa được ghi xuống nên không thể có lượt làm bài nào — đếm luôn trên toàn đề
+            // là đúng số của riêng các lượt giao CŨ, không cần loại trừ thêm.
+            var startedCount = await _unitOfWork.ExamAssignments.CountStartedByExamAsync(exam.Id, cancellationToken);
+            hasAnyStartedAttempt = startedCount > 0;
+        }
+
+        var decision = PaperReleasePolicy.DecideSharedPaperReuse(
+            exam.RandomizePerStudent,
+            sharedPaperExists: existing is not null,
+            hasAnyStartedAttempt,
+            priorReleaseAt: releaseAt,
+            asOfUtc: DateTime.UtcNow);
+
+        return decision == SharedPaperAssignmentDecision.RejectAlreadyReleased
+            ? Result.Failure(SharedPaperAlreadyReleasedMessage, ErrorCode.Conflict)
+            : Result.Success();
     }
 
     /// <summary>

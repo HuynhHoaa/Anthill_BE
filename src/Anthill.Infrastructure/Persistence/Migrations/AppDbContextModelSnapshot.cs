@@ -71,6 +71,9 @@ namespace Anthill.Infrastructure.Persistence.Migrations
 
                     NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
 
+                    b.Property<DateTime?>("AnswersReleasedAt")
+                        .HasColumnType("timestamp with time zone");
+
                     b.Property<DateTime>("CloseAt")
                         .HasColumnType("timestamp with time zone");
 
