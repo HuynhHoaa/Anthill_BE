@@ -1,4 +1,5 @@
 using System.Net;
+using Anthill.Application.Common;
 using Microsoft.EntityFrameworkCore;
 using Npgsql;
 using System.Text.Encodings.Web;
@@ -114,6 +115,31 @@ public sealed class ExceptionMiddleware
             // trả 409 kèm lời chỉ dẫn thay vì 500 kèm "đã có lỗi xảy ra". Bắt ở đây thay vì trong
             // từng service vì mọi endpoint ghi đều có thể gặp, và tầng Application cố ý không biết
             // gì về EF Core.
+            //
+            // Trong thực tế mọi lần ghi đều đi qua UnitOfWork.SaveChangesAsync, và hàm đó giờ đã tự
+            // bọc trường hợp này thành UniqueConstraintViolationException (nhánh catch ngay dưới) —
+            // nhánh DbUpdateException thô ở đây chỉ còn là lưới đỡ cho một đường ghi giả định nào đó
+            // không đi qua UnitOfWork.
+            _logger.LogWarning(
+                exception,
+                "Va chạm ràng buộc duy nhất ở {Method} {Path}.",
+                context.Request.Method,
+                context.Request.Path.Value);
+
+            await WriteAsync(
+                context,
+                (int)HttpStatusCode.Conflict,
+                "Dữ liệu vừa được người khác thay đổi nên thao tác này không hoàn tất. "
+                + "Hãy tải lại trang rồi thử lại.",
+                exception);
+        }
+        catch (UniqueConstraintViolationException exception)
+        {
+            // Bản đã được UnitOfWork.SaveChangesAsync bọc lại từ DbUpdateException — xem nhánh phía
+            // trên và remarks của UniqueConstraintViolationException. Cùng một câu trả lời 409, vì
+            // đây là con đường bình thường mà hầu hết endpoint ghi đi qua; những endpoint biết cách
+            // xử lý tốt hơn (ví dụ ExamAttemptService.CreateAttemptAsync — đọc lại và trả về đúng
+            // lượt vừa được tạo) đã bắt riêng ngoại lệ này trước khi nó lọt tới đây.
             _logger.LogWarning(
                 exception,
                 "Va chạm ràng buộc duy nhất ở {Method} {Path}.",

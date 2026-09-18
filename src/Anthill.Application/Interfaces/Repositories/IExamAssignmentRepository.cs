@@ -106,15 +106,26 @@ public interface IExamAssignmentRepository : IGenericRepository<ExamAssignment>
     Task<IReadOnlyList<ExamAssignment>> LockByExamAsync(int examId, CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Khoá chia sẻ (<c>FOR SHARE</c>) một dòng giao bài trước khi tạo lượt làm bài, rồi trả về nó cùng đề
+    /// Khoá ghi (<c>FOR UPDATE</c>) một dòng giao bài trước khi tạo lượt làm bài, rồi trả về nó cùng đề
     /// và lượt làm bài đọc <b>sau</b> khi đã cầm khoá.
     /// </summary>
     /// <remarks>
     /// <para>
-    /// Khoá này xung đột với <see cref="LockByExamAsync"/>: một lần sửa đề đang sinh lại bản đề thì em
-    /// phải chờ nó commit rồi mới đọc đề và bản đề; ngược lại em cầm khoá trước thì lần sửa phải chờ lượt
-    /// của em được ghi xong, và phép đếm "đã có em làm" của nó sẽ thấy lượt đó. Hai em khác nhau, hay hai
-    /// tab của cùng một em, không chặn nhau vì hai khoá chia sẻ không loại trừ nhau.
+    /// Khoá này xung đột với <see cref="LockByExamAsync"/> — như trước: một lần sửa đề đang sinh lại bản
+    /// đề thì em phải chờ nó commit rồi mới đọc đề và bản đề; ngược lại em cầm khoá trước thì lần sửa phải
+    /// chờ lượt của em được ghi xong, và phép đếm "đã có em làm" của nó sẽ thấy lượt đó.
+    /// </para>
+    /// <para>
+    /// <b>Trước đây khoá này là <c>FOR SHARE</c></b>, với lý do hai tab của cùng một em (hay một request
+    /// bị gửi trùng — React StrictMode, double-click, retry sau timeout) không chặn nhau vì hai khoá chia
+    /// sẻ không loại trừ nhau. Đó chính là lỗ hổng: cả hai request cùng đọc "chưa có lượt nào" trước khi
+    /// bên nào kịp ghi, cả hai cùng đi tiếp tới INSERT, và chỉ unique index trên
+    /// <c>ExamAttempts.AssignmentId</c> mới chặn được bản ghi thứ hai — bên thua cuộc nhận thẳng một lỗi
+    /// 409 thô từ database thay vì được dẫn vào nhánh Resume, dù lượt làm bài của chính em đó đã được tạo
+    /// và đồng hồ đã chạy. Đổi sang <c>FOR UPDATE</c> để request thứ hai phải chờ request thứ nhất commit,
+    /// rồi tự đọc lại dưới khoá và thấy lượt vừa được tạo — vào đúng nhánh Resume thay vì đua nhau INSERT.
+    /// <c>ExamAttemptService.CreateAttemptAsync</c> vẫn bắt riêng vi phạm unique index như một lưới đỡ
+    /// thứ hai, phòng trường hợp có một đường ghi khác vào <c>ExamAttempts</c> không đi qua khoá này.
     /// </para>
     /// <para>
     /// Đề, dòng giao bài và lượt làm bài (nếu đã có) đều được đọc lại, kể cả khi chúng đã nằm trong change
@@ -131,10 +142,10 @@ public interface IExamAssignmentRepository : IGenericRepository<ExamAssignment>
     /// giao qua và lượt làm bài — tất cả đọc <b>sau</b> khi đã cầm khoá.
     /// </summary>
     /// <remarks>
-    /// Khoá này xung đột với khoá chia sẻ của <see cref="LockForStartAsync"/>, nên em đang bấm "Vào thi"
-    /// hoặc đã vào trước và lượt làm bài được thấy ở đây, hoặc phải chờ lần dời giờ commit rồi đọc khung
-    /// giờ mới. Không khoá thì lần dời giờ có thể ghi đè khung giờ của một em vừa bắt đầu, và thẻ bài với
-    /// đồng hồ của em nói hai giờ khác nhau. Trả NULL khi dòng không còn. Phải gọi bên trong transaction.
+    /// Khoá này xung đột với khoá của <see cref="LockForStartAsync"/>, nên em đang bấm "Vào thi" hoặc đã
+    /// vào trước và lượt làm bài được thấy ở đây, hoặc phải chờ lần dời giờ commit rồi đọc khung giờ mới.
+    /// Không khoá thì lần dời giờ có thể ghi đè khung giờ của một em vừa bắt đầu, và thẻ bài với đồng hồ
+    /// của em nói hai giờ khác nhau. Trả NULL khi dòng không còn. Phải gọi bên trong transaction.
     ///
     /// Tiến trình nhắc sắp hết giờ cũng dùng hàm này: nó cần đúng những dữ liệu đó, và cần chính khoá đó để
     /// hai instance cùng quét không gửi hai lời nhắc cho một em.

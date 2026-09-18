@@ -201,24 +201,45 @@ public sealed class ExamAssignmentService : IExamAssignmentService
         // Include là Modified — ghi đè một bản cũ của lượt đang làm lên những lần lưu nháp đồng thời.
         // Theo dõi thay đổi tự nhận ra OpenAt/CloseAt đã đổi.
         // Khoá các dòng giao bài trước khi đọc chúng, cùng thứ tự khoá với lần sửa đề (dòng đề trước, dòng
-        // giao bài sau). Em bấm "Vào thi" phải cầm khoá chia sẻ trên dòng của mình, nên hoặc em vào trước và
-        // lần gửi lại này thấy em đã bắt đầu, hoặc em phải chờ. Không khoá thì một em vừa vào thi bị dời
-        // khung giờ dưới tay — và nhận một thông báo "giờ đã đổi" trong lúc đang làm bài.
-        if (targets.OwnedGroups.Count > 0)
+        // giao bài sau). Em bấm "Vào thi" phải cầm khoá trên dòng của mình (LockForStartAsync), nên hoặc em
+        // vào trước và lần gửi lại này thấy em đã bắt đầu, hoặc em phải chờ. Không khoá thì một em vừa vào
+        // thi bị dời khung giờ dưới tay — và nhận một thông báo "giờ đã đổi" trong lúc đang làm bài.
+        var ownedGroupIds = targets.OwnedGroupIds;
+
+        // Lớp thật (User.GroupId) của những em được chọn ĐÍCH DANH trong lần này — không tick vào lớp,
+        // nhưng lớp đó có thể đã có bài giao qua nhóm từ trước, với khung giờ riêng. Đọc thêm các dòng của
+        // những lớp này, CHỈ để những em mới kế thừa đúng khung giờ lớp mình đang theo (xem
+        // inheritedWindows/assignments bên dưới) — không gộp vào ownedGroupIds vì danh sách đó còn quyết
+        // định lớp nào bị DỜI GIỜ ở vòng lặp ngay sau, và dời cả lớp chỉ vì một em mới được thêm đích danh
+        // là đụng tới những em không ai yêu cầu đổi giờ (H24: em mới vào lớp sau khi lớp đã có khung giờ
+        // riêng, được giáo viên chọn thẳng tên thay vì tick lại cả lớp, trước đây rơi về lịch chung của ĐỀ
+        // thay vì giờ thật của lớp mình).
+        var inheritOnlyGroupIds = newcomers
+            .Where(student => !targets.ViaGroup.ContainsKey(student.Id))
+            // InScope đảm bảo GroupId có giá trị và thuộc lớp giáo viên này dạy — AssignmentTargetFilter
+            // .Classify đã kiểm cả hai trong ResolveTargetsAsync trước khi xếp em vào InScope.
+            .Select(student => student.GroupId!.Value)
+            .Where(groupId => !ownedGroupIds.Contains(groupId))
+            .Distinct()
+            .ToList();
+
+        var windowGroupIds = ownedGroupIds.Concat(inheritOnlyGroupIds).ToList();
+
+        if (windowGroupIds.Count > 0)
         {
             await _unitOfWork.ExamAssignments.LockByExamAsync(exam.Id, cancellationToken);
         }
 
-        IReadOnlyList<ExamAssignment> viaGroupRows = targets.OwnedGroups.Count == 0
+        IReadOnlyList<ExamAssignment> viaGroupRows = windowGroupIds.Count == 0
             ? []
-            : await _unitOfWork.ExamAssignments.GetByExamViaGroupsAsync(exam.Id, targets.OwnedGroupIds, cancellationToken);
+            : await _unitOfWork.ExamAssignments.GetByExamViaGroupsAsync(exam.Id, windowGroupIds, cancellationToken);
 
         var rowsByGroup = viaGroupRows
             .GroupBy(row => row.AssignedViaGroupId!.Value)
             .ToDictionary(group => group.Key, group => group.ToList());
 
         var rescheduled = AssignmentSchedule.RescheduleOutcome.None;
-        foreach (var groupId in targets.OwnedGroupIds)
+        foreach (var groupId in ownedGroupIds)
         {
             if (!rowsByGroup.TryGetValue(groupId, out var rows))
             {
@@ -313,10 +334,22 @@ public sealed class ExamAssignmentService : IExamAssignmentService
         var assignments = newcomers
             .Select(student =>
             {
-                // NULL khi giáo viên chọn đích danh em này thay vì chọn cả lớp.
+                // NULL khi giáo viên chọn đích danh em này thay vì chọn cả lớp — AssignedViaGroupId chỉ
+                // đánh dấu "gắn với lớp" khi chính lớp đó được chọn trong lần này, vì đây là thứ quyết
+                // định em có bị cuốn theo lần DỜI GIỜ CẢ LỚP sau này hay không (GetByExamViaGroupsAsync ở
+                // trên chỉ đọc theo AssignedViaGroupId).
                 int? viaGroupId = targets.ViaGroup.TryGetValue(student.Id, out var groupId) ? groupId : null;
+
+                // Nhưng khung giờ thì vẫn nên kế thừa đúng lớp THẬT của em (student.GroupId), kể cả khi em
+                // được chọn đích danh: em vừa được thêm vào lớp sau khi lớp đã giao bài với khung giờ
+                // riêng, giáo viên bấm chọn thẳng tên em thay vì tick lại cả lớp — windowGroupIds/
+                // inheritedWindows ở trên đã đọc thêm đúng lớp này cho trường hợp vậy. Không có dòng này
+                // thì em rơi về lịch chung của ĐỀ (có thể đã đóng từ lâu) thay vì giờ thật của lớp mình
+                // (H24), dù request có kèm giờ hay không cũng ưu tiên như nhau (WindowForNewAssignment).
+                var inheritGroupId = viaGroupId ?? student.GroupId;
+
                 var (openAt, closeAt) = AssignmentSchedule.WindowForNewAssignment(
-                    viaGroupId,
+                    inheritGroupId,
                     (request.OpenAt, request.CloseAt),
                     classWindows,
                     inheritedWindows);
