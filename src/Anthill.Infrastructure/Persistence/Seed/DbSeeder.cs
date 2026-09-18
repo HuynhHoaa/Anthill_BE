@@ -27,8 +27,8 @@ namespace Anthill.Infrastructure.Persistence.Seed;
 /// </remarks>
 public static class DbSeeder
 {
-    /// <summary>Mật khẩu dùng chung của ba tài khoản demo, khớp <c>DEMO_PASSWORD</c> ở frontend.</summary>
-    public const string DemoPassword = "anthill123";
+    /// <summary>Mật khẩu dùng chung của ba tài khoản demo.</summary>
+    public const string DemoPassword = "123456";
 
     private const string DemoSchool = "Trường THPT Nguyễn Du";
     private const string SubjectCode = "KHTN";

@@ -11,7 +11,7 @@ Content-Type: application/json
 
 {
   "username": "an.nv@anthill.edu.vn",
-  "password": "anthill123",
+  "password": "123456",
   "role": "teacher"
 }
 
@@ -22,7 +22,7 @@ Content-Type: application/json
 
 {
   "username": "huy.pq@anthill.edu.vn",
-  "password": "anthill123"
+  "password": "123456"
 }
 
 ### Đăng nhập — học sinh, bằng mã học sinh thay cho email
@@ -32,7 +32,7 @@ Content-Type: application/json
 
 {
   "username": "HS1001",
-  "password": "anthill123"
+  "password": "123456"
 }
 
 ### Sai mật khẩu → 401, cùng thông điệp với "không có tài khoản" (không dò được tài khoản nào có thật)
@@ -50,7 +50,7 @@ Content-Type: application/json
 
 {
   "username": "an.nv@anthill.edu.vn",
-  "password": "anthill123",
+  "password": "123456",
   "role": "admin"
 }
 
@@ -83,8 +83,8 @@ Authorization: Bearer {{token}}
 Content-Type: application/json
 
 {
-  "currentPassword": "anthill123",
-  "newPassword": "anthill1234"
+  "currentPassword": "123456",
+  "newPassword": "654321"
 }
 
 ### Đăng xuất
