@@ -35,6 +35,6 @@ public sealed class AccountSessionReader : IAccountSessionReader
         _dbContext.Users
             .AsNoTracking()
             .Where(user => user.Id == userId)
-            .Select(user => new AccountSessionState(user.Id, user.Status, user.SecurityStamp))
+            .Select(user => new AccountSessionState(user.Id, user.Status, user.SecurityStamp, user.MustChangePassword))
             .FirstOrDefaultAsync(cancellationToken);
 }

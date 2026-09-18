@@ -98,6 +98,25 @@ login() {
   json_field accessToken
 }
 
+# Dang nhap bang mat khau tam (MustChangePassword=true — tao tai khoan hoac cap lai mat khau deu
+# dat co nay), doi ngay sang mat khau moi, roi dang nhap lai. Tra ve token cuoi cung: con hieu luc
+# VA khong con bi MustChangePasswordMiddleware han che (Sec.5) — dung cho moi noi chi can mot token
+# hoc sinh lam duoc viec nghiep vu, khong tu kiem ban than co MustChangePassword.
+#
+#   $1 username, $2 mat khau tam dang co, $3 mat khau moi
+login_and_clear_must_change() {
+  local username="$1" temp_password="$2" new_password="$3"
+  local temp_token code
+  temp_token=$(login "$username" "$temp_password")
+  code=$(call POST /api/auth/change-password "$temp_token" \
+    "{\"currentPassword\":\"$temp_password\",\"newPassword\":\"$new_password\"}")
+  [[ "$code" != "200" ]] && {
+    echo "Khong doi duoc mat khau tam cho $username (HTTP $code) — $(body)" >&2
+    exit 1
+  }
+  login "$username" "$new_password"
+}
+
 section() { printf '\n\033[1m%s\033[0m\n' "$1"; }
 
 summary() {

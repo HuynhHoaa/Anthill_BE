@@ -64,8 +64,10 @@ new_student() {
 new_student "${STAMP}a"; S_A=$NEW_STUDENT_ID
 new_student "${STAMP}b"; S_B=$NEW_STUDENT_ID
 
-STUDENT_A=$(login "r${STAMP}a" "anthill123")
-STUDENT_B=$(login "r${STAMP}b" "anthill123")
+# Tai khoan vua tao mang MustChangePassword=true (Sec.5) — doi ngay sang mat khau rieng truoc khi
+# dung token cho nghiep vu, dung nhu mot hoc sinh that lam sau lan dang nhap dau tien.
+STUDENT_A=$(login_and_clear_must_change "r${STAMP}a" "anthill123" "R7a$STAMP")
+STUDENT_B=$(login_and_clear_must_change "r${STAMP}b" "anthill123" "R7b$STAMP")
 
 for pair in easy:1 easy:2 easy:3 easy:4 medium:1 medium:2 medium:3 hard:1 hard:2; do
   d="${pair%%:*}"; i="${pair##*:}"

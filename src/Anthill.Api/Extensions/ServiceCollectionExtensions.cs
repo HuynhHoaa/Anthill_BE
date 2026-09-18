@@ -6,6 +6,7 @@ using System.Text.Unicode;
 using Anthill.Api.BackgroundJobs;
 using Anthill.Api.Configuration;
 using Anthill.Api.Hubs;
+using Anthill.Api.Middlewares;
 using Anthill.Api.Realtime;
 using Anthill.Api.Filters;
 using Anthill.Api.Security;
@@ -415,16 +416,28 @@ public static class ServiceCollectionExtensions
         var principal = context.Principal;
         var reader = context.HttpContext.RequestServices.GetRequiredService<IAccountSessionReader>();
 
-        // Cùng một hàm với bộ lọc hub (SessionRevalidationHubFilter), để REST và hub không thể kết
-        // luận khác nhau về cùng một token.
-        var verdict = await SessionValidation.CheckAsync(
-            principal?.FindFirst(CurrentUser.UserIdClaimType)?.Value,
-            principal?.FindFirst(CurrentUser.SecurityStampClaimType)?.Value,
-            reader,
-            context.HttpContext.RequestAborted);
+        var stampClaim = principal?.FindFirst(CurrentUser.SecurityStampClaimType)?.Value;
+
+        // Đọc thẳng account thay vì gọi SessionValidation.CheckAsync (bộ lọc hub vẫn dùng hàm đó
+        // nguyên vẹn): cổng MustChangePassword bên dưới cần đúng dòng Users này, và tra lại lần nữa
+        // là một truy vấn theo khoá chính thừa trên mỗi request có token. Evaluate vẫn là cùng một
+        // hàm thuần, nên REST và hub không thể kết luận khác nhau về cùng một token.
+        AccountSessionState? account = null;
+        if (SessionValidation.TryReadUserId(principal?.FindFirst(CurrentUser.UserIdClaimType)?.Value, out var userId)
+            && !string.IsNullOrWhiteSpace(stampClaim))
+        {
+            account = await reader.GetAsync(userId, context.HttpContext.RequestAborted);
+        }
+
+        var verdict = SessionValidation.Evaluate(stampClaim, account);
 
         if (verdict == SessionVerdict.Valid)
         {
+            // Cùng một truy vấn nuôi cả hai: phép kiểm phiên ở trên và cổng MustChangePassword ở
+            // MustChangePasswordMiddleware (đứng ngay sau UseAuthentication, đọc lại giá trị này
+            // thay vì tra database thêm lần nữa).
+            context.HttpContext.Items[MustChangePasswordMiddleware.MustChangePasswordItemKey] =
+                account!.MustChangePassword;
             return;
         }
 

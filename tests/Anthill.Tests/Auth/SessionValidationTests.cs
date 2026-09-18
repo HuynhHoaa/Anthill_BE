@@ -13,8 +13,11 @@ public class SessionValidationTests
 {
     private const string Stamp = "6f1c2d9ab34e4f0a8c7d5e6f7a8b9c0d";
 
-    private static AccountSessionState Account(UserStatus status = UserStatus.Active, string stamp = Stamp) =>
-        new(42, status, stamp);
+    private static AccountSessionState Account(
+        UserStatus status = UserStatus.Active,
+        string stamp = Stamp,
+        bool mustChangePassword = false) =>
+        new(42, status, stamp, mustChangePassword);
 
     [Fact]
     public void Tai_khoan_hoat_dong_va_stamp_khop_thi_hop_le()

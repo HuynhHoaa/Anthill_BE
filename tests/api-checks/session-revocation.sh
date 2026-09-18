@@ -40,6 +40,7 @@ PENDING_MSG="Tài khoản đang chờ xoá, liên hệ quản trị viên nếu 
 CHANGED_MSG="Phiên đăng nhập đã kết thúc vì tài khoản vừa thay đổi (đổi mật khẩu, cấp lại mật khẩu hoặc bị khoá). Vui lòng đăng nhập lại."
 EXPIRED_MSG="Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại."
 WRONG_CURRENT_MSG="Mật khẩu hiện tại không đúng."
+MUST_CHANGE_MSG="Bạn cần đổi mật khẩu trước khi tiếp tục sử dụng hệ thống."
 
 cleanup() {
   section "Don du lieu"
@@ -66,6 +67,21 @@ token_alive() {
   expect_status "$label: ket qua → 200" 200 "$(call GET /api/my/results "$token")"
   expect_status "$label: thong bao → 200" 200 "$(call GET /api/notifications "$token")"
   expect_status "$label: negotiate hub → 200" 200 "$(negotiate "$token")"
+}
+
+# Token con song (khong 401) nhung tai khoan dang phai doi mat khau (Sec.5,
+# MustChangePasswordMiddleware): chi ba endpoint trong danh sach cho phep — /auth/me, doi mat khau
+# (kiem o noi goi, khong lap lai o day), dang xuat — con dung duoc; moi endpoint nghiep vu khac
+# nhan 403. Hub dung ngoai pham vi cong nay (bao cao audit chi liet ke ba endpoint REST).
+token_must_change() {
+  local label="$1" token="$2"
+  expect_status "$label: /api/auth/me van dung duoc → 200" 200 "$(call GET /api/auth/me "$token")"
+  expect_status "$label: bai duoc giao → 403 (con phai doi mat khau)" 403 "$(call GET /api/my/exams "$token")"
+  expect_json   "  thong diep" message "$MUST_CHANGE_MSG"
+  expect_status "$label: ket qua → 403 (con phai doi mat khau)" 403 "$(call GET /api/my/results "$token")"
+  expect_status "$label: thong bao → 403 (con phai doi mat khau)" 403 "$(call GET /api/notifications "$token")"
+  expect_status "$label: negotiate hub → 200 (ngoai pham vi cong nay)" 200 "$(negotiate "$token")"
+  expect_status "$label: dang xuat van dung duoc → 200" 200 "$(call POST /api/auth/logout "$token")"
 }
 
 # Token da chet tren ba endpoint nghiep vu va hub, kem cau chu dung ly do.
@@ -179,6 +195,15 @@ code=$(call POST "/api/student-groups/$GID/students" "$ADMIN" "{\"studentIds\":[
 [[ "$code" != "200" ]] && fail_fast "xep vao lop: HTTP $code — $(body)"
 printf '  lop %s · hoc sinh %s (%s)\n' "$GID" "$SID" "$USERNAME"
 
+# Tai khoan vua tao mang MustChangePassword=true (Sec.5). File nay kiem thu hoi phien (khoa/mo khoa/
+# cap lai mat khau/tu xoa) qua nhieu vong dang nhap lai VOI DUNG MOT MAT KHAU "anthill123" xuyen suot
+# tu day toi luc quan tri vien cap lai mat khau — doi qua mat khau tam roi doi NGAY VE lai chinh no de
+# xoa co MustChangePassword ma khong doi gia tri mat khau: moi noi ben duoi con dung "anthill123" van
+# dung nguyen. Khoa/mo khoa chi xoay Status va SecurityStamp, khong dung toi MustChangePassword, nen
+# co nay o lai false xuyen suot ca vong khoa/mo khoa — token_alive ben duoi dung duoc nhu truoc H3.
+login_and_clear_must_change "$USERNAME" "anthill123" "TempClear$STAMP" > /dev/null
+login_and_clear_must_change "$USERNAME" "TempClear$STAMP" "anthill123" > /dev/null
+
 section "Token vua cap dung duoc ca ngoai /api/auth"
 T0=$(login "$USERNAME" "anthill123")
 token_alive "token moi" "$T0"
@@ -209,7 +234,9 @@ RESET_PW=$(json_field password)
 token_dead "token cu" "$T1" "$CHANGED_MSG"
 expect_status "mat khau cu → 401" 401 "$(student_login anthill123)"
 T2=$(login "$USERNAME" "$RESET_PW")
-token_alive "dang nhap bang mat khau moi" "$T2"
+# Mat khau vua cap tu quan tri vien mang MustChangePassword=true (Sec.5): token con song (khong
+# 401) nhung bi cong H3 han che, khong phai "song binh thuong" nhu token_alive gia dinh.
+token_must_change "dang nhap bang mat khau moi" "$T2"
 staff_unaffected
 
 section "Go sai mat khau hien tai: loi cua o nhap, phien van song"
@@ -219,7 +246,7 @@ expect_status "sai mat khau hien tai → 400" 400 \
   "$(call POST /api/auth/change-password "$T2" "{\"currentPassword\":\"sai$STAMP\",\"newPassword\":\"Khac$STAMP\"}")"
 expect_json   "  thong diep" message "$WRONG_CURRENT_MSG"
 expect_json   "  gan vao o currentPassword" errors.currentPassword.0 "$WRONG_CURRENT_MSG"
-token_alive "token vua go sai" "$T2"
+token_must_change "token vua go sai" "$T2"
 expect_status "mat khau duoc cap van dang nhap duoc → 200" 200 "$(student_login "$RESET_PW")"
 
 section "Hoc sinh tu doi mat khau"
@@ -279,7 +306,12 @@ for ((round = 1; round <= RACE_ROUNDS_RESET; round++)); do
   expect_json   "  noi ro la tai khoan vua thay doi" message "$CHANGED_MSG"
   expect_status "vong $round: mat khau cu → 401" 401 "$(student_login "$CURRENT_PW")"
   expect_status "vong $round: mat khau vua cap → 200" 200 "$(student_login "$RACE_PW")"
-  CURRENT_PW="$RACE_PW"
+  # Mat khau vua cap lai mang MustChangePassword=true (Sec.5): doi ngay sang mat khau rieng, dung
+  # nhu mot hoc sinh that lam ngay khi nhan mat khau tam — vong dua ke tiep can mot token khong bi
+  # cong H3 han che (PUT /api/auth/me khong nam trong danh sach cho phep).
+  NEXT_PW="RaceNext${STAMP}${round}"
+  login_and_clear_must_change "$USERNAME" "$RACE_PW" "$NEXT_PW" > /dev/null
+  CURRENT_PW="$NEXT_PW"
 done
 
 # Hang tram PUT cung tai khoan bay song song thi chac chan co cap doc cung mot ban roi cung ghi. Khong
