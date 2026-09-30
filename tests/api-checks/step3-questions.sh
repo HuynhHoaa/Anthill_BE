@@ -7,9 +7,9 @@
 
 source "$(dirname "$0")/lib.sh"
 
-TEACHER=$(login "an.nv@anthill.edu.vn" "anthill123")
-ADMIN=$(login "huy.pq@anthill.edu.vn" "anthill123")
-STUDENT=$(login "lan.tt" "anthill123")
+TEACHER=$(login "an.nv@anthill.edu.vn" "123456")
+ADMIN=$(login "huy.pq@anthill.edu.vn" "123456")
+STUDENT=$(login "lan.tt" "123456")
 
 STAMP=$(date +%H%M%S)
 TOPIC="KT3$STAMP"

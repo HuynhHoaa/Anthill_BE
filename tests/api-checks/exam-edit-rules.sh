@@ -21,8 +21,8 @@
 
 source "$(dirname "$0")/lib.sh"
 
-ADMIN=$(login "huy.pq@anthill.edu.vn" "anthill123")
-TEACHER=$(login "an.nv@anthill.edu.vn" "anthill123")
+ADMIN=$(login "huy.pq@anthill.edu.vn" "123456")
+TEACHER=$(login "an.nv@anthill.edu.vn" "123456")
 
 STAMP=$(date +%H%M%S)
 GROUP_IDS=(); EXAM_IDS=(); STUDENT_IDS=(); MEMBERS=(); QUESTION_IDS=()
@@ -250,7 +250,7 @@ code=$(call POST /api/student-groups "$ADMIN" "{\"name\":\"Lop sua de $STAMP\"}"
 [[ "$code" != "200" ]] && fail_fast "tao lop: HTTP $code — $(body)"
 GID=$(json_field id); GROUP_IDS+=("$GID")
 for suffix in a b; do
-  code=$(call POST /api/students "$ADMIN" "{\"fullName\":\"HS sua de $suffix\",\"email\":\"sd$STAMP$suffix@kiemthu.vn\",\"username\":\"sd$STAMP$suffix\",\"code\":\"SD$STAMP$suffix\",\"password\":\"anthill123\",\"groupId\":$GID}")
+  code=$(call POST /api/students "$ADMIN" "{\"fullName\":\"HS sua de $suffix\",\"email\":\"sd$STAMP$suffix@kiemthu.vn\",\"username\":\"sd$STAMP$suffix\",\"code\":\"SD$STAMP$suffix\",\"password\":\"123456\",\"groupId\":$GID}")
   [[ "$code" != "200" ]] && fail_fast "tao hoc sinh $suffix: HTTP $code — $(body)"
   SID=$(json_field id); STUDENT_IDS+=("$SID"); MEMBERS+=("$GID/$SID")
 done
@@ -258,8 +258,8 @@ call POST "/api/student-groups/$GID/teachers" "$ADMIN" "{\"teacherIds\":[$TEACHE
 call POST "/api/student-groups/$GID/publish" "$ADMIN" > /dev/null
 # Tai khoan vua tao mang MustChangePassword=true (Sec.5) — doi ngay sang mat khau rieng truoc khi
 # dung token cho nghiep vu.
-TOK_A=$(login_and_clear_must_change "sd${STAMP}a" "anthill123" "SdA$STAMP")
-TOK_B=$(login_and_clear_must_change "sd${STAMP}b" "anthill123" "SdB$STAMP")
+TOK_A=$(login_and_clear_must_change "sd${STAMP}a" "123456" "SdA$STAMP")
+TOK_B=$(login_and_clear_must_change "sd${STAMP}b" "123456" "SdB$STAMP")
 
 # 6 De, 4 Trung binh, 2 Kho trong mot chu de rieng: du cho 4 cau 50/50/0 va 10 cau 60/30/10, khong du
 # cho 12 cau 60/30/10 (can 7 cau De).
@@ -456,7 +456,7 @@ else
   if [[ -z "$FOREIGN_ID" ]]; then
     expect_status "dung giao vien thu hai qua psql" ok "hong"
   else
-    FOREIGN=$(login "$FOREIGN_EMAIL" "anthill123")
+    FOREIGN=$(login "$FOREIGN_EMAIL" "123456")
     expect_status "giao vien khac nhan ban de → 404" 404 "$(call POST "/api/exams/$E1/duplicate" "$FOREIGN")"
     expect_status "giao vien khac sua de → 404"      404 "$(call PUT "/api/exams/$E1" "$FOREIGN" "$(exam_json)")"
     expect_status "giao vien khac doc de → 404"      404 "$(call GET "/api/exams/$E1" "$FOREIGN")"
@@ -473,7 +473,7 @@ else
   else
     new_exam title="De cua GV chua gan mon $STAMP" lifecycle=draft; E5=$NEW_EID
     sql "UPDATE \"Exams\" SET \"CreatedByUserId\" = $NOSUBJECT_ID WHERE \"Id\" = $E5;" > /dev/null
-    NOSUBJECT=$(login "$NOSUBJECT_EMAIL" "anthill123")
+    NOSUBJECT=$(login "$NOSUBJECT_EMAIL" "123456")
     expect_status "doc de cua chinh minh → 200 (chi doc thi khong can mon)" 200 "$(call GET "/api/exams/$E5" "$NOSUBJECT")"
     expect_status "nhan ban de cua chinh minh → 403" 403 "$(call POST "/api/exams/$E5/duplicate" "$NOSUBJECT")"
     expect_status "  loi noi ro 'chua duoc gan mon'" yes "$(body_says chua_gan_mon)"

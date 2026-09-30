@@ -12,8 +12,8 @@
 
 source "$(dirname "$0")/lib.sh"
 
-ADMIN=$(login "huy.pq@anthill.edu.vn" "anthill123")
-TEACHER=$(login "an.nv@anthill.edu.vn" "anthill123")
+ADMIN=$(login "huy.pq@anthill.edu.vn" "123456")
+TEACHER=$(login "an.nv@anthill.edu.vn" "123456")
 
 STAMP=$(date +%H%M%S)
 GROUP_IDS=(); EXAM_IDS=(); STUDENT_IDS=(); MEMBERS=()
@@ -95,7 +95,7 @@ build_class() {
   code=$(call POST /api/student-groups "$ADMIN" "{\"name\":\"$name\"}")
   [[ "$code" != "200" ]] && fail_fast "tao lop $name: HTTP $code — $(body)"
   BUILT_GID=$(json_field id); GROUP_IDS+=("$BUILT_GID")
-  code=$(call POST /api/students "$ADMIN" "{\"fullName\":\"HS $suffix\",\"email\":\"r$suffix@kiemthu.vn\",\"username\":\"r$suffix\",\"code\":\"R$suffix\",\"password\":\"anthill123\",\"groupId\":$BUILT_GID}")
+  code=$(call POST /api/students "$ADMIN" "{\"fullName\":\"HS $suffix\",\"email\":\"r$suffix@kiemthu.vn\",\"username\":\"r$suffix\",\"code\":\"R$suffix\",\"password\":\"123456\",\"groupId\":$BUILT_GID}")
   [[ "$code" != "200" ]] && fail_fast "tao hoc sinh $suffix: HTTP $code — $(body)"
   BUILT_SID=$(json_field id); STUDENT_IDS+=("$BUILT_SID"); MEMBERS+=("$BUILT_GID/$BUILT_SID")
   call POST "/api/student-groups/$BUILT_GID/teachers" "$ADMIN" "{\"teacherIds\":[$TEACHER_ID]}" > /dev/null
@@ -130,9 +130,9 @@ expect_json "  assignedCount = 3" assignedCount 3
 
 # Tai khoan vua tao mang MustChangePassword=true (Sec.5) — doi ngay sang mat khau rieng truoc khi
 # dung token cho nghiep vu, dung nhu mot hoc sinh that lam sau lan dang nhap dau tien.
-TOK_A=$(login_and_clear_must_change "r${STAMP}a" "anthill123" "Ra$STAMP")
-TOK_B=$(login_and_clear_must_change "r${STAMP}b" "anthill123" "Rb$STAMP")
-TOK_C=$(login_and_clear_must_change "r${STAMP}c" "anthill123" "Rc$STAMP")
+TOK_A=$(login_and_clear_must_change "r${STAMP}a" "123456" "Ra$STAMP")
+TOK_B=$(login_and_clear_must_change "r${STAMP}b" "123456" "Rb$STAMP")
+TOK_C=$(login_and_clear_must_change "r${STAMP}c" "123456" "Rc$STAMP")
 
 call GET /api/my/exams "$TOK_B" > /dev/null
 AID_B=$(my_assignment "$EID")

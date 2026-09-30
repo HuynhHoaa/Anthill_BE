@@ -11,9 +11,9 @@
 
 source "$(dirname "$0")/lib.sh"
 
-TEACHER=$(login "an.nv@anthill.edu.vn" "anthill123")
-ADMIN=$(login "huy.pq@anthill.edu.vn" "anthill123")
-STUDENT=$(login "lan.tt" "anthill123")
+TEACHER=$(login "an.nv@anthill.edu.vn" "123456")
+ADMIN=$(login "huy.pq@anthill.edu.vn" "123456")
+STUDENT=$(login "lan.tt" "123456")
 
 STAMP=$(date +%H%M%S)
 STUDENT_IDS=(); GROUP_IDS=()
@@ -42,7 +42,7 @@ expect_status "hoc sinh goi /students → 403" 403 "$(call GET /api/students "$S
 # Doc duoc, nhung chi trong pham vi lop minh day — ranh gioi do do teacher-student-scope.sh canh.
 expect_status "giao vien DOC duoc /students (lop minh day) → 200" 200 "$(call GET /api/students "$TEACHER")"
 expect_status "giao vien TAO tai khoan → 403" 403 \
-  "$(call POST /api/students "$TEACHER" '{"fullName":"X","email":"x@x.vn","username":"xx","code":"XX1","password":"anthill123"}')"
+  "$(call POST /api/students "$TEACHER" '{"fullName":"X","email":"x@x.vn","username":"xx","code":"XX1","password":"123456"}')"
 # DAO NGUOC so voi mo hinh cu: truoc day giao vien so huu lop con quan tri vien chi duoc doc.
 # Ly do doi nam o luoc do — User.GroupId la khoa ngoai don nen mot hoc sinh thuoc dung mot lop;
 # de giao vien so huu lop thi hai nguoi cung day mot em se gianh nhau em do.
@@ -59,7 +59,7 @@ GROUP_IDS+=("$GROUP_ID")
 NEW_ID=""
 new_student() {
   local suffix="$1" group="$2" payload
-  payload="{\"fullName\":\"Nguyen Thi Kiem Thu $suffix\",\"email\":\"kt$suffix@kiemthu.vn\",\"username\":\"kt$suffix\",\"code\":\"KT$suffix\",\"password\":\"anthill123\""
+  payload="{\"fullName\":\"Nguyen Thi Kiem Thu $suffix\",\"email\":\"kt$suffix@kiemthu.vn\",\"username\":\"kt$suffix\",\"code\":\"KT$suffix\",\"password\":\"123456\""
   [[ -n "$group" ]] && payload="$payload,\"groupId\":$group"
   payload="$payload}"
   local c; c=$(call POST /api/students "$ADMIN" "$payload")
@@ -74,7 +74,7 @@ printf '  nhom %s · 2 hoc sinh\n' "$GROUP_ID"
 section "Trung dinh danh → 409, khong phai 400"
 dup() {
   call POST /api/students "$ADMIN" \
-    "{\"fullName\":\"Trung\",\"email\":\"$1\",\"username\":\"$2\",\"code\":\"$3\",\"password\":\"anthill123\"}"
+    "{\"fullName\":\"Trung\",\"email\":\"$1\",\"username\":\"$2\",\"code\":\"$3\",\"password\":\"123456\"}"
 }
 expect_status "trung email → 409"    409 "$(dup "kt${STAMP}a@kiemthu.vn" "khac1$STAMP" "KHAC1$STAMP")"
 expect_status "trung username → 409" 409 "$(dup "khac1$STAMP@kiemthu.vn" "kt${STAMP}a" "KHAC2$STAMP")"
@@ -122,7 +122,7 @@ section "Chua phan nhom — groupId 0 doi ung NULL"
 expect_status "loc groupId=0 → 200" 200 "$(call GET "/api/students?groupId=0" "$ADMIN")"
 
 section "Khoa tai khoan lam token cu chet ngay"
-VICTIM_TOKEN=$(login "kt${STAMP}b" "anthill123")
+VICTIM_TOKEN=$(login "kt${STAMP}b" "123456")
 expect_status "token vua cap dung duoc → 200" 200 "$(call GET /api/auth/me "$VICTIM_TOKEN")"
 expect_status "khoa tai khoan → 200" 200 "$(call PATCH "/api/students/$S2/status" "$ADMIN" '{"status":"locked"}')"
 # 403 chu khong 401, va day la phan biet co chu dich:
@@ -133,17 +133,17 @@ expect_status "khoa tai khoan → 200" 200 "$(call PATCH "/api/students/$S2/stat
 expect_status "  token cu chet ngay → 403 kem thong diep ro rang" 403 "$(call GET /api/auth/me "$VICTIM_TOKEN")"
 expect_json   "    noi ro la bi khoa" message "Tài khoản đã bị khoá, liên hệ quản trị viên."
 expect_status "  dang nhap lai → 403" 403 \
-  "$(call POST /api/auth/login "" "{\"username\":\"kt${STAMP}b\",\"password\":\"anthill123\"}")"
+  "$(call POST /api/auth/login "" "{\"username\":\"kt${STAMP}b\",\"password\":\"123456\"}")"
 expect_status "mo khoa lai → 200" 200 "$(call PATCH "/api/students/$S2/status" "$ADMIN" '{"status":"active"}')"
 
 section "Doi mat khau xoay SecurityStamp trong khi tai khoan van active"
-LIVE_TOKEN=$(login "kt${STAMP}a" "anthill123")
+LIVE_TOKEN=$(login "kt${STAMP}a" "123456")
 expect_status "token dung duoc → 200" 200 "$(call GET /api/auth/me "$LIVE_TOKEN")"
 expect_status "reset mat khau → 200" 200 "$(call POST "/api/students/$S1/reset-password" "$ADMIN")"
 NEW_PASSWORD=$(json_field password)
 expect_status "  token cu chet → 401" 401 "$(call GET /api/auth/me "$LIVE_TOKEN")"
 expect_status "  mat khau cu → 401" 401 \
-  "$(call POST /api/auth/login "" "{\"username\":\"kt${STAMP}a\",\"password\":\"anthill123\"}")"
+  "$(call POST /api/auth/login "" "{\"username\":\"kt${STAMP}a\",\"password\":\"123456\"}")"
 expect_status "  mat khau moi dung duoc → 200" 200 \
   "$(call POST /api/auth/login "" "{\"username\":\"kt${STAMP}a\",\"password\":\"$NEW_PASSWORD\"}")"
 
