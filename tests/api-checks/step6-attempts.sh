@@ -9,8 +9,8 @@
 
 source "$(dirname "$0")/lib.sh"
 
-TEACHER=$(login "an.nv@anthill.edu.vn" "anthill123")
-ADMIN=$(login "huy.pq@anthill.edu.vn" "anthill123")
+TEACHER=$(login "an.nv@anthill.edu.vn" "123456")
+ADMIN=$(login "huy.pq@anthill.edu.vn" "123456")
 
 STAMP=$(date +%H%M%S)
 # GROUP_IDS chứ không phải GROUPS: bash có sẵn một mảng dựng sẵn tên GROUPS mang numeric group id
@@ -170,7 +170,7 @@ NEW_STUDENT_ID=""
 new_student() {
   local suffix="$1" payload
   payload="{\"fullName\":\"Hoc sinh $suffix\",\"email\":\"hs$suffix@kiemthu.vn\",\"username\":\"hs$suffix\""
-  payload="$payload,\"code\":\"KT$suffix\",\"password\":\"anthill123\",\"groupId\":$GROUP_ID}"
+  payload="$payload,\"code\":\"KT$suffix\",\"password\":\"123456\",\"groupId\":$GROUP_ID}"
   local c; c=$(call POST /api/students "$ADMIN" "$payload")
   [[ "$c" != "200" ]] && fail_fast "tao hoc sinh $suffix: HTTP $c — $(body)"
   NEW_STUDENT_ID=$(json_field id)
@@ -192,8 +192,8 @@ done
 
 # Tai khoan vua tao mang MustChangePassword=true (Sec.5) — doi ngay sang mat khau rieng truoc khi
 # dung token cho nghiep vu, dung nhu mot hoc sinh that lam sau lan dang nhap dau tien.
-STUDENT_A=$(login_and_clear_must_change "hs${STAMP}a" "anthill123" "Kt6a$STAMP")
-STUDENT_B=$(login_and_clear_must_change "hs${STAMP}b" "anthill123" "Kt6b$STAMP")
+STUDENT_A=$(login_and_clear_must_change "hs${STAMP}a" "123456" "Kt6a$STAMP")
+STUDENT_B=$(login_and_clear_must_change "hs${STAMP}b" "123456" "Kt6b$STAMP")
 
 printf '  nhóm %s · 2 học sinh · %d câu hỏi\n' "$GROUP_ID" "${#QUESTIONS[@]}"
 

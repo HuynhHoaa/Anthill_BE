@@ -12,8 +12,8 @@
 
 source "$(dirname "$0")/lib.sh"
 
-ADMIN=$(login "huy.pq@anthill.edu.vn" "anthill123")
-TEACHER=$(login "an.nv@anthill.edu.vn" "anthill123")
+ADMIN=$(login "huy.pq@anthill.edu.vn" "123456")
+TEACHER=$(login "an.nv@anthill.edu.vn" "123456")
 
 STAMP=$(date +%H%M%S)
 GROUP_IDS=(); EXAM_IDS=(); STUDENT_IDS=()
@@ -40,7 +40,7 @@ expect_status "tao lop → 200" 200 "$code"
 
 for i in 0 1 2; do
   c=$(call POST /api/students "$ADMIN" \
-    "{\"fullName\":\"Hoc sinh E2E $i\",\"email\":\"e2e$STAMP$i@kiemthu.vn\",\"username\":\"e2e$STAMP$i\",\"code\":\"E2E$STAMP$i\",\"password\":\"anthill123\",\"groupId\":$GID}")
+    "{\"fullName\":\"Hoc sinh E2E $i\",\"email\":\"e2e$STAMP$i@kiemthu.vn\",\"username\":\"e2e$STAMP$i\",\"code\":\"E2E$STAMP$i\",\"password\":\"123456\",\"groupId\":$GID}")
   [[ "$c" != "200" ]] && fail_fast "tao hoc sinh $i: HTTP $c — $(body)"
   STUDENT_IDS+=("$(json_field id)")
 done
@@ -78,7 +78,7 @@ section "5. TUNG em trong lop deu thay bai"
 STUDENT0_PW=""
 for i in 0 1 2; do
   NEW_PW="E2e${STAMP}${i}"
-  TOK=$(login_and_clear_must_change "e2e$STAMP$i" "anthill123" "$NEW_PW")
+  TOK=$(login_and_clear_must_change "e2e$STAMP$i" "123456" "$NEW_PW")
   [[ "$i" == "0" ]] && STUDENT0_PW="$NEW_PW"
   expect_status "hoc sinh $i doc duoc danh sach bai → 200" 200 "$(call GET /api/my/exams "$TOK")"
   expect_status "  thay de vua duoc giao" true \
@@ -121,7 +121,7 @@ expect_status "  co it nhat mot luot da nop" true \
   "$(body | python -c "import json,sys;print(str(json.load(sys.stdin)['total'] >= 1).lower())")"
 
 section "8. Hoc sinh NGOAI lop khong thay gi"
-OUTSIDER=$(login "lan.tt" "anthill123")
+OUTSIDER=$(login "lan.tt" "123456")
 expect_status "danh sach cua em ngoai lop → 200" 200 "$(call GET /api/my/exams "$OUTSIDER")"
 expect_status "  khong chua de nay" true \
   "$(body | python -c "import json,sys;print(str(all(x['examId'] != $EID for x in json.load(sys.stdin))).lower())")"

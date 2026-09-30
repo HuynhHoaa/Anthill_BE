@@ -184,7 +184,7 @@ origin của Vite dev server (cổng 5173) và `vite preview` (cổng 4173), c�
 ## Tài khoản demo
 
 `DbSeeder` nạp khi chạy ở Development, chạy lại bao nhiêu lần cũng không tạo trùng. Cả ba dùng chung
-mật khẩu `anthill123`; ô đăng nhập nhận email, username hoặc mã học sinh.
+mật khẩu `123456`; ô đăng nhập nhận email, username hoặc mã học sinh.
 
 | Vai trò | Đăng nhập bằng | Họ tên |
 |---|---|---|

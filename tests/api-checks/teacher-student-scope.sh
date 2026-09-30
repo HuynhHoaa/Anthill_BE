@@ -14,8 +14,8 @@
 
 source "$(dirname "$0")/lib.sh"
 
-ADMIN=$(login "huy.pq@anthill.edu.vn" "anthill123")
-TEACHER=$(login "an.nv@anthill.edu.vn" "anthill123")
+ADMIN=$(login "huy.pq@anthill.edu.vn" "123456")
+TEACHER=$(login "an.nv@anthill.edu.vn" "123456")
 
 # Co ca ngay trong nam: tai khoan cua lan chay truoc con nam lai (khong xoa cung duoc).
 STAMP=$(date +%j%H%M%S)
@@ -57,7 +57,7 @@ contains_id() { python "$HELPERS" contains_id "$(to_native_path "$BODY_FILE")" "
 
 new_student() {
   local suffix="$1" group="$2" payload code
-  payload="{\"fullName\":\"HS pham vi $suffix\",\"email\":\"sc$suffix@kiemthu.vn\",\"username\":\"sc$suffix\",\"code\":\"SC$suffix\",\"password\":\"anthill123\""
+  payload="{\"fullName\":\"HS pham vi $suffix\",\"email\":\"sc$suffix@kiemthu.vn\",\"username\":\"sc$suffix\",\"code\":\"SC$suffix\",\"password\":\"123456\""
   [[ -n "$group" ]] && payload="$payload,\"groupId\":$group"
   payload="$payload}"
   code=$(call POST /api/students "$ADMIN" "$payload")

@@ -8,8 +8,8 @@
 
 source "$(dirname "$0")/lib.sh"
 
-TEACHER=$(login "an.nv@anthill.edu.vn" "anthill123")
-ADMIN=$(login "huy.pq@anthill.edu.vn" "anthill123")
+TEACHER=$(login "an.nv@anthill.edu.vn" "123456")
+ADMIN=$(login "huy.pq@anthill.edu.vn" "123456")
 
 STAMP=$(date +%H%M%S)
 QUESTIONS=(); STUDENTS=(); EXAMS=(); GROUP_IDS=()
@@ -57,7 +57,7 @@ GROUP_IDS+=("$GROUP_ID")
 NEW_STUDENT_ID=""
 new_student() {
   local c; c=$(call POST /api/students "$ADMIN" \
-    "{\"fullName\":\"Hoc sinh $1\",\"email\":\"n$1@kiemthu.vn\",\"username\":\"n$1\",\"code\":\"N$1\",\"password\":\"anthill123\",\"groupId\":$GROUP_ID}")
+    "{\"fullName\":\"Hoc sinh $1\",\"email\":\"n$1@kiemthu.vn\",\"username\":\"n$1\",\"code\":\"N$1\",\"password\":\"123456\",\"groupId\":$GROUP_ID}")
   [[ "$c" != "200" ]] && fail_fast "tao hoc sinh: HTTP $c — $(body)"
   NEW_STUDENT_ID=$(json_field id); STUDENTS+=("$NEW_STUDENT_ID")
 }
@@ -65,8 +65,8 @@ new_student "${STAMP}a"; S_A=$NEW_STUDENT_ID
 new_student "${STAMP}b"; S_B=$NEW_STUDENT_ID
 # Tai khoan vua tao mang MustChangePassword=true (Sec.5) — doi ngay sang mat khau rieng truoc khi
 # dung token cho nghiep vu, dung nhu mot hoc sinh that lam sau lan dang nhap dau tien.
-STUDENT_A=$(login_and_clear_must_change "n${STAMP}a" "anthill123" "N8a$STAMP")
-STUDENT_B=$(login_and_clear_must_change "n${STAMP}b" "anthill123" "N8b$STAMP")
+STUDENT_A=$(login_and_clear_must_change "n${STAMP}a" "123456" "N8a$STAMP")
+STUDENT_B=$(login_and_clear_must_change "n${STAMP}b" "123456" "N8b$STAMP")
 
 for pair in easy:1 easy:2 easy:3 easy:4 medium:1 medium:2 medium:3 hard:1 hard:2; do
   d="${pair%%:*}"; i="${pair##*:}"

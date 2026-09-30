@@ -14,8 +14,8 @@
 
 source "$(dirname "$0")/lib.sh"
 
-ADMIN=$(login "huy.pq@anthill.edu.vn" "anthill123")
-TEACHER=$(login "an.nv@anthill.edu.vn" "anthill123")
+ADMIN=$(login "huy.pq@anthill.edu.vn" "123456")
+TEACHER=$(login "an.nv@anthill.edu.vn" "123456")
 
 # Co ca ngay trong nam: tai khoan cua lan chay truoc con nam lai (khong xoa cung duoc), nen chi gio
 # phut giay thi chay lai dung gio do vao hom khac se dung ma.
@@ -98,7 +98,7 @@ GID=$(json_field id)
 
 new_student() {
   local code
-  code=$(call POST /api/students "$ADMIN" "{\"fullName\":\"HS rao $1\",\"email\":\"g$1@kiemthu.vn\",\"username\":\"g$1\",\"code\":\"G$1\",\"password\":\"anthill123\"}")
+  code=$(call POST /api/students "$ADMIN" "{\"fullName\":\"HS rao $1\",\"email\":\"g$1@kiemthu.vn\",\"username\":\"g$1\",\"code\":\"G$1\",\"password\":\"123456\"}")
   [[ "$code" != "200" ]] && fail_fast "tao hoc sinh $1: HTTP $code — $(body)"
   NEW_ID=$(json_field id)
 }
@@ -112,7 +112,7 @@ expect_status "PATCH status=deleted → 400" 400 \
 expect_status "PATCH status=pendingDeletion → 400" 400 \
   "$(call PATCH "/api/students/$OTHER/status" "$ADMIN" '{"status":"pendingDeletion"}')"
 expect_status "tao hoc sinh voi status=deleted → 400" 400 \
-  "$(call POST /api/students "$ADMIN" "{\"fullName\":\"X\",\"email\":\"x$STAMP@kiemthu.vn\",\"username\":\"x$STAMP\",\"code\":\"X$STAMP\",\"password\":\"anthill123\",\"status\":\"deleted\"}")"
+  "$(call POST /api/students "$ADMIN" "{\"fullName\":\"X\",\"email\":\"x$STAMP@kiemthu.vn\",\"username\":\"x$STAMP\",\"code\":\"X$STAMP\",\"password\":\"123456\",\"status\":\"deleted\"}")"
 expect_status "khoa van dung binh thuong → 200" 200 \
   "$(call PATCH "/api/students/$OTHER/status" "$ADMIN" '{"status":"locked"}')"
 expect_json   "  status = locked" status locked
@@ -211,7 +211,7 @@ section "Giao vien thay trang thai tai khoan tren bang theo doi va bang ket qua"
 # Tai khoan vua tao mang MustChangePassword=true (Sec.5): mat khau quan tri vien go luc tao chi
 # dung duoc de doi mat khau, khong lam bai duoc. Doi ngay sang mat khau rieng truoc khi dung token
 # nay cho nghiep vu — dung nhu mot hoc sinh that se lam sau khi bi bat doi mat khau lan dau.
-STAYER_TOKEN=$(login_and_clear_must_change "g${STAMP}d" "anthill123" "StayerPw$STAMP")
+STAYER_TOKEN=$(login_and_clear_must_change "g${STAMP}d" "123456" "StayerPw$STAMP")
 call GET /api/my/exams "$STAYER_TOKEN" > /dev/null
 AID=$(body | python -c "import json,sys;print(next(x['assignmentId'] for x in json.load(sys.stdin) if x['examId'] == $EID))")
 expect_status "em con hoc bat dau lam bai → 200" 200 \

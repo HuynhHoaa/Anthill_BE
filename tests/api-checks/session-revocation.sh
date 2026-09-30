@@ -27,8 +27,8 @@
 
 source "$(dirname "$0")/lib.sh"
 
-ADMIN=$(login "huy.pq@anthill.edu.vn" "anthill123")
-TEACHER=$(login "an.nv@anthill.edu.vn" "anthill123")
+ADMIN=$(login "huy.pq@anthill.edu.vn" "123456")
+TEACHER=$(login "an.nv@anthill.edu.vn" "123456")
 
 # Co ca ngay trong nam: hoc sinh cua lan chay truoc con nam lai (chi khoa, khong xoa duoc).
 STAMP=$(date +%j%H%M%S)
@@ -188,7 +188,7 @@ reset_student_password() {
 section "Dung du lieu nen"
 GID=$(new_class "$ADMIN" "$TEACHER" "Phien$STAMP") || fail_fast "tao lop"
 code=$(call POST /api/students "$ADMIN" \
-  "{\"fullName\":\"HS phien $STAMP\",\"email\":\"$USERNAME@kiemthu.vn\",\"username\":\"$USERNAME\",\"code\":\"SR$STAMP\",\"password\":\"anthill123\"}")
+  "{\"fullName\":\"HS phien $STAMP\",\"email\":\"$USERNAME@kiemthu.vn\",\"username\":\"$USERNAME\",\"code\":\"SR$STAMP\",\"password\":\"123456\"}")
 [[ "$code" != "200" ]] && fail_fast "tao hoc sinh: HTTP $code — $(body)"
 SID=$(json_field id)
 code=$(call POST "/api/student-groups/$GID/students" "$ADMIN" "{\"studentIds\":[$SID]}")
@@ -196,16 +196,16 @@ code=$(call POST "/api/student-groups/$GID/students" "$ADMIN" "{\"studentIds\":[
 printf '  lop %s · hoc sinh %s (%s)\n' "$GID" "$SID" "$USERNAME"
 
 # Tai khoan vua tao mang MustChangePassword=true (Sec.5). File nay kiem thu hoi phien (khoa/mo khoa/
-# cap lai mat khau/tu xoa) qua nhieu vong dang nhap lai VOI DUNG MOT MAT KHAU "anthill123" xuyen suot
+# cap lai mat khau/tu xoa) qua nhieu vong dang nhap lai VOI DUNG MOT MAT KHAU "123456" xuyen suot
 # tu day toi luc quan tri vien cap lai mat khau — doi qua mat khau tam roi doi NGAY VE lai chinh no de
-# xoa co MustChangePassword ma khong doi gia tri mat khau: moi noi ben duoi con dung "anthill123" van
+# xoa co MustChangePassword ma khong doi gia tri mat khau: moi noi ben duoi con dung "123456" van
 # dung nguyen. Khoa/mo khoa chi xoay Status va SecurityStamp, khong dung toi MustChangePassword, nen
 # co nay o lai false xuyen suot ca vong khoa/mo khoa — token_alive ben duoi dung duoc nhu truoc H3.
-login_and_clear_must_change "$USERNAME" "anthill123" "TempClear$STAMP" > /dev/null
-login_and_clear_must_change "$USERNAME" "TempClear$STAMP" "anthill123" > /dev/null
+login_and_clear_must_change "$USERNAME" "123456" "TempClear$STAMP" > /dev/null
+login_and_clear_must_change "$USERNAME" "TempClear$STAMP" "123456" > /dev/null
 
 section "Token vua cap dung duoc ca ngoai /api/auth"
-T0=$(login "$USERNAME" "anthill123")
+T0=$(login "$USERNAME" "123456")
 token_alive "token moi" "$T0"
 expect_status "khong token: bai duoc giao → 401" 401 "$(call GET /api/my/exams "")"
 expect_json   "  van la cau het han chung" message "$EXPIRED_MSG"
@@ -218,21 +218,21 @@ expect_status "token cu: mo ket noi hub → 401" 401 \
   "$(call GET "/hubs/notifications?id=khongco&access_token=$T0" "")"
 expect_status "token cu: /api/auth/me van tra 403 kem ly do" 403 "$(call GET /api/auth/me "$T0")"
 expect_json   "  noi ro la bi khoa" message "$LOCKED_MSG"
-expect_status "dang nhap lai → 403" 403 "$(student_login anthill123)"
+expect_status "dang nhap lai → 403" 403 "$(student_login 123456)"
 staff_unaffected
 
 section "Mo khoa: token cu van chet, dang nhap moi thi dung duoc"
 expect_status "mo khoa → 200" 200 "$(call PATCH "/api/students/$SID/status" "$ADMIN" '{"status":"active"}')"
 token_dead "token truoc khi khoa" "$T0" "$CHANGED_MSG"
 expect_status "token truoc khi khoa: /api/auth/me → 401" 401 "$(call GET /api/auth/me "$T0")"
-T1=$(login "$USERNAME" "anthill123")
+T1=$(login "$USERNAME" "123456")
 token_alive "dang nhap sau mo khoa" "$T1"
 
 section "Quan tri vien cap lai mat khau"
 expect_status "cap lai mat khau → 200" 200 "$(call POST "/api/students/$SID/reset-password" "$ADMIN")"
 RESET_PW=$(json_field password)
 token_dead "token cu" "$T1" "$CHANGED_MSG"
-expect_status "mat khau cu → 401" 401 "$(student_login anthill123)"
+expect_status "mat khau cu → 401" 401 "$(student_login 123456)"
 T2=$(login "$USERNAME" "$RESET_PW")
 # Mat khau vua cap tu quan tri vien mang MustChangePassword=true (Sec.5): token con song (khong
 # 401) nhung bi cong H3 han che, khong phai "song binh thuong" nhu token_alive gia dinh.

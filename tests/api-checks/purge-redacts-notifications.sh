@@ -42,8 +42,8 @@ rm -f "$_STATE_PROBE"
 
 fail_fast() { echo "  Dựng dữ liệu nền thất bại: $1" >&2; exit 1; }
 
-ADMIN=$(login "huy.pq@anthill.edu.vn" "anthill123")
-TEACHER=$(login "an.nv@anthill.edu.vn" "anthill123")
+ADMIN=$(login "huy.pq@anthill.edu.vn" "123456")
+TEACHER=$(login "an.nv@anthill.edu.vn" "123456")
 
 # ── psql ────────────────────────────────────────────────────────────────────────────────────────
 PSQL=$(command -v psql 2>/dev/null || ls /c/Program\ Files/PostgreSQL/*/bin/psql.exe 2>/dev/null | tail -n 1)
@@ -140,10 +140,10 @@ if [[ "$MODE" == "setup" ]]; then
     || fail_fast "khong dung duoc lop nen"
 
   c=$(call POST /api/students "$ADMIN" \
-    "{\"fullName\":\"$FULL_NAME\",\"email\":\"px$STAMP@kiemthu.vn\",\"username\":\"px$STAMP\",\"code\":\"PX$STAMP\",\"password\":\"anthill123\",\"groupId\":$GID}")
+    "{\"fullName\":\"$FULL_NAME\",\"email\":\"px$STAMP@kiemthu.vn\",\"username\":\"px$STAMP\",\"code\":\"PX$STAMP\",\"password\":\"123456\",\"groupId\":$GID}")
   [[ "$c" != "200" ]] && fail_fast "tao hoc sinh: HTTP $c — $(body)"
   SID=$(json_field id)
-  STUDENT=$(login "px$STAMP" "anthill123")
+  STUDENT=$(login "px$STAMP" "123456")
   printf '  học sinh %s (%s) trong lớp %s\n' "$SID" "$FULL_NAME" "$GID"
 
   c=$(call POST /api/exams "$TEACHER" \

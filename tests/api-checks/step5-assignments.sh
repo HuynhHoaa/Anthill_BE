@@ -7,9 +7,9 @@
 
 source "$(dirname "$0")/lib.sh"
 
-TEACHER=$(login "an.nv@anthill.edu.vn" "anthill123")
-ADMIN=$(login "huy.pq@anthill.edu.vn" "anthill123")
-STUDENT=$(login "lan.tt" "anthill123")
+TEACHER=$(login "an.nv@anthill.edu.vn" "123456")
+ADMIN=$(login "huy.pq@anthill.edu.vn" "123456")
+STUDENT=$(login "lan.tt" "123456")
 
 STAMP=$(date +%H%M%S)
 # GROUP_IDS chứ không phải GROUPS: bash có sẵn một mảng dựng sẵn tên GROUPS mang numeric group
@@ -68,7 +68,7 @@ GROUP_IDS+=("$GROUP_ID")
 NEW_STUDENT_ID=""
 new_student() {
   local suffix="$1" group="$2" payload
-  payload="{\"fullName\":\"Hoc sinh $suffix\",\"email\":\"hs$suffix@kiemthu.vn\",\"username\":\"hs$suffix\",\"code\":\"KT$suffix\",\"password\":\"anthill123\""
+  payload="{\"fullName\":\"Hoc sinh $suffix\",\"email\":\"hs$suffix@kiemthu.vn\",\"username\":\"hs$suffix\",\"code\":\"KT$suffix\",\"password\":\"123456\""
   [[ -n "$group" ]] && payload="$payload,\"groupId\":$group"
   payload="$payload}"
   local c; c=$(call POST /api/students "$ADMIN" "$payload")
