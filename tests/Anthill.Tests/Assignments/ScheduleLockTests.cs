@@ -59,20 +59,36 @@ public class ScheduleLockTests
         AssignmentSchedule.IsScheduleLocked(Open, Close, Close.AddSeconds(1)).Should().BeFalse();
     }
 
+    /// <summary>Cùng một khoảnh khắc ghi dưới giờ máy (Kind = Local) vẫn phải cho cùng kết quả.</summary>
     [Fact]
-    public void Gio_o_mui_khac_van_so_theo_cung_mot_khoanh_khac()
+    public void Gio_ghi_duoi_gio_may_van_so_theo_cung_mot_khoanh_khac()
     {
-        var openLocal = new DateTime(2026, 10, 10, 15, 0, 0, DateTimeKind.Unspecified);
-        var openAsUtc = DateTime.SpecifyKind(openLocal.AddHours(-7), DateTimeKind.Utc);
+        var openLocal = Open.ToLocalTime();
+        var closeLocal = Close.ToLocalTime();
 
-        AssignmentSchedule.IsScheduleLocked(openAsUtc, openAsUtc.AddHours(2), openAsUtc.AddMinutes(-60))
+        AssignmentSchedule.IsScheduleLocked(openLocal, closeLocal, Open.AddMinutes(-60).ToLocalTime())
+            .Should().BeTrue();
+        AssignmentSchedule.IsScheduleLocked(openLocal, closeLocal, Open.AddMinutes(-120).ToLocalTime())
+            .Should().BeFalse();
+        AssignmentSchedule.IsScheduleLocked(openLocal, closeLocal, Close.AddSeconds(1).ToLocalTime())
+            .Should().BeFalse();
+    }
+
+    /// <summary>
+    /// Đề đã giao mà chưa ai làm vẫn đưa về nháp được, nên nháp không được miễn khoá: không thì đưa về nháp,
+    /// dời lịch, xuất bản lại là lách được.
+    /// </summary>
+    [Fact]
+    public void De_nhap_ma_con_luot_giao_van_khoa()
+    {
+        AssignmentSchedule.IsExamScheduleLocked(BuildExam(isDraft: true), assignedCount: 5, Open.AddMinutes(10))
             .Should().BeTrue();
     }
 
     [Fact]
-    public void De_nhap_khong_bao_gio_bi_khoa()
+    public void De_nhap_chua_tung_giao_thi_khong_khoa()
     {
-        AssignmentSchedule.IsExamScheduleLocked(BuildExam(isDraft: true), assignedCount: 5, Open.AddMinutes(10))
+        AssignmentSchedule.IsExamScheduleLocked(BuildExam(isDraft: true), assignedCount: 0, Open.AddMinutes(10))
             .Should().BeFalse();
     }
 
@@ -119,6 +135,14 @@ public class ScheduleLockTests
     }
 
     [Fact]
+    public void Cung_cap_gio_ghi_duoi_gio_may_khong_phai_la_doi_gio()
+    {
+        var assignment = new ExamAssignment { OpenAt = Open, CloseAt = Close };
+
+        AssignmentSchedule.WindowWouldChange(assignment, Open.ToLocalTime(), Close.ToLocalTime()).Should().BeFalse();
+    }
+
+    [Fact]
     public void Ban_ghi_theo_lich_de_gui_cap_rong_thi_khong_doi_con_gui_gio_thi_doi()
     {
         var assignment = new ExamAssignment { OpenAt = null, CloseAt = null };
@@ -144,7 +168,59 @@ public class ScheduleLockTests
         var before = ScheduleLockMessage.For(ScheduleLockMessage.ExamSubject, Open, Open.AddMinutes(-30));
         var during = ScheduleLockMessage.For(ScheduleLockMessage.ClassSubject("12A1"), Open, Open.AddMinutes(5));
 
-        before.Should().Be("Đề này sắp mở trong chưa đầy 2 giờ nữa nên không đổi giờ được.");
+        before.Should().Be("Lịch chung của đề còn chưa đầy 2 giờ nữa là mở nên không đổi giờ được.");
         during.Should().Be("Bài của lớp 12A1 đang mở nên không đổi giờ được.");
+    }
+
+    [Fact]
+    public void Ten_lop_da_co_chu_Lop_thi_khong_lap_lai()
+    {
+        ScheduleLockMessage.ClassSubject("Lớp 10A2").Should().Be("Bài của Lớp 10A2");
+        ScheduleLockMessage.ClassSubject("12A1").Should().Be("Bài của lớp 12A1");
+    }
+
+    [Fact]
+    public void Co_khoa_tren_dong_giao_bai_theo_gio_that_cua_em()
+    {
+        var exam = BuildExam();
+        var followsExam = new ExamAssignment { ExamId = 1, StudentId = 3, Exam = exam };
+        var ownWindow = new ExamAssignment
+        {
+            ExamId = 1,
+            StudentId = 4,
+            Exam = exam,
+            OpenAt = Open.AddDays(5),
+            CloseAt = Open.AddDays(5).AddHours(2)
+        };
+        var now = Open.AddMinutes(-30);
+
+        followsExam.ToDto(now).ScheduleLocked.Should().BeTrue();
+        ownWindow.ToDto(now).ScheduleLocked.Should().BeFalse();
+    }
+
+    [Fact]
+    public void Co_khoa_tren_de_theo_so_luot_giao_va_gio_mo_cua_de()
+    {
+        var exam = BuildExam();
+        var now = Open.AddMinutes(-30);
+
+        exam.ToDto(now, assignedCount: 0, submittedCount: 0, startedCount: 0).ScheduleLocked.Should().BeFalse();
+        exam.ToDto(now, assignedCount: 3, submittedCount: 0, startedCount: 0).ScheduleLocked.Should().BeTrue();
+        exam.ToDto(Close.AddMinutes(1), assignedCount: 3, submittedCount: 3, startedCount: 3)
+            .ScheduleLocked.Should().BeFalse();
+    }
+
+    [Fact]
+    public void Co_khoa_tren_tung_khung_gio_cua_lop()
+    {
+        var exam = BuildExam();
+        var assigned = Open.AddDays(-1);
+        var farWindow = new AssignmentWindowRow(1, 1, "12A1", Open.AddDays(5), Open.AddDays(5).AddHours(2), false, 20, assigned);
+        var nearWindow = new AssignmentWindowRow(1, 2, "12A2", Open.AddMinutes(20), Open.AddHours(2), false, 20, assigned);
+
+        var windows = AssignmentWindowSummary.Build(exam, [farWindow, nearWindow], asOfUtc: Open);
+
+        windows.Single(window => window.GroupName == "12A1").ScheduleLocked.Should().BeFalse();
+        windows.Single(window => window.GroupName == "12A2").ScheduleLocked.Should().BeTrue();
     }
 }

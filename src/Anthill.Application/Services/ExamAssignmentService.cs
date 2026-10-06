@@ -531,8 +531,7 @@ public sealed class ExamAssignmentService : IExamAssignmentService
         var now = DateTime.UtcNow;
 
         // Chỉ chặn khi lần này thật sự đổi giờ, để gửi lại đúng khung cũ không bị coi là dời lịch.
-        if (!exam.IsDraft
-            && AssignmentSchedule.WindowWouldChange(assignment, request.OpenAt, request.CloseAt))
+        if (AssignmentSchedule.WindowWouldChange(assignment, request.OpenAt, request.CloseAt))
         {
             var (currentOpenAt, currentCloseAt) = AssignmentSchedule.Resolve(assignment, exam);
             if (AssignmentSchedule.IsScheduleLocked(currentOpenAt, currentCloseAt, now))

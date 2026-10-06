@@ -35,8 +35,9 @@ public interface IExamService
     /// <remarks>
     /// Chưa em nào bắt đầu làm: sửa được mọi trường, và nếu cấu hình đổi thứ bộ sinh đề đọc thì bản đề
     /// của mọi lượt giao hiện có được sinh lại trong cùng transaction — ngân hàng không đủ câu thì không
-    /// ghi gì. Đã có em bắt đầu: đổi cấu hình đề trả <c>Conflict</c>; tên, mô tả, lịch và cờ hiện điểm
-    /// vẫn sửa được.
+    /// ghi gì. Đã có em bắt đầu: đổi cấu hình đề trả <c>Conflict</c>; tên, mô tả và cờ hiện điểm vẫn sửa
+    /// được. Lịch có luật riêng: đề đã giao thì không đổi được từ lúc còn dưới 120 phút nữa là mở cho tới
+    /// hết giờ đóng (<c>Conflict</c>), gửi lại đúng lịch cũ thì không tính là đổi.
     /// </remarks>
     Task<Result<ExamDto>> UpdateAsync(
         int id,
@@ -44,6 +45,7 @@ public interface IExamService
         CancellationToken cancellationToken = default);
 
     /// <summary>Chỉ dời lịch mở/đóng — hẹp và an toàn hơn <see cref="UpdateAsync"/>.</summary>
+    /// <remarks>Trả <c>Conflict</c> khi lịch đang khoá, như <see cref="UpdateAsync"/>.</remarks>
     Task<Result<ExamDto>> UpdateScheduleAsync(
         int id,
         UpdateScheduleRequest request,

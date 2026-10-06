@@ -108,7 +108,11 @@ public sealed class ExamsController : ApiControllerBase
     /// <para>
     /// Chưa em nào bắt đầu làm thì sửa được mọi thứ, và bản đề đã sinh cho các lượt giao được sinh lại
     /// theo cấu hình mới. Đã có em bắt đầu thì đổi cấu hình đề (số câu, tỷ lệ, chủ đề, điểm, thời lượng,
-    /// tuỳ chọn trộn) hay đưa đề về nháp trả <b>409</b>; tên, mô tả, lịch và cờ hiện điểm vẫn lưu được.
+    /// tuỳ chọn trộn) hay đưa đề về nháp trả <b>409</b>; tên, mô tả và cờ hiện điểm vẫn lưu được.
+    /// </para>
+    /// <para>
+    /// Đề đã giao thì đổi lịch cũng trả <b>409</b> từ lúc còn dưới 120 phút nữa là mở cho tới hết giờ đóng.
+    /// Gửi lại đúng lịch đang có thì không bị chặn.
     /// </para>
     /// </remarks>
     [HttpPut("{id:int}")]
@@ -129,6 +133,7 @@ public sealed class ExamsController : ApiControllerBase
     /// Tồn tại riêng vì đây là thao tác hay làm nhất sau khi đề đã giao. Dùng PUT cho việc này
     /// nghĩa là gửi lại trọn cấu hình, và chỉ cần client bỏ sót một trường là tỷ lệ độ khó hoặc
     /// điểm mỗi câu bị ghi đè bằng giá trị mặc định — trên một đề học sinh đang chờ làm.
+    /// Trả <b>409</b> khi đề đã giao và đang trong lúc khoá giờ (từ dưới 120 phút trước giờ mở tới hết giờ đóng).
     /// </remarks>
     [HttpPatch("{id:int}/schedule")]
     [Authorize(Roles = SystemRoles.Teacher)]
@@ -136,6 +141,7 @@ public sealed class ExamsController : ApiControllerBase
     [ProducesResponseType<ApiErrorResponse>(StatusCodes.Status400BadRequest)]
     [ProducesResponseType<ApiErrorResponse>(StatusCodes.Status403Forbidden)]
     [ProducesResponseType<ApiErrorResponse>(StatusCodes.Status404NotFound)]
+    [ProducesResponseType<ApiErrorResponse>(StatusCodes.Status409Conflict)]
     public async Task<IActionResult> UpdateSchedule(
         int id,
         [FromBody] UpdateScheduleRequest request,

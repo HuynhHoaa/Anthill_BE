@@ -155,14 +155,19 @@ public static class AssignmentSchedule
     }
 
     /// <summary>
-    /// Lịch chung của đề có đang bị khoá không. Chỉ khoá khi đề đã xuất bản và đã giao cho ai đó: đề chưa
-    /// giao thì chưa em nào bị ảnh hưởng, nên giáo viên vẫn xếp lại lịch thoải mái.
+    /// Lịch chung của đề có đang bị khoá không. Chỉ khoá khi đề đã giao cho ai đó: đề chưa giao thì chưa
+    /// em nào bị ảnh hưởng, nên giáo viên vẫn xếp lại lịch thoải mái.
     /// </summary>
+    /// <remarks>
+    /// Không loại đề nháp ra. Đề đã giao mà chưa ai làm vẫn đưa về nháp được, nên nếu nháp được miễn khoá thì
+    /// chỉ cần đưa về nháp, dời lịch, rồi xuất bản lại là lách được khoá mà không em nào được báo. Đề nháp mà
+    /// chưa từng giao thì <paramref name="assignedCount"/> bằng 0 và vẫn sửa tự do.
+    /// </remarks>
     public static bool IsExamScheduleLocked(Exam exam, int assignedCount, DateTime now)
     {
         ArgumentNullException.ThrowIfNull(exam);
 
-        return !exam.IsDraft && assignedCount > 0 && IsScheduleLocked(exam.OpenAt, exam.CloseAt, now);
+        return assignedCount > 0 && IsScheduleLocked(exam.OpenAt, exam.CloseAt, now);
     }
 
     /// <summary>Request có đưa lịch chung của đề sang một cặp giờ khác không.</summary>
@@ -178,6 +183,11 @@ public static class AssignmentSchedule
         openAt is null || closeAt is null ? (null, null) : (openAt.ToUtc(), closeAt.ToUtc());
 
     /// <summary>Áp cặp giờ này lên bản ghi thì có đổi gì không, tính theo đúng phép so của <see cref="Reschedule"/>.</summary>
+    /// <remarks>
+    /// So cột thô, không so giờ có hiệu lực: đặt giờ riêng trùng đúng lịch đề, hay gỡ giờ riêng vốn trùng lịch
+    /// đề, vẫn tính là đổi và bị chặn trong lúc khoá. Chặt hơn một chút nhưng đơn giản, và chỉ ảnh hưởng những
+    /// thao tác không dời em phút nào.
+    /// </remarks>
     public static bool WindowWouldChange(ExamAssignment assignment, DateTime? openAt, DateTime? closeAt)
     {
         ArgumentNullException.ThrowIfNull(assignment);

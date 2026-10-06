@@ -274,7 +274,7 @@ public sealed class ExamService : IExamService
         //  - Lưu nháp mà không phải sinh lại gì — mục đích của nháp là cất một cấu hình chưa xong. Sinh lại
         //    là rút câu thật, nên một đề đã giao mà rút về nháp kèm cấu hình dở dang vẫn phải qua phép kiểm.
         //  - Đề đã xuất bản mà cấu hình đề không đổi. Không có miễn trừ này thì chỉ cần đồng nghiệp ẩn bớt
-        //    câu hỏi là giáo viên hết cả sửa tên hay dời lịch — đúng những thứ luật khoá hứa vẫn sửa được.
+        //    câu hỏi là giáo viên hết cả sửa tên hay mô tả — đúng những thứ luật khoá hứa vẫn sửa được.
         var skipBankCheck = (isDraft && !regenerate)
                             || (!exam.IsDraft && !ExamEditPolicy.ChangesGeneratedPaper(exam, request));
 

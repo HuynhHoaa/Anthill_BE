@@ -52,8 +52,9 @@ public sealed record ExamEditPlan(ExamEditDecision Decision, IReadOnlyList<strin
 /// ra một đề mới.
 /// </para>
 /// <para>
-/// Tên, mô tả, lịch và cờ hiện điểm vẫn sửa được sau mốc đó: chúng không đổi bộ câu nào, còn điểm đã
-/// chấm thì luôn tính trên bản chụp của bản đề nên không trường nào ở đây chạm được tới.
+/// Tên, mô tả và cờ hiện điểm vẫn sửa được sau mốc đó: chúng không đổi bộ câu nào, còn điểm đã
+/// chấm thì luôn tính trên bản chụp của bản đề nên không trường nào ở đây chạm được tới. Lịch không nằm
+/// trong chính sách này mà có luật khoá riêng theo giờ (<see cref="AssignmentSchedule.IsScheduleLocked(DateTime, DateTime, DateTime)"/>).
 /// </para>
 /// <para>
 /// Là hàm thuần nên kiểm được toàn bộ ma trận bằng unit test, không cần database.

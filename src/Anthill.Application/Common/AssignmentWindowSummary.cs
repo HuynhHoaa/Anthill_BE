@@ -113,7 +113,7 @@ public static class AssignmentWindowSummary
             HasScheduleOverride = HasPair(raw.OpenAt, raw.CloseAt),
             Lifecycle = ExamMappingExtensions.ResolveWindowLifecycle(exam.IsDraft, openAt, closeAt, asOfUtc)
                 .ToLifecycleString(),
-            ScheduleLocked = !exam.IsDraft && AssignmentSchedule.IsScheduleLocked(openAt, closeAt, asOfUtc),
+            ScheduleLocked = AssignmentSchedule.IsScheduleLocked(openAt, closeAt, asOfUtc),
             AssignedCount = assignedCount,
             StartedCount = startedCount
         };

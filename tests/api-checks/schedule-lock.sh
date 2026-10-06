@@ -48,9 +48,9 @@ import unicodedata
 mode = sys.argv[1]
 
 PHRASES = {
-    "sap_mo": "sắp mở trong chưa đầy 2 giờ nữa nên không đổi giờ được",
+    "sap_mo": "còn chưa đầy 2 giờ nữa là mở nên không đổi giờ được",
     "dang_mo": "đang mở nên không đổi giờ được",
-    "de": "Đề này",
+    "de": "Lịch chung của đề",
     "lop": "Bài của lớp",
     "em": "Bài của em này",
 }
@@ -81,6 +81,12 @@ elif mode == "says":
         text = nfc(handle.read())
     print("yes" if nfc(PHRASES[sys.argv[3]]) in text else "no")
 
+elif mode == "assignment":
+    # assignmentId cua de $3 trong danh sach bai cua hoc sinh.
+    rows = load(sys.argv[2])
+    row = next((x for x in rows if x["examId"] == int(sys.argv[3])), None)
+    print("" if row is None else row["assignmentId"])
+
 elif mode == "row":
     # Mot truong cua em $4 trong bang theo doi cua giao vien.
     rows = load(sys.argv[2])
@@ -93,6 +99,7 @@ trap 'rm -f "$HELPERS"; cleanup' EXIT
 at_hours()       { python "$HELPERS" iso "$1"; }
 body_says()      { python "$HELPERS" says "$(to_native_path "$BODY_FILE")" "$1"; }
 row_of_student() { python "$HELPERS" row "$(to_native_path "$BODY_FILE")" "$1" "$2"; }
+my_assignment()  { python "$HELPERS" assignment "$(to_native_path "$BODY_FILE")" "$1"; }
 
 TEACHER_ID=$(call GET /api/auth/me "$TEACHER" > /dev/null; json_field id)
 
@@ -145,6 +152,13 @@ patch_assignment() {
   call PATCH "/api/exams/$1/assignments/$2/schedule" "$TEACHER" "{\"openAt\":\"$(at_hours "$3")\",\"closeAt\":\"$(at_hours "$4")\"}"
 }
 
+# Than PUT dua de ve nhap: $1 tieu de, $2/$3 moc mo/dong ISO. Giu nguyen cau hinh, chi them lifecycle.
+draft_body() {
+  local body
+  body=$(exam_body "$1" "$2" "$3" 45)
+  printf '%s,"lifecycle":"draft"}' "${body%\}}"
+}
+
 # Gui lai lop $2 trong de $1 kem khung $3..$4 (gio tu bay gio). In ma HTTP.
 resend_class() {
   call POST "/api/exams/$1/assignments" "$TEACHER" \
@@ -193,6 +207,7 @@ expect_status "  cau bao noi de sap mo" yes "$(body_says sap_mo)"
 expect_status "  cau bao noi ve de" yes "$(body_says de)"
 expect_status "doi lich qua PUT → 409" 409 \
   "$(call PUT "/api/exams/$E1" "$TEACHER" "$(exam_body "De con xa $STAMP" "$(at_hours 8)" "$(at_hours 10)" 45)")"
+expect_status "  cau bao noi ve de" yes "$(body_says de)"
 expect_status "PUT giu nguyen lich, doi ten → 200" 200 \
   "$(call PUT "/api/exams/$E1" "$TEACHER" "$(exam_body "De con xa doi ten $STAMP" "$E1_OPEN" "$E1_CLOSE" 45)")"
 expect_json   "  ten da doi" title "De con xa doi ten $STAMP"
@@ -262,5 +277,54 @@ expect_json   "  scheduleUpdatedCount = 1" scheduleUpdatedCount 1
 expect_status "chi tiet de → 200" 200 "$(call GET "/api/exams/$E4" "$TEACHER")"
 expect_json   "  de da dong: scheduleLocked = false" scheduleLocked false
 expect_status "mo lai de qua PATCH → 200" 200 "$(patch_exam_schedule "$E4" 5 9)"
+
+section "Dua de ve nhap roi doi lich: van bi khoa"
+# De da giao ma chua ai lam thi dua ve nhap duoc. Neu nhap duoc mien khoa thi dua ve nhap, doi lich, xuat ban
+# lai la lach duoc ma khong em nao duoc bao.
+new_exam "De ve nhap $STAMP" 1 3; E5=$NEW_EID
+expect_status "giao cho lop A → 200" 200 \
+  "$(call POST "/api/exams/$E5/assignments" "$TEACHER" "{\"studentIds\":[],\"groupIds\":[$G_A],\"notify\":false}")"
+expect_status "dua ve nhap, giu nguyen lich → 200" 200 \
+  "$(call PUT "/api/exams/$E5" "$TEACHER" "$(draft_body "De ve nhap $STAMP" "$NEW_OPEN" "$NEW_CLOSE")")"
+expect_json   "  lifecycle = draft"     lifecycle draft
+expect_json   "  van khoa lich"         scheduleLocked true
+expect_status "doi lich qua PATCH luc dang nhap → 409" 409 "$(patch_exam_schedule "$E5" 8 10)"
+expect_status "doi lich qua PUT luc dang nhap → 409" 409 \
+  "$(call PUT "/api/exams/$E5" "$TEACHER" "$(draft_body "De ve nhap $STAMP" "$(at_hours 8)" "$(at_hours 10)")")"
+
+section "Mot request hai lop, mot lop khoa: khong lop nao bi doi"
+new_exam "De hai lop $STAMP" -24 168; E6=$NEW_EID
+expect_status "giao lop A khung 1..3 gio nua, lop B khung 6..8 gio nua → 200" 200 \
+  "$(call POST "/api/exams/$E6/assignments" "$TEACHER" "{\"studentIds\":[],\"classes\":[{\"groupId\":$G_A,\"openAt\":\"$(at_hours 1)\",\"closeAt\":\"$(at_hours 3)\"},{\"groupId\":$G_B,\"openAt\":\"$(at_hours 6)\",\"closeAt\":\"$(at_hours 8)\"}],\"notify\":false}")"
+expect_status "bang theo doi → 200" 200 "$(call GET "/api/exams/$E6/assignments" "$TEACHER")"
+B_BEFORE=$(row_of_student openAt "$SID_B")
+expect_status "gui lai ca hai lop kem khung moi → 409" 409 \
+  "$(call POST "/api/exams/$E6/assignments" "$TEACHER" "{\"studentIds\":[],\"classes\":[{\"groupId\":$G_A,\"openAt\":\"$(at_hours 9)\",\"closeAt\":\"$(at_hours 11)\"},{\"groupId\":$G_B,\"openAt\":\"$(at_hours 9)\",\"closeAt\":\"$(at_hours 11)\"}],\"notify\":false}")"
+expect_status "bang theo doi → 200" 200 "$(call GET "/api/exams/$E6/assignments" "$TEACHER")"
+expect_status "  lop B (con xa) khong bi doi do lop A khoa" "$B_BEFORE" "$(row_of_student openAt "$SID_B")"
+
+section "Cap gio chung cua request cung bi khoa khi kem groupIds"
+expect_status "gui lai lop B qua groupIds kem cap gio chung, de dang mo → 409" 409 \
+  "$(call POST "/api/exams/$E2/assignments" "$TEACHER" "{\"studentIds\":[],\"groupIds\":[$G_B],\"openAt\":\"$(at_hours 6)\",\"closeAt\":\"$(at_hours 9)\",\"notify\":false}")"
+
+section "Em theo lich de tren de dang mo: dat gio rieng cung bi chan"
+expect_status "giao em A2 (theo lich de dang mo) → 200" 200 "$(assign_student "$E2" "$SID_A2")"
+expect_status "bang theo doi → 200" 200 "$(call GET "/api/exams/$E2/assignments" "$TEACHER")"
+AID_A2_OPEN=$(row_of_student id "$SID_A2")
+expect_status "  em A2 khoa" true "$(row_of_student scheduleLocked "$SID_A2")"
+expect_status "dat gio rieng cho em A2 → 409" 409 "$(patch_assignment "$E2" "$AID_A2_OPEN" 8 10)"
+expect_status "  cau bao noi dang mo" yes "$(body_says dang_mo)"
+
+section "Em da bat dau lam bai: gui lai lop (chi con em do) khong bi chan va khong doi gio em"
+new_exam "De da bat dau $STAMP" -1 3; E7=$NEW_EID
+expect_status "giao lop B (mot em) → 200" 200 \
+  "$(call POST "/api/exams/$E7/assignments" "$TEACHER" "{\"studentIds\":[],\"groupIds\":[$G_B],\"notify\":false}")"
+TOK_B=$(login_and_clear_must_change "p${STAMP}b" "123456" "Pb$STAMP")
+call GET /api/my/exams "$TOK_B" > /dev/null
+AID_STARTED=$(my_assignment "$E7")
+expect_status "em B vao thi → 200" 200 "$(call POST /api/exam-attempts "$TOK_B" "{\"assignmentId\":$AID_STARTED}")"
+expect_status "gui lai lop B kem khung moi → 200" 200 "$(resend_class "$E7" "$G_B" 8 10)"
+expect_json   "  scheduleUpdatedCount = 0"     scheduleUpdatedCount 0
+expect_json   "  scheduleKeptStartedCount = 1" scheduleKeptStartedCount 1
 
 summary

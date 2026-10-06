@@ -35,8 +35,9 @@ public interface IExamAssignmentService
     /// Dời giờ cho một em được chọn đích danh, hoặc đưa em về lịch chung của đề.
     /// </summary>
     /// <remarks>
-    /// Từ chối (409) với em được giao qua lớp — giờ của em đó là giờ của lớp, sửa bằng cách gửi lại lớp — và
-    /// với em đã bắt đầu làm bài, vì hạn nộp đã chốt lúc em vào thi.
+    /// Từ chối (409) với em được giao qua lớp — giờ của em đó là giờ của lớp, sửa bằng cách gửi lại lớp —,
+    /// với em đã bắt đầu làm bài, vì hạn nộp đã chốt lúc em vào thi, và khi khung giờ hiện tại của em đang khoá
+    /// (còn dưới 120 phút nữa là mở cho tới hết giờ đóng). Gửi lại đúng khung đang giữ thì không bị chặn.
     /// </remarks>
     Task<Result<ExamAssignmentDto>> RescheduleAsync(
         int examId,
