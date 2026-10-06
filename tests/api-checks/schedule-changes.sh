@@ -201,11 +201,13 @@ printf '  A %s · B %s · C %s · D %s · E %s\n' "$G_A" "$G_B" "$G_C" "$G_D" "$
 
 new_exam "De doi gio $STAMP" -24 168
 EID=$NEW_EID; EID_OPEN=$NEW_OPEN
-A_OPEN=$(at_hours 1); A_CLOSE=$(at_hours 3)
-B_OPEN=$(at_hours 5); B_CLOSE=$(at_hours 7)
+# Moi khung rieng phai con xa gio mo (tren 120 phut) thi moi sua duoc ve sau — xem schedule-lock.sh.
+A_OPEN=$(at_hours 3); A_CLOSE=$(at_hours 5)
+B_OPEN=$(at_hours 6); B_CLOSE=$(at_hours 8)
 
 section "Giao nhieu lop mot lan, moi lop mot khung gio"
-BODY="{\"studentIds\":[$SID_D],\"classes\":[$(class_entry "$G_A" "$A_OPEN" "$A_CLOSE"),$(class_entry "$G_B" "$B_OPEN" "$B_CLOSE"),$(class_entry "$G_C")],\"notify\":false}"
+# Em D chon dich danh kem gio rieng 10..12 gio nua: de dang mo, neu em theo lich de thi gio cua em bi khoa.
+BODY="{\"studentIds\":[$SID_D],\"openAt\":\"$(at_hours 10)\",\"closeAt\":\"$(at_hours 12)\",\"classes\":[$(class_entry "$G_A" "$A_OPEN" "$A_CLOSE"),$(class_entry "$G_B" "$B_OPEN" "$B_CLOSE"),$(class_entry "$G_C")],\"notify\":false}"
 expect_status "ba lop + mot em chon le → 200" 200 "$(call POST "/api/exams/$EID/assignments" "$TEACHER" "$BODY")"
 expect_json   "  assignedCount = 4"          assignedCount 4
 expect_json   "  scheduleUpdatedCount = 0"   scheduleUpdatedCount 0
@@ -288,8 +290,8 @@ section "Doi gio cho em chon dich danh"
 call GET "/api/exams/$EID/assignments" "$TEACHER" > /dev/null
 AID_D=$(row_of_student id "$SID_D")
 AID_B=$(row_of_student id "$SID_B")
-D_OPEN=$(at_hours 2); D_CLOSE=$(at_hours 4)
-expect_status "PATCH em D, 2..4 gio nua → 200" 200 \
+D_OPEN=$(at_hours 3); D_CLOSE=$(at_hours 5)
+expect_status "PATCH em D, 3..5 gio nua → 200" 200 \
   "$(call PATCH "/api/exams/$EID/assignments/$AID_D/schedule" "$TEACHER" "{\"openAt\":\"$D_OPEN\",\"closeAt\":\"$D_CLOSE\"}")"
 expect_json   "  tra ve dong cua em: hasScheduleOverride" hasScheduleOverride true
 expect_status "  openAt dung gio vua dat" true "$(field_near openAt "$D_OPEN")"
@@ -335,9 +337,10 @@ build_class "Bao gio F $STAMP" "${STAMP}f"; G_F=$BUILT_GID; SID_F=$BUILT_SID
 build_class "Bao gio G $STAMP" "${STAMP}g"; G_G=$BUILT_GID; SID_G=$BUILT_SID
 build_class "Bao gio H $STAMP" "${STAMP}h"; G_H=$BUILT_GID; SID_H=$BUILT_SID
 
-new_exam "De bao gio $STAMP" -1 30
+# De chua toi gio mo (6 gio nua): lich cua de va cua lop F deu con xa, nen sua duoc; sau khi mo thi bi khoa.
+new_exam "De bao gio $STAMP" 6 30
 EID_N=$NEW_EID
-F_OPEN=$(at_hours 2); F_CLOSE=$(at_hours 4)
+F_OPEN=$(at_hours 4); F_CLOSE=$(at_hours 6)
 NOTIFY_BODY="{\"studentIds\":[$SID_H],\"groupIds\":[$G_G],\"classes\":[$(class_entry "$G_F" "$F_OPEN" "$F_CLOSE")],\"notify\":false}"
 expect_status "giao lop F (gio rieng), lop G (lich de), em H chon le → 200" 200 \
   "$(call POST "/api/exams/$EID_N/assignments" "$TEACHER" "$NOTIFY_BODY")"
@@ -355,7 +358,7 @@ call GET "/api/exams/$EID_N/assignments" "$TEACHER" > /dev/null
 AID_G=$(row_of_student id "$SID_G")
 AID_H=$(row_of_student id "$SID_H")
 
-N_OPEN=$(at_hours -0.5); N_CLOSE=$(at_hours 40)
+N_OPEN=$(at_hours 8); N_CLOSE=$(at_hours 40)
 expect_status "doi lich chung cua de → 200" 200 \
   "$(call PATCH "/api/exams/$EID_N/schedule" "$TEACHER" "{\"openAt\":\"$N_OPEN\",\"closeAt\":\"$N_CLOSE\"}")"
 expect_status "  em lop G (theo lich de) duoc bao" 1 "$(notice_count "$TOK_G")"
@@ -369,7 +372,7 @@ expect_status "  con chua doc" false "$(notice examUpdated isRead)"
 expect_status "  cau chu khong ghi gio cu the" yes \
   "$(notice examUpdated message | grep -qE '[0-9]{1,2}:[0-9]{2}' && echo no || echo yes)"
 
-F_OPEN2=$(at_hours 5); F_CLOSE2=$(at_hours 7)
+F_OPEN2=$(at_hours 7); F_CLOSE2=$(at_hours 9)
 expect_status "gui lai lop F voi khung khac → 200" 200 \
   "$(call POST "/api/exams/$EID_N/assignments" "$TEACHER" \
     "{\"studentIds\":[],\"classes\":[$(class_entry "$G_F" "$F_OPEN2" "$F_CLOSE2")],\"notify\":false}")"
@@ -398,12 +401,19 @@ expect_status "  em chon le" 3 "$(notice_count "$TOK_H")"
 call GET /api/notifications "$TOK_F" > /dev/null
 expect_status "  cau chu noi so phut moi" yes "$(notice examUpdated message | grep -q "60 phút" && echo yes || echo no)"
 
+# Cho de mo ngay bay gio (con xa nen van doi duoc), em lop G (theo lich de) duoc bao them mot lan.
+expect_status "doi lich chung sang dang mo → 200" 200 \
+  "$(call PATCH "/api/exams/$EID_N/schedule" "$TEACHER" "{\"openAt\":\"$(at_hours -0.4)\",\"closeAt\":\"$(at_hours 41)\"}")"
+expect_status "  em lop G duoc bao them" 3 "$(notice_count "$TOK_G")"
+
 call GET /api/my/exams "$TOK_G" > /dev/null
 AID_G_MY=$(my_field assignmentId "$EID_N")
 expect_status "em lop G vao lam bai → 200" 200 "$(call POST /api/exam-attempts "$TOK_G" "{\"assignmentId\":$AID_G_MY}")"
-expect_status "doi lich chung lan nua → 200" 200 \
-  "$(call PATCH "/api/exams/$EID_N/schedule" "$TEACHER" "{\"openAt\":\"$(at_hours -0.4)\",\"closeAt\":\"$(at_hours 41)\"}")"
-expect_status "  em da bat dau khong bi bao: han nop da chot luc vao thi" 2 "$(notice_count "$TOK_G")"
+# De da mo va da giao nen khong doi lich chung duoc nua: cung vi vay khong the co chuyen em dang lam bai
+# bi doi gio giua chung, va em da bat dau khong bao gio nhan thong bao doi gio.
+expect_status "doi lich chung khi de da mo → 409" 409 \
+  "$(call PATCH "/api/exams/$EID_N/schedule" "$TEACHER" "{\"openAt\":\"$(at_hours -0.3)\",\"closeAt\":\"$(at_hours 42)\"}")"
+expect_status "  em da bat dau khong bi bao: han nop da chot luc vao thi" 3 "$(notice_count "$TOK_G")"
 
 section "Dap an chi mo khi moi khung gio deu da dong"
 # per-class-schedule.sh chung minh dap an cho toi khi lop dong muon nhat het gio. Cho nay canh chieu

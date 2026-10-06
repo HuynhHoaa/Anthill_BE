@@ -282,11 +282,12 @@ expect_status "giao cho lop (de chung) → 200" 200 "$(assign_class "$E1")"
 expect_json   "  assignedCount = 2" assignedCount 2
 
 section "Da giao, chua ai lam: sua moi truong, ban de sinh lai"
-# Mot lan PUT doi het: so cau, ba ty le, diem, thoi luong, hai tuy chon tron, co hien diem, ten, mo ta,
-# lich. Ban de 4 cau da sinh luc giao phai bi thay bang ban 10 cau.
+# Mot lan PUT doi het: so cau, ba ty le, diem, thoi luong, hai tuy chon tron, co hien diem, ten, mo ta.
+# Ban de 4 cau da sinh luc giao phai bi thay bang ban 10 cau. Lich giu nguyen: de dang mo va da giao nen
+# lich bi khoa (xem schedule-lock.sh).
 B_TITLE="De sua da doi $STAMP"; B_DESC="Mo ta da doi"
 B_TOTAL=10; B_EASY=60; B_MEDIUM=30; B_HARD=10; B_POINT=2; B_DURATION=40
-B_SQ=true; B_SA=true; B_SHOW=false; B_CLOSE=$(at_hours 72)
+B_SQ=true; B_SA=true; B_SHOW=false
 expect_status "sua het moi truong → 200" 200 "$(put_exam "$E1")"
 expect_json   "  totalQuestions = 10"    totalQuestions 10
 expect_status "  pointPerQuestion = 2"   2 "$(num_field pointPerQuestion)"
@@ -354,16 +355,17 @@ expect_status "doc lai de → 200" 200 "$(call GET "/api/exams/$E1" "$TEACHER")"
 expect_json   "  van 10 cau sau bay lan bi tu choi" totalQuestions 10
 expect_json   "  van khong phai nhap" lifecycle open
 
-section "Da co em lam: ten, mo ta, lich, co hien diem van luu duoc"
+section "Da co em lam: ten, mo ta, co hien diem van luu duoc; lich thi bi khoa"
 B_TITLE="De sua lan ba $STAMP"; B_DESC="Mo ta lan ba"; B_SHOW=true
-B_OPEN=$(at_hours -2); B_CLOSE=$(at_hours 96)
-expect_status "sua ten, mo ta, lich, bat hien diem → 200" 200 "$(put_exam "$E1")"
+expect_status "sua ten, mo ta, bat hien diem, giu nguyen lich → 200" 200 "$(put_exam "$E1")"
 expect_json   "  title moi"                     title "$B_TITLE"
 expect_json   "  description moi"               description "$B_DESC"
 expect_json   "  showResultAfterSubmit = true"  showResultAfterSubmit true
 expect_json   "  cau hinh giu nguyen: 10 cau"   totalQuestions 10
-expect_status "doi lich qua PATCH → 200" 200 \
+# De dang mo va da giao nen lich khoa, ke ca khi da co em lam (xem schedule-lock.sh).
+expect_status "doi lich qua PATCH → 409" 409 \
   "$(call PATCH "/api/exams/$E1/schedule" "$TEACHER" "{\"openAt\":\"$B_OPEN\",\"closeAt\":\"$(at_hours 120)\"}")"
+expect_status "doi lich qua PUT → 409" 409 "$(put_exam "$E1" close="$(at_hours 120)")"
 # Dong nghiep an bot mot cau De: ngan hang con 5 cau De, cau hinh da khoa can 6. Cau hinh khong doi thi
 # khong duoc kiem lai ngan hang — neu khong, giao vien het ca sua ten.
 expect_status "an mot cau De → 200" 200 \

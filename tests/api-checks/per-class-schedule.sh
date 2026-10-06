@@ -335,15 +335,16 @@ expect_status "  sap theo gio dong cua lop, khong theo de" true "$SAP_TRUOC"
 section "Gui lai mot lop kem khung gio moi thi khung gio duoc sua that"
 build_class "Lop sua gio $STAMP" "${STAMP}u"; G_SUA=$BUILT_GID; SID_SUA=$BUILT_SID
 TOK_SUA=$(login_and_clear_must_change "p${STAMP}u" "123456" "Pu$STAMP")
-expect_status "giao lan dau, 1..3 gio nua → 200" 200 "$(assign "$EID" "$G_SUA" 1 3)"
+# Con xa gio mo (tren 120 phut) thi gui lai kem khung moi duoc; gan hon la bi khoa — xem schedule-lock.sh.
+expect_status "giao lan dau, 3..5 gio nua → 200" 200 "$(assign "$EID" "$G_SUA" 3 5)"
 expect_json   "  assignedCount = 1"        assignedCount 1
 expect_json   "  scheduleUpdatedCount = 0" scheduleUpdatedCount 0
 call GET /api/my/exams "$TOK_SUA" > /dev/null
 OPEN_A=$(field_of_exam openAt "$EID")
 
 # Giu nguyen chuoi than request de lan gui thu hai giong het tung ky tu.
-SUA_BODY=$(assign_body "$G_SUA" "$(at_hours 5)" "$(at_hours 7)")
-expect_status "gui lai cung lop, 5..7 gio nua → 200" 200 "$(call POST "/api/exams/$EID/assignments" "$TEACHER" "$SUA_BODY")"
+SUA_BODY=$(assign_body "$G_SUA" "$(at_hours 7)" "$(at_hours 9)")
+expect_status "gui lai cung lop, 7..9 gio nua → 200" 200 "$(call POST "/api/exams/$EID/assignments" "$TEACHER" "$SUA_BODY")"
 expect_json   "  assignedCount = 0"          assignedCount 0
 expect_json   "  skippedAlreadyAssigned = 1" skippedAlreadyAssigned 1
 expect_json   "  scheduleUpdatedCount = 1"   scheduleUpdatedCount 1

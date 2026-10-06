@@ -125,6 +125,7 @@ public static class ExamMappingExtensions
 
             // Cùng một phép so với ExamEditPolicy: đã có lượt làm bài là khoá.
             BlueprintFrozen = startedCount > 0,
+            ScheduleLocked = AssignmentSchedule.IsExamScheduleLocked(exam, assignedCount, asOfUtc),
             AssignmentWindows = assignmentWindows ?? [],
 
             CreatedAt = exam.CreatedAt.ToUtc()

@@ -229,13 +229,14 @@ Vòng đời bài kiểm tra:
 - Hệ thống chỉ lưu Draft hoặc đã xuất bản; Scheduled / Open / Closed được tính từ lịch chung so với giờ server.
 - Bản nháp được lưu dù tổng tỷ lệ chưa bằng 100% hoặc ngân hàng chưa đủ câu. Muốn xuất bản thì phải thỏa mọi điều kiện kiểm tra ở trên.
 - Teacher có thể chỉ dời lịch mở/đóng mà không phải gửi lại toàn bộ cấu hình.
+- Khóa đổi giờ: bài kiểm tra đã giao cho Student thì không đổi được lịch mở/đóng từ lúc còn dưới 120 phút nữa là mở cho tới hết giờ đóng. Giờ riêng của một lớp hay của một Student chọn đích danh cũng bị khóa trong khoảng đó, tính theo giờ mở của chính khung giờ ấy. Còn từ 120 phút trở lên, hoặc đã qua giờ đóng, thì đổi bình thường; qua giờ đóng là đường cứu Student lỡ giờ hoặc mở lại bài. Bài chưa giao cho ai thì không bị khóa. Giao thêm Student vào một lớp đang bị khóa giờ vẫn được, các em theo khung giờ hiện có của lớp.
 - Teacher không xóa được bài kiểm tra đã có Student nộp bài.
 - Teacher chỉ thấy và quản lý bài kiểm tra do chính mình tạo. Admin xem được mọi bài kiểm tra nhưng không tạo hay sửa bài kiểm tra.
 
 Sửa bài kiểm tra đã xuất bản — mốc phân chia là **lượt làm bài đầu tiên**, không phải lúc giao hay lúc xuất bản:
 
 - Chưa Student nào bắt đầu làm: Teacher sửa được mọi trường. Đề đã sinh cho các Student được giao sẽ được sinh lại theo cấu hình mới; ngân hàng không đủ câu cho cấu hình mới thì hệ thống từ chối và giữ nguyên cấu hình cũ. Bài kiểm tra đã thu hồi hết các lượt giao thì đề cũ bị bỏ, lần giao sau sinh theo cấu hình mới.
-- Đã có Student bắt đầu làm: cấu hình đề bị khóa — số câu, ba tỷ lệ độ khó, chủ đề, điểm mỗi câu, thời gian làm bài và hai tùy chọn trộn không đổi được nữa, và không đưa bài kiểm tra về bản nháp được. Tên, mô tả, lịch mở/đóng và tùy chọn cho xem điểm ngay vẫn sửa được. Hệ thống báo rõ trường nào bị khóa.
+- Đã có Student bắt đầu làm: cấu hình đề bị khóa — số câu, ba tỷ lệ độ khó, chủ đề, điểm mỗi câu, thời gian làm bài và hai tùy chọn trộn không đổi được nữa, và không đưa bài kiểm tra về bản nháp được. Tên, mô tả và tùy chọn cho xem điểm ngay vẫn sửa được; lịch mở/đóng đổi theo luật khóa đổi giờ ở trên. Hệ thống báo rõ trường nào bị khóa.
 - Muốn dùng cấu hình khác cho một bài đã khóa, Teacher nhân bản bài kiểm tra: bản sao là một bản nháp mới cùng cấu hình, chưa giao cho ai, sửa được thoải mái. Teacher chưa được gán môn không nhân bản được, giống như không tạo được bài kiểm tra.
 - Điểm đã chấm không bao giờ thay đổi vì bất kỳ lần sửa nào: bài làm được chấm trên bản đề đã chụp lúc sinh đề.
 

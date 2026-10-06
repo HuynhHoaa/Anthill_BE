@@ -238,27 +238,55 @@ public sealed class ExamAssignmentService : IExamAssignmentService
             .GroupBy(row => row.AssignedViaGroupId!.Value)
             .ToDictionary(group => group.Key, group => group.ToList());
 
-        var rescheduled = AssignmentSchedule.RescheduleOutcome.None;
+        var now = DateTime.UtcNow;
+
+        // Khung giờ lần này đòi cho một lớp: khung riêng của lớp, không thì cặp giờ chung của request. Không có
+        // gì thì không đụng tới giờ của lớp.
+        (DateTime? OpenAt, DateTime? CloseAt)? WindowRequestedFor(int groupId)
+        {
+            if (classWindows.TryGetValue(groupId, out var classWindow))
+            {
+                return classWindow;
+            }
+
+            return request.OpenAt.HasValue && request.CloseAt.HasValue ? (request.OpenAt, request.CloseAt) : null;
+        }
+
+        // Kiểm hết các lớp trước khi đổi giờ lớp nào, để một lớp bị chặn không bỏ lại những lớp đã đổi dở. Chỉ
+        // tính em chưa bắt đầu và khung giờ thật sự đổi: gửi lại đúng khung cũ để giao bổ sung vẫn làm được.
         foreach (var groupId in ownedGroupIds)
         {
-            if (!rowsByGroup.TryGetValue(groupId, out var rows))
+            if (!rowsByGroup.TryGetValue(groupId, out var groupRows) || WindowRequestedFor(groupId) is not { } requested)
             {
                 continue;
             }
 
-            AssignmentSchedule.RescheduleOutcome outcome;
-            if (classWindows.TryGetValue(groupId, out var classWindow))
+            foreach (var row in groupRows)
             {
-                outcome = AssignmentSchedule.Reschedule(rows, classWindow.OpenAt, classWindow.CloseAt);
+                if (row.Attempt is not null || !AssignmentSchedule.WindowWouldChange(row, requested.OpenAt, requested.CloseAt))
+                {
+                    continue;
+                }
+
+                var (rowOpenAt, rowCloseAt) = AssignmentSchedule.Resolve(row, exam);
+                if (AssignmentSchedule.IsScheduleLocked(rowOpenAt, rowCloseAt, now))
+                {
+                    var className = targets.OwnedGroups.First(group => group.Id == groupId).Name;
+                    return Result.Conflict<AssignExamResponse>(
+                        ScheduleLockMessage.For(ScheduleLockMessage.ClassSubject(className), rowOpenAt, now));
+                }
             }
-            else if (request.OpenAt.HasValue && request.CloseAt.HasValue)
-            {
-                outcome = AssignmentSchedule.Reschedule(rows, request.OpenAt, request.CloseAt);
-            }
-            else
+        }
+
+        var rescheduled = AssignmentSchedule.RescheduleOutcome.None;
+        foreach (var groupId in ownedGroupIds)
+        {
+            if (!rowsByGroup.TryGetValue(groupId, out var rows) || WindowRequestedFor(groupId) is not { } window)
             {
                 continue;
             }
+
+            var outcome = AssignmentSchedule.Reschedule(rows, window.OpenAt, window.CloseAt);
 
             rescheduled = new AssignmentSchedule.RescheduleOutcome(
                 rescheduled.Updated + outcome.Updated,
@@ -278,7 +306,6 @@ public sealed class ExamAssignmentService : IExamAssignmentService
             ScheduleKeptStartedCount = rescheduled.KeptStarted
         };
 
-        var now = DateTime.UtcNow;
         var flagChanged = requestedRandomize is not null && exam.RandomizePerStudent != requestedRandomize;
 
         if (newcomers.Count == 0 && !flagChanged && rescheduled.Updated == 0)
@@ -501,6 +528,20 @@ public sealed class ExamAssignmentService : IExamAssignmentService
                 "Em này đã bắt đầu làm bài nên hạn nộp đã chốt lúc vào thi, không dời giờ được nữa.");
         }
 
+        var now = DateTime.UtcNow;
+
+        // Chỉ chặn khi lần này thật sự đổi giờ, để gửi lại đúng khung cũ không bị coi là dời lịch.
+        if (!exam.IsDraft
+            && AssignmentSchedule.WindowWouldChange(assignment, request.OpenAt, request.CloseAt))
+        {
+            var (currentOpenAt, currentCloseAt) = AssignmentSchedule.Resolve(assignment, exam);
+            if (AssignmentSchedule.IsScheduleLocked(currentOpenAt, currentCloseAt, now))
+            {
+                return Result.Conflict<ExamAssignmentDto>(
+                    ScheduleLockMessage.For(ScheduleLockMessage.StudentSubject, currentOpenAt, now));
+            }
+        }
+
         if (request.OpenAt is { } openAt && request.CloseAt is { } closeAt
             && !AssignmentSchedule.FitsDuration(openAt, closeAt, exam.DurationMinutes))
         {
@@ -510,7 +551,6 @@ public sealed class ExamAssignmentService : IExamAssignmentService
         }
 
         var outcome = AssignmentSchedule.Reschedule([assignment], request.OpenAt, request.CloseAt);
-        var now = DateTime.UtcNow;
 
         if (outcome.Updated > 0)
         {

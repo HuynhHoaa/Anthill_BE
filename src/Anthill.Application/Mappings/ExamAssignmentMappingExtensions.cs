@@ -83,6 +83,11 @@ public static class ExamAssignmentMappingExtensions
             OpenAt = openAt.ToUtc(),
             CloseAt = closeAt.ToUtc(),
             HasScheduleOverride = AssignmentSchedule.HasOverride(assignment),
+
+            // Đề nháp không ai vào được nên giờ của nó không khoá. Exam có thể chưa nạp (bản ghi đã có lượt
+            // làm bài và giờ riêng thì không cần tới nó), nên chỉ loại trừ khi biết chắc đó là nháp.
+            ScheduleLocked = assignment.Exam?.IsDraft != true
+                             && AssignmentSchedule.IsScheduleLocked(openAt, closeAt, asOfUtc),
             AssignedViaGroupId = assignment.AssignedViaGroupId
         };
     }
