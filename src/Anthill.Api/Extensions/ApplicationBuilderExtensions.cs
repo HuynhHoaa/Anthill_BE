@@ -62,6 +62,29 @@ public static class ApplicationBuilderExtensions
 
         var options = app.Services.GetRequiredService<IOptions<FileStorageOptions>>().Value;
 
+        // Ảnh nằm ở Cloudinary: giữ nguyên đường dẫn tương đối trong database, chuyển hướng sang nơi giao hàng.
+        // Đường dẫn không đúng khuôn (GUID, tháng, đuôi ảnh) trả 404 chứ không bao giờ được chuyển đi đâu cả.
+        if (options.UsesCloudinary)
+        {
+            var requestPath = options.RequestPath.TrimEnd('/');
+
+            app.MapGet($"{requestPath}/{{month}}/{{file}}", (string month, string file, HttpContext context) =>
+            {
+                if (!CloudinaryFileService.TryBuildDeliveryUrl(options, $"{requestPath}/{month}/{file}", out var deliveryUrl))
+                {
+                    return Results.NotFound();
+                }
+
+                // Tên file là GUID nên nội dung dưới một URL không bao giờ đổi, nhưng chuyển hướng thì chỉ cache
+                // một ngày: nếu sau này đổi tài khoản Cloudinary thì không bị kẹt mãi ở địa chỉ cũ.
+                context.Response.Headers.CacheControl = "public, max-age=86400";
+                return Results.Redirect(deliveryUrl);
+            })
+            .ExcludeFromDescription();
+
+            return app;
+        }
+
         var uploadRoot = Path.GetFullPath(Path.Combine(
             app.Environment.ContentRootPath,
             options.RootPath,
@@ -134,6 +157,9 @@ public static class ApplicationBuilderExtensions
         // Ném InvalidOperationException kèm hướng dẫn nếu SecretKey trống hoặc ngắn hơn 32 byte.
         app.Services.GetRequiredService<IOptions<JwtOptions>>().Value.Validate();
 
+        // Chọn Cloudinary mà thiếu khoá thì dừng ngay, thay vì để tới lần tải ảnh đầu tiên mới biết.
+        app.Services.GetRequiredService<IOptions<FileStorageOptions>>().Value.Validate();
+
         var cors = app.Services.GetRequiredService<CorsPolicyOptions>();
         if (cors.IsEmpty)
         {
@@ -175,7 +201,7 @@ public static class ApplicationBuilderExtensions
     }
 
     /// <summary>
-    /// Nạp dữ liệu demo, chỉ ở môi trường Development.
+    /// Nạp dữ liệu demo: luôn ở Development, ngoài ra chỉ khi bật <c>Seed:DemoData</c>.
     /// </summary>
     /// <remarks>
     /// <para>
@@ -195,7 +221,9 @@ public static class ApplicationBuilderExtensions
     {
         ArgumentNullException.ThrowIfNull(app);
 
-        if (!app.Environment.IsDevelopment())
+        // Ngoài Development chỉ nạp khi được bật rõ ràng (Seed__DemoData=true): bản demo công khai cần ba tài khoản
+        // mẫu, nhưng một bản chạy thật thì không bao giờ được tự thêm tài khoản dùng chung mật khẩu đã công bố.
+        if (!app.Environment.IsDevelopment() && !app.Configuration.GetValue<bool>("Seed:DemoData"))
         {
             return app;
         }
