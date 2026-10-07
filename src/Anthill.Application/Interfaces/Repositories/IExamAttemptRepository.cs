@@ -61,7 +61,11 @@ public interface IExamAttemptRepository : IGenericRepository<ExamAttempt>
         PaginationParams pagination,
         CancellationToken cancellationToken = default);
 
-    /// <summary>Lịch sử làm bài của chính học sinh đang đăng nhập.</summary>
+    /// <summary>Lịch sử làm bài của chính học sinh đang đăng nhập, chỉ gồm lượt đã nộp hoặc đã chấm.</summary>
+    /// <remarks>
+    /// Lượt đang làm dở không phải kết quả: nó chưa có điểm, chưa có giờ nộp, và là việc em cần quay
+    /// lại làm chứ không phải thứ để xem lại. Nó nằm ở danh sách bài kiểm tra của em.
+    /// </remarks>
     Task<PagedResult<ExamAttempt>> GetMyResultsPagedAsync(
         int studentId,
         string? search,
@@ -126,6 +130,9 @@ public sealed record ResultStatsSnapshot
     public required int GradedCount { get; init; }
 
     public required int SubmittedCount { get; init; }
+
+    /// <summary>Số lượt đang làm dở — chưa nộp, chưa có điểm, không thuộc <see cref="SubmittedCount"/>.</summary>
+    public required int InProgressCount { get; init; }
 
     /// <summary>Tổng số bài đã giao khớp bộ lọc — mẫu số của tỷ lệ hoàn thành.</summary>
     public required int AssignedCount { get; init; }

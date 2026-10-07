@@ -16,6 +16,15 @@ public sealed record ResultStatsDto
     public required int GradedCount { get; init; }
 
     /// <summary>
+    /// Số lượt đang làm dở, nằm trong <see cref="TotalAttempts"/> nhưng chưa phải bài đã nộp.
+    /// </summary>
+    /// <remarks>
+    /// Đếm riêng để màn hình không phải đoán: <c>TotalAttempts - GradedCount</c> trộn bài em còn đang
+    /// làm với bài đã nộp mà chưa chấm, và cả hai đều bị đọc thành "chờ chấm".
+    /// </remarks>
+    public required int InProgressCount { get; init; }
+
+    /// <summary>
     /// Điểm trung bình trên các lượt <b>đã chấm</b>, làm tròn một chữ số (§5).
     /// </summary>
     /// <remarks>
