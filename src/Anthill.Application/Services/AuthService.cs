@@ -28,6 +28,7 @@ public sealed class AuthService : IAuthService
     private const string InvalidCredentialsMessage = "Tên đăng nhập hoặc mật khẩu không đúng.";
     private const string SessionExpiredMessage = "Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.";
     private const string RoleMismatchMessage = "Tài khoản không thuộc vai trò đã chọn.";
+    private const string StudentIdentityLockedMessage = "Họ tên và email chỉ quản trị viên mới đổi được.";
 
     /// <summary>Tên hai trường của <see cref="ChangePasswordRequest"/> đúng như trong JSON.</summary>
     private const string CurrentPasswordField = "currentPassword";
@@ -210,9 +211,33 @@ public sealed class AuthService : IAuthService
 
         var school = NormalizeOptional(request.School);
 
+        // Tài khoản học sinh thuộc về quản trị viên (Requirement, Stage 2): họ tên và email là thứ giáo
+        // viên đối chiếu trên bảng điểm, nên chính em không tự sửa. Form hồ sơ luôn gửi đủ bốn trường,
+        // vì vậy gửi lại đúng giá trị đang có là hợp lệ — chỉ giá trị khác đi mới bị chặn.
+        var isStudent = account.Role == UserRole.Student;
+        if (isStudent)
+        {
+            var locked = new Dictionary<string, string[]>();
+
+            if (!string.Equals(fullName, account.FullName, StringComparison.Ordinal))
+            {
+                locked["fullName"] = [StudentIdentityLockedMessage];
+            }
+
+            if (!string.Equals(email, account.Email, StringComparison.OrdinalIgnoreCase))
+            {
+                locked["email"] = [StudentIdentityLockedMessage];
+            }
+
+            if (locked.Count > 0)
+            {
+                return Result.Failure<UserProfileDto>(StudentIdentityLockedMessage, ErrorCode.Validation, locked);
+            }
+        }
+
         // So trùng trên chuỗi ĐÃ trim, loại trừ chính mình — nếu không, người dùng lưu lại hồ sơ mà
         // không đổi email sẽ tự báo trùng với chính mình (§5).
-        if (await _unitOfWork.Users.IsEmailTakenAsync(email, account.Id, cancellationToken))
+        if (!isStudent && await _unitOfWork.Users.IsEmailTakenAsync(email, account.Id, cancellationToken))
         {
             return Result.Conflict<UserProfileDto>("Email này đã được một tài khoản khác sử dụng.");
         }
@@ -223,8 +248,12 @@ public sealed class AuthService : IAuthService
         // bằng cách gõ tên môn, và học sinh thì không có môn. Id, Role, Username, Code, GroupId,
         // AvatarColor và CreatedAt cũng vắng mặt khỏi DTO vì cùng một lý do: client gửi lên thì rơi
         // mất ngay lúc deserialize, không cần lọc lại ở đây.
-        account.FullName = fullName;
-        account.Email = email;
+        if (!isStudent)
+        {
+            account.FullName = fullName;
+            account.Email = email;
+        }
+
         account.Phone = phone;
         account.School = school;
         account.UpdatedAt = DateTime.UtcNow;
