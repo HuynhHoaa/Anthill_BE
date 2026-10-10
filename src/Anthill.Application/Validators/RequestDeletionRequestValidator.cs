@@ -10,10 +10,15 @@ public sealed class RequestDeletionRequestValidator : AbstractValidator<RequestD
 
     public RequestDeletionRequestValidator()
     {
+        // Đo sau khi cắt khoảng trắng hai đầu: service lưu bản đã cắt, nên "a" kèm chín dấu cách không được
+        // lọt qua mức 10 ký tự rồi bị lưu thành một chữ.
         RuleFor(request => request.Reason)
-            .NotEmpty().WithMessage("Vui lòng nhập lý do xoá tài khoản.")
-            .MinimumLength(MinimumReasonLength)
+            .NotEmpty().WithMessage("Vui lòng nhập lý do xoá tài khoản.");
+
+        RuleFor(request => request.Reason)
+            .Must(reason => reason!.Trim().Length >= MinimumReasonLength)
                 .WithMessage($"Lý do cần ít nhất {MinimumReasonLength} ký tự để người đọc sau này hiểu được.")
-            .MaximumLength(512).WithMessage("Lý do tối đa 512 ký tự.");
+            .Must(reason => reason!.Trim().Length <= 512).WithMessage("Lý do tối đa 512 ký tự.")
+            .When(request => !string.IsNullOrEmpty(request.Reason));
     }
 }

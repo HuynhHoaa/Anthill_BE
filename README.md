@@ -224,7 +224,7 @@ trống, và được tự chuyển sang chuỗi kết nối Npgsql. Hai điều
 
 ## Kiểm thử
 
-**Unit test** — `tests/Anthill.Tests/`, 476 test:
+**Unit test** — `tests/Anthill.Tests/`, 481 test:
 
 ```bash
 dotnet test

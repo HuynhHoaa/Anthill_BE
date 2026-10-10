@@ -132,7 +132,10 @@ public class AttemptDeadlineTests
     {
         var unspecifiedExpiry = DateTime.SpecifyKind(CloseAt, DateTimeKind.Unspecified);
 
-        AttemptDeadline.RecordedSubmitTime(unspecifiedExpiry, CloseAt.AddHours(1), autoSubmitted: true)
-            .Should().Be(CloseAt);
+        var recorded = AttemptDeadline.RecordedSubmitTime(unspecifiedExpiry, CloseAt.AddHours(1), autoSubmitted: true);
+
+        recorded.Should().Be(CloseAt);
+        // So sánh DateTime bỏ qua Kind, nên phải kiểm riêng: giá trị ghi xuống phải là UTC.
+        recorded.Kind.Should().Be(DateTimeKind.Utc);
     }
 }

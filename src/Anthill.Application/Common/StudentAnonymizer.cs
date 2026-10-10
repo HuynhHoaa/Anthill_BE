@@ -39,6 +39,35 @@ public static class StudentAnonymizer
     /// <summary>Email thay thế ứng với một <see cref="TokenFor"/>.</summary>
     public static string EmailFor(string token) => $"{token}@deleted.local";
 
+    /// <summary>Số đuôi đếm thử trước khi chuyển sang chuỗi GUID.</summary>
+    private const int MaxCounterAttempts = 50;
+
+    /// <summary>
+    /// Chọn định danh thay thế chưa ai dùng: dạng gốc theo id, rồi thêm đuôi đếm khi nó đã bị chiếm.
+    /// </summary>
+    /// <param name="userId">Tài khoản sắp bị ẩn danh hoá.</param>
+    /// <param name="isTaken">Hỏi database một định danh đã có người khác dùng chưa.</param>
+    /// <remarks>
+    /// Tách khỏi service để vòng chọn kiểm được mà không cần database. Chuỗi GUID ở cuối cắt còn 32 ký tự
+    /// vì cột <c>Code</c> dài đúng chừng đó, và gốc <c>deleted-{id}-</c> luôn ngắn hơn phần cắt.
+    /// </remarks>
+    public static async Task<string> ChooseFreeTokenAsync(int userId, Func<string, Task<bool>> isTaken)
+    {
+        ArgumentNullException.ThrowIfNull(isTaken);
+
+        for (var collisions = 0; collisions < MaxCounterAttempts; collisions++)
+        {
+            var token = TokenFor(userId, collisions);
+            if (!await isTaken(token))
+            {
+                return token;
+            }
+        }
+
+        // Năm mươi lần va liên tiếp không còn là tình cờ, nhưng lượt quét vẫn phải đi tiếp được.
+        return $"deleted-{userId}-{Guid.NewGuid():N}"[..32];
+    }
+
     /// <summary>Xoá dữ liệu cá nhân tại chỗ. Không đụng tới lượt làm bài, điểm, hay lịch sử.</summary>
     /// <param name="token">
     /// Định danh thay thế đã được kiểm là chưa ai dùng. Bỏ trống thì lấy dạng gốc theo id; tên đăng nhập,

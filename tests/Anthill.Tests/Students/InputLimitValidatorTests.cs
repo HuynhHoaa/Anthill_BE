@@ -122,6 +122,30 @@ public class InputLimitValidatorTests
             .Should().Contain("Danh sách câu trả lời không hợp lệ.");
     }
 
+    [Fact]
+    public void Ly_do_xoa_chi_co_mot_chu_va_nhieu_dau_cach_bi_tu_choi()
+    {
+        // Service lưu bản đã cắt khoảng trắng, nên độ dài phải đo trên bản đã cắt.
+        var request = new RequestDeletionRequest { Reason = "a" + new string(' ', 9) };
+
+        ErrorsOf(new RequestDeletionRequestValidator(), request)
+            .Should().Contain(message => message.Contains("ít nhất"));
+    }
+
+    [Fact]
+    public void Ho_ten_hoc_sinh_dai_128_ky_tu_van_luu_duoc_so_dien_thoai()
+    {
+        // Quản trị viên tạo được tên tới 128 ký tự; trần hồ sơ cũ là 100 nên em đó không lưu nổi gì.
+        var request = new UpdateProfileRequest
+        {
+            FullName = new string('a', 128),
+            Email = "em@kiemthu.vn",
+            Phone = "0912345678"
+        };
+
+        new UpdateProfileRequestValidator().Validate(request).IsValid.Should().BeTrue();
+    }
+
     private static SaveExamRequest ValidExam() => new()
     {
         Title = "Kiểm tra giữa kỳ",

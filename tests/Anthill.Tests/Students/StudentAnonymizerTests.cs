@@ -146,6 +146,34 @@ public class StudentAnonymizerTests
     }
 
     [Fact]
+    public async Task Chon_dinh_danh_dung_dang_goc_khi_chua_ai_dung()
+    {
+        var token = await StudentAnonymizer.ChooseFreeTokenAsync(42, _ => Task.FromResult(false));
+
+        token.Should().Be("deleted-42");
+    }
+
+    [Fact]
+    public async Task Chon_dinh_danh_them_duoi_dem_khi_dang_goc_da_bi_chiem()
+    {
+        var taken = new HashSet<string> { "deleted-42", "deleted-42-1" };
+
+        var token = await StudentAnonymizer.ChooseFreeTokenAsync(42, candidate => Task.FromResult(taken.Contains(candidate)));
+
+        token.Should().Be("deleted-42-2");
+    }
+
+    [Fact]
+    public async Task Chon_dinh_danh_chuyen_sang_GUID_khi_moi_duoi_dem_deu_bi_chiem()
+    {
+        var token = await StudentAnonymizer.ChooseFreeTokenAsync(42, _ => Task.FromResult(true));
+
+        // Cột Code dài 32 ký tự; chuỗi dự phòng phải vừa và vẫn mang id để không va với tài khoản khác.
+        token.Length.Should().BeLessThanOrEqualTo(32);
+        token.Should().StartWith("deleted-42-");
+    }
+
+    [Fact]
     public void Anonymize_xoa_trang_thai_truoc_khi_vao_dien_xoa()
     {
         // Không còn gì để khôi phục sau khi dữ liệu đã bị xoá, nên không giữ lại trạng thái cũ.

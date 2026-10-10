@@ -91,19 +91,51 @@ app.MapHub<NotificationHub>(
 // Chạm cả database: trả "ok" khi database không với tới được là báo khoẻ cho một API không làm được
 // việc gì, và lời gọi đánh thức từ frontend sẽ chỉ đánh thức API chứ không đánh thức database ngủ.
 // Giới hạn năm giây để một database treo không làm treo luôn lượt kiểm tra.
+//
+// Kết quả được giữ năm giây và các lời gọi đồng thời xếp hàng sau một ổ khoá: endpoint này không cần
+// token mà frontend gọi mỗi lần tải trang, nên một đợt gọi dồn không được mượn hết pool kết nối của cả
+// API (production giới hạn mười).
+var healthGate = new SemaphoreSlim(1, 1);
+var healthCheckedAt = DateTime.MinValue;
+var healthReachable = false;
+
 app.MapGet("/health", async (AppDbContext database, CancellationToken cancellationToken) =>
 {
-    using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
-    timeout.CancelAfter(TimeSpan.FromSeconds(5));
+    bool databaseReachable;
 
-    var databaseReachable = false;
+    await healthGate.WaitAsync(cancellationToken);
     try
     {
-        databaseReachable = await database.Database.CanConnectAsync(timeout.Token);
+        if (DateTime.UtcNow - healthCheckedAt > TimeSpan.FromSeconds(5))
+        {
+            using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            timeout.CancelAfter(TimeSpan.FromSeconds(5));
+
+            healthReachable = false;
+
+            // Hai lần: một kết nối nằm sẵn trong pool có thể đã chết (database ngủ vừa dậy). Lần đầu loại
+            // nó khỏi pool, lần hai mở kết nối mới; không thì lượt kiểm tra đầu tiên sau giờ nghỉ luôn 503.
+            for (var attempt = 0; attempt < 2 && !healthReachable; attempt++)
+            {
+                try
+                {
+                    healthReachable = await database.Database.CanConnectAsync(timeout.Token);
+                }
+                catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+                {
+                    // Quá năm giây: coi như không với tới được, không thử lại.
+                    break;
+                }
+            }
+
+            healthCheckedAt = DateTime.UtcNow;
+        }
+
+        databaseReachable = healthReachable;
     }
-    catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+    finally
     {
-        // Quá năm giây: coi như không với tới được.
+        healthGate.Release();
     }
 
     var body = new

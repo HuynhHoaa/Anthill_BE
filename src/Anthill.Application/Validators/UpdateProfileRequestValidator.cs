@@ -15,7 +15,8 @@ namespace Anthill.Application.Validators;
 /// </remarks>
 public sealed class UpdateProfileRequestValidator : AbstractValidator<UpdateProfileRequest>
 {
-    private const int MaxFullNameLength = 100;
+    /// <summary>Khớp cột <c>Users.FullName</c> và <c>StudentFieldRules.MaxFullNameLength</c>: quản trị viên tạo được tên dài tới đây.</summary>
+    private const int MaxFullNameLength = 128;
     private const int MaxSchoolLength = 200;
 
     /// <summary>Khớp cột <c>Users.Email</c> và <c>StudentFieldRules.MaxEmailLength</c>.</summary>

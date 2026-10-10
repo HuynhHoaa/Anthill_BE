@@ -489,27 +489,15 @@ public sealed class StudentService : IStudentService
     /// nhập, mã và email do người dùng tự nhập. Một lần va là vi phạm chỉ mục duy nhất, cả lô một trăm
     /// tài khoản bị cuộn lại, và lượt quét sáu tiếng sau lại chọn đúng lô đó rồi hỏng y như cũ.
     /// </remarks>
-    private async Task<string> FindFreeAnonymousTokenAsync(int userId, CancellationToken cancellationToken)
-    {
+    private Task<string> FindFreeAnonymousTokenAsync(int userId, CancellationToken cancellationToken) =>
         // Ba cột là một không gian tên khi kiểm trùng (xem UserRepository), nên một lượt hỏi theo tên
         // đăng nhập đã soi cả email lẫn mã; email thay thế có đuôi riêng nên phải hỏi thêm.
-        for (var collisions = 0; collisions < 50; collisions++)
-        {
-            var token = StudentAnonymizer.TokenFor(userId, collisions);
-
-            var taken = await _unitOfWork.Users.IsUsernameTakenAsync(token, userId, cancellationToken)
-                        || await _unitOfWork.Users.IsEmailTakenAsync(
-                            StudentAnonymizer.EmailFor(token), userId, cancellationToken);
-
-            if (!taken)
-            {
-                return token;
-            }
-        }
-
-        // Năm mươi lần va liên tiếp không còn là tình cờ. Cột mã dài 32 ký tự nên cắt cho vừa.
-        return $"deleted-{userId}-{Guid.NewGuid():N}"[..32];
-    }
+        StudentAnonymizer.ChooseFreeTokenAsync(
+            userId,
+            async token =>
+                await _unitOfWork.Users.IsUsernameTakenAsync(token, userId, cancellationToken)
+                || await _unitOfWork.Users.IsEmailTakenAsync(
+                    StudentAnonymizer.EmailFor(token), userId, cancellationToken));
 
     /// <summary>
     /// Dọn tên thật khỏi thông báo nộp bài cũ của giáo viên khi xoá một học sinh (§5, H22).
