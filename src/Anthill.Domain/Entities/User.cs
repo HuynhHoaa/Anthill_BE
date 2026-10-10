@@ -57,6 +57,16 @@ public class User : BaseEntity
     /// </remarks>
     public string? DeletionReason { get; set; }
 
+    /// <summary>
+    /// Trạng thái ngay trước khi vào diện xoá, để khôi phục trả tài khoản về đúng chỗ cũ.
+    /// NULL khi tài khoản không nằm trong diện xoá.
+    /// </summary>
+    /// <remarks>
+    /// Không có cột này thì khôi phục luôn ra <see cref="UserStatus.Active"/>, và một em đang bị khoá
+    /// vì lý do kỷ luật được mở lại chỉ vì từng bị đưa vào danh sách chờ xoá rồi gỡ ra.
+    /// </remarks>
+    public UserStatus? StatusBeforeDeletion { get; set; }
+
     /// <summary>Mốc bắt đầu đếm thời gian chờ. NULL khi tài khoản không nằm trong diện xoá.</summary>
     public DateTime? DeletionRequestedAt { get; set; }
 

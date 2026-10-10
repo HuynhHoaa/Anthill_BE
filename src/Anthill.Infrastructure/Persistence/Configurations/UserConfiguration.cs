@@ -60,6 +60,10 @@ public class UserConfiguration : IEntityTypeConfiguration<User>
             .HasMaxLength(16)
             .HasConversion<string>();
 
+        builder.Property(u => u.StatusBeforeDeletion)
+            .HasMaxLength(16)
+            .HasConversion<string>();
+
         builder.Property(u => u.Code)
             .HasMaxLength(32);
 

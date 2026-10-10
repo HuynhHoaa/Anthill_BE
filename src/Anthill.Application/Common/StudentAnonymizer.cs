@@ -32,17 +32,28 @@ public static class StudentAnonymizer
     /// </remarks>
     public const int RetentionDays = 60;
 
+    /// <summary>Phần định danh thay thế sinh từ id; <paramref name="collisions"/> &gt; 0 khi gốc đã bị người khác dùng.</summary>
+    public static string TokenFor(int userId, int collisions = 0) =>
+        collisions <= 0 ? $"deleted-{userId}" : $"deleted-{userId}-{collisions}";
+
+    /// <summary>Email thay thế ứng với một <see cref="TokenFor"/>.</summary>
+    public static string EmailFor(string token) => $"{token}@deleted.local";
+
     /// <summary>Xoá dữ liệu cá nhân tại chỗ. Không đụng tới lượt làm bài, điểm, hay lịch sử.</summary>
-    public static void Anonymize(User user, DateTime nowUtc)
+    /// <param name="token">
+    /// Định danh thay thế đã được kiểm là chưa ai dùng. Bỏ trống thì lấy dạng gốc theo id; tên đăng nhập,
+    /// mã và email do người dùng tự đặt nên người gọi ở lượt xoá thật phải kiểm trước khi truyền vào.
+    /// </param>
+    public static void Anonymize(User user, DateTime nowUtc, string? token = null)
     {
         ArgumentNullException.ThrowIfNull(user);
 
         // Hậu tố sinh từ id: duy nhất theo đúng nghĩa của chỉ mục, và không suy ngược ra được gì
         // về người cũ. Dùng id chứ không dùng chuỗi ngẫu nhiên để chạy lại hai lần cho cùng kết quả.
-        var token = $"deleted-{user.Id}";
+        token ??= TokenFor(user.Id);
 
         user.FullName = DisplayName;
-        user.Email = $"{token}@deleted.local";
+        user.Email = EmailFor(token);
         user.Username = token;
         user.Code = token;
         user.Phone = null;
@@ -57,6 +68,7 @@ public static class StudentAnonymizer
         user.GroupId = null;
 
         user.Status = UserStatus.Deleted;
+        user.StatusBeforeDeletion = null;
         user.DeletedAt = nowUtc;
         user.UpdatedAt = nowUtc;
 
