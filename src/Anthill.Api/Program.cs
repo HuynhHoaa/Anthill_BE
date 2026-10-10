@@ -3,6 +3,7 @@ using Anthill.Api.Extensions;
 using Anthill.Api.Hubs;
 using Anthill.Api.RateLimiting;
 using Anthill.Infrastructure;
+using Anthill.Infrastructure.Persistence;
 
 var builder = WebApplication.CreateBuilder(args);
 
@@ -86,11 +87,36 @@ app.MapHub<NotificationHub>(
 
 // Cho reverse proxy và dịch vụ hosting kiểm tra tiến trình còn sống; cũng là cách nhanh nhất để
 // đối chiếu đồng hồ server khi gỡ lỗi phần hạn giờ làm bài.
-app.MapGet("/health", () => Results.Ok(new
+//
+// Chạm cả database: trả "ok" khi database không với tới được là báo khoẻ cho một API không làm được
+// việc gì, và lời gọi đánh thức từ frontend sẽ chỉ đánh thức API chứ không đánh thức database ngủ.
+// Giới hạn năm giây để một database treo không làm treo luôn lượt kiểm tra.
+app.MapGet("/health", async (AppDbContext database, CancellationToken cancellationToken) =>
 {
-    status = "ok",
-    serverTimeUtc = DateTime.UtcNow
-}))
+    using var timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+    timeout.CancelAfter(TimeSpan.FromSeconds(5));
+
+    var databaseReachable = false;
+    try
+    {
+        databaseReachable = await database.Database.CanConnectAsync(timeout.Token);
+    }
+    catch (OperationCanceledException) when (!cancellationToken.IsCancellationRequested)
+    {
+        // Quá năm giây: coi như không với tới được.
+    }
+
+    var body = new
+    {
+        status = databaseReachable ? "ok" : "degraded",
+        database = databaseReachable ? "ok" : "unreachable",
+        serverTimeUtc = DateTime.UtcNow
+    };
+
+    return databaseReachable
+        ? Results.Ok(body)
+        : Results.Json(body, statusCode: StatusCodes.Status503ServiceUnavailable);
+})
 .ExcludeFromDescription();
 
 // Dữ liệu demo, chỉ ở Development. Thất bại thì ghi cảnh báo chứ không chặn khởi động.
