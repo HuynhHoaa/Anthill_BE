@@ -153,6 +153,24 @@ public sealed class ExceptionMiddleware
                 + "Hãy tải lại trang rồi thử lại.",
                 exception);
         }
+        catch (Exception exception) when (IsUnstorableText(exception))
+        {
+            // Ký tự NUL (U+0000) không lưu và không so khớp được trong cột text của PostgreSQL: gõ nó vào
+            // ô tên đăng nhập, tên nhóm hay ô tìm kiếm thì database từ chối cả câu lệnh. Đó là dữ liệu
+            // sai của phía gửi chứ không phải sự cố, nên trả 400 thay vì 500. Bắt ở đây vì mọi chuỗi từ
+            // người dùng đều có thể mang nó, và tầng Application cố ý không biết gì về PostgreSQL.
+            _logger.LogWarning(
+                exception,
+                "Chuỗi có ký tự không lưu được ở {Method} {Path}.",
+                context.Request.Method,
+                context.Request.Path.Value);
+
+            await WriteAsync(
+                context,
+                (int)HttpStatusCode.BadRequest,
+                "Dữ liệu gửi lên có ký tự không hợp lệ.",
+                exception);
+        }
         catch (Exception exception)
         {
             _logger.LogError(
@@ -175,6 +193,27 @@ public sealed class ExceptionMiddleware
     /// </remarks>
     private static bool IsUniqueViolation(DbUpdateException exception) =>
         exception.InnerException is PostgresException { SqlState: PostgresErrorCodes.UniqueViolation };
+
+    /// <summary>
+    /// PostgreSQL từ chối một chuỗi vì ký tự của nó không có trong bảng mã (SQLSTATE <c>22021</c>, hay
+    /// <c>22P05</c>), thường gặp nhất là NUL. Tìm trong cả chuỗi <c>InnerException</c>: EF Core giữ
+    /// nguyên ngoại lệ gốc khi đọc, nhưng bọc nó trong <see cref="DbUpdateException"/> khi ghi.
+    /// </summary>
+    private static bool IsUnstorableText(Exception exception)
+    {
+        for (var current = exception; current is not null; current = current.InnerException)
+        {
+            if (current is PostgresException
+                {
+                    SqlState: PostgresErrorCodes.CharacterNotInRepertoire or PostgresErrorCodes.UntranslatableCharacter
+                })
+            {
+                return true;
+            }
+        }
+
+        return false;
+    }
 
     private async Task WriteAsync(HttpContext context, int statusCode, string message, Exception exception)
     {

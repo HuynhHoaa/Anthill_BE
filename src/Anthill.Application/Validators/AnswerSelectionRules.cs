@@ -50,17 +50,25 @@ public static class AnswerSelectionRules
             .WithMessage($"Mỗi lần chỉ gửi được tối đa {MaxSelectionsPerRequest} câu.")
             .When(request => selector(request) is not null);
 
+        // "answers": [null] vẫn qua bước bind model, và các quy tắc dưới đây đọc thuộc tính của từng
+        // phần tử. Chặn riêng, rồi cho chúng chạy trên danh sách đã sạch null.
+        validator.RuleFor(request => selector(request))
+            .Must(answers => answers!.All(answer => answer is not null))
+            .WithName(propertyName)
+            .WithMessage("Danh sách câu trả lời không hợp lệ.")
+            .When(request => selector(request) is { Count: > 0 });
+
         validator.RuleFor(request => selector(request))
             .Must(answers => answers!.All(answer => answer.QuestionId > 0))
             .WithName(propertyName)
             .WithMessage("Danh sách câu trả lời chứa mã câu hỏi không hợp lệ.")
-            .When(request => selector(request) is { Count: > 0 });
+            .When(request => HasEntries(selector(request)));
 
         validator.RuleFor(request => selector(request))
             .Must(answers => answers!.All(answer => answer.AnswerId is null or > 0))
             .WithName(propertyName)
             .WithMessage("Danh sách câu trả lời chứa mã đáp án không hợp lệ.")
-            .When(request => selector(request) is { Count: > 0 });
+            .When(request => HasEntries(selector(request)));
 
         // Hai dòng cho cùng một câu trong một gói tin thì không có câu trả lời đúng nào cho "cuối
         // cùng em chọn ô nào", mà phía dưới còn có unique index (AttemptId, ExamPaperQuestionId)
@@ -69,6 +77,9 @@ public static class AnswerSelectionRules
             .Must(answers => answers!.Select(answer => answer.QuestionId).Distinct().Count() == answers!.Count)
             .WithName(propertyName)
             .WithMessage("Một câu hỏi chỉ được xuất hiện một lần trong mỗi lần gửi.")
-            .When(request => selector(request) is { Count: > 0 });
+            .When(request => HasEntries(selector(request)));
     }
+
+    private static bool HasEntries(IReadOnlyList<AnswerSelectionDto>? answers) =>
+        answers is { Count: > 0 } && answers.All(answer => answer is not null);
 }

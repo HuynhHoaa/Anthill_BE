@@ -108,9 +108,25 @@ public sealed class SaveQuestionRequestValidator : AbstractValidator<SaveQuestio
             .WithMessage($"Câu hỏi không được có quá {MaxAnswers} đáp án.")
             .When(HasAnswers);
 
+        // Phần tử null trong mảng JSON ("answers": [null, ...]) qua được bước bind model. Các quy tắc
+        // phía dưới đọc thuộc tính của từng phần tử nên phải loại nó ra trước (HasAnswers cũng đã lọc),
+        // không thì một lỗi 400 biến thành 500.
+        RuleFor(request => request.Answers)
+            .Must(answers => answers!.All(answer => answer is not null))
+            .WithMessage("Danh sách đáp án có một dòng trống.")
+            .When(request => request.Answers is { Count: > 0 });
+
         RuleFor(request => request.Answers)
             .Must(answers => answers!.All(HasSomeContent))
             .WithMessage("Nội dung đáp án không được để trống.")
+            .When(HasAnswers);
+
+        // Cột AnswerOptions.ImageUrl dài 512 như cột của câu hỏi; không chặn thì đường dẫn dài hơn đi
+        // thẳng xuống database và vỡ ở đó.
+        RuleFor(request => request.Answers)
+            .Must(answers => answers!.All(answer =>
+                string.IsNullOrWhiteSpace(answer.ImageUrl) || answer.ImageUrl.Trim().Length <= MaxImageUrlLength))
+            .WithMessage($"Đường dẫn ảnh đáp án không được vượt quá {MaxImageUrlLength} ký tự.")
             .When(HasAnswers);
 
         RuleFor(request => request.Answers)
@@ -142,7 +158,8 @@ public sealed class SaveQuestionRequestValidator : AbstractValidator<SaveQuestio
             .When(HasAnswers);
     }
 
-    private static bool HasAnswers(SaveQuestionRequest request) => request.Answers is { Count: > 0 };
+    private static bool HasAnswers(SaveQuestionRequest request) =>
+        request.Answers is { Count: > 0 } answers && answers.All(answer => answer is not null);
 
     /// <summary>Đáp án hợp lệ khi có chữ <b>hoặc</b> có ảnh — một đáp án chỉ gồm hình là bình thường.</summary>
     private static bool HasSomeContent(SaveAnswerOptionRequest answer) =>
