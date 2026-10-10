@@ -354,9 +354,9 @@ Chức năng chính:
 
 Realtime:
 
-- Backend có SignalR hub đẩy các sự kiện giao bài, nộp bài, tự nộp bài và thay đổi số thông báo chưa đọc.
-- Frontend hiện chưa kết nối SignalR; số thông báo chưa đọc được tải lại mỗi khi chuyển trang.
-- Thông báo "bài kiểm tra gần hết hạn" và "Teacher cập nhật bài kiểm tra" đã có kiểu dữ liệu nhưng chưa được hệ thống tạo ra.
+- Backend có SignalR hub đẩy các sự kiện giao bài, đổi lịch, nộp bài, tự nộp bài, bài sắp đóng và thay đổi số thông báo chưa đọc.
+- Frontend giữ một kết nối SignalR suốt phiên đăng nhập: chuông thông báo, danh sách bài của học sinh, bảng kết quả và trang theo dõi đề của giáo viên tự cập nhật khi có sự kiện, không cần tải lại trang. Mất kết nối quá vài giây thì hiện dải "Đang kết nối lại".
+- Thông báo "bài kiểm tra sắp đóng" và "giáo viên đổi lịch bài kiểm tra" đều do hệ thống tạo ra.
 
 Realtime chỉ dùng để cập nhật thông báo và trạng thái nhanh. Các nghiệp vụ chính như tạo bài kiểm tra, nộp bài, chấm điểm vẫn xử lý bằng REST API.
 
