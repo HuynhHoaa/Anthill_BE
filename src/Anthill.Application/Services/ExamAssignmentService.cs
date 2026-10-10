@@ -386,9 +386,15 @@ public sealed class ExamAssignmentService : IExamAssignmentService
             return Result.Failure<AssignExamResponse>(generated.Error!, generated.ErrorCode);
         }
 
-        if (request.Notify)
+        // Em được giao vào một khung giờ đã đóng thì không còn gì để "hoàn thành trước hạn nộp": báo là báo
+        // sai, nên bỏ qua cả thông báo lẫn sự kiện. Khi giáo viên mở lại khung đó, lần dời giờ sẽ báo em.
+        var notified = request.Notify
+            ? assignments.Where(assignment => !IsWindowClosed(exam, assignment, now)).ToList()
+            : new List<ExamAssignment>();
+
+        if (notified.Count > 0)
         {
-            await AddNotificationsAsync(exam, assignments, now, cancellationToken);
+            await AddNotificationsAsync(exam, notified, now, cancellationToken);
         }
 
         await _unitOfWork.SaveChangesAsync(cancellationToken);
@@ -400,12 +406,12 @@ public sealed class ExamAssignmentService : IExamAssignmentService
         var teacherName = string.Empty;
         var unreadCounts = new Dictionary<int, int>();
 
-        if (request.Notify)
+        if (notified.Count > 0)
         {
             var teacher = await _unitOfWork.Users.GetByIdAsync(exam.CreatedByUserId, cancellationToken);
             teacherName = teacher?.FullName ?? string.Empty;
 
-            foreach (var assignment in assignments)
+            foreach (var assignment in notified)
             {
                 unreadCounts[assignment.StudentId] =
                     await _unitOfWork.Notifications.CountUnreadAsync(assignment.StudentId, cancellationToken);
@@ -419,9 +425,9 @@ public sealed class ExamAssignmentService : IExamAssignmentService
         // SAU khi commit, không sớm hơn một dòng nào. Bắn trước commit thì có lúc học sinh nhận
         // thông báo về một bài mà transaction ngay sau đó cuộn lại — em mở ứng dụng ra và không
         // thấy gì (§7).
-        if (request.Notify)
+        if (notified.Count > 0)
         {
-            await PublishAssignedAsync(exam, assignments, teacherName, unreadCounts, cancellationToken);
+            await PublishAssignedAsync(exam, notified, teacherName, unreadCounts, cancellationToken);
         }
 
         await _scheduleNotifier.PublishAsync(scheduleNotices, cancellationToken);
@@ -783,6 +789,15 @@ public sealed class ExamAssignmentService : IExamAssignmentService
         });
 
         await _unitOfWork.Notifications.AddRangeAsync(notifications, cancellationToken);
+    }
+
+    /// <summary>Khung giờ có hiệu lực của lượt giao này đã đóng chưa. Bằng giờ đóng vẫn còn mở.</summary>
+    private static bool IsWindowClosed(Exam exam, ExamAssignment assignment, DateTime now)
+    {
+        var (openAt, closeAt) = AssignmentSchedule.Resolve(assignment, exam);
+
+        return ExamMappingExtensions.ResolveWindowLifecycle(isDraft: false, openAt, closeAt, now)
+               == ExamLifecycle.Closed;
     }
 
     /// <summary>Đề mà người gọi được <b>đọc</b>: giáo viên đọc đề mình tạo, quản trị viên đọc mọi đề.</summary>

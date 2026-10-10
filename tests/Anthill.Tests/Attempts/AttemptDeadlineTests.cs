@@ -90,4 +90,49 @@ public class AttemptDeadlineTests
         AttemptDeadline.RemainingSeconds(CloseAt, CloseAt.AddMinutes(5)).Should().Be(0);
         AttemptDeadline.RemainingSeconds(CloseAt, CloseAt).Should().Be(0);
     }
+
+    [Fact]
+    public void Bai_he_thong_nop_thay_muon_hang_gio_van_ghi_gio_nop_bang_han()
+    {
+        // Em bỏ thi, tiến trình nền chạm tới lượt này sau hạn ba tiếng: giờ nộp không được kéo
+        // "thời gian đã làm" vượt thời lượng của đề.
+        var lateSweep = CloseAt.AddHours(3);
+
+        AttemptDeadline.RecordedSubmitTime(CloseAt, lateSweep, autoSubmitted: true).Should().Be(CloseAt);
+    }
+
+    [Fact]
+    public void Bai_nop_thay_trong_khoang_an_han_cung_ghi_bang_han()
+    {
+        // Request tự nộp của client chạm server trễ vài trăm mili giây là chuyện bình thường.
+        AttemptDeadline.RecordedSubmitTime(CloseAt, CloseAt.AddMilliseconds(400), autoSubmitted: true)
+            .Should().Be(CloseAt);
+    }
+
+    [Fact]
+    public void Bai_he_thong_nop_thay_ma_chua_toi_han_giu_gio_that()
+    {
+        // Không xảy ra theo cách ghi hiện tại, nhưng nếu đồng hồ hai instance lệch nhau thì không
+        // được ghi một giờ nộp ở tương lai.
+        var early = CloseAt.AddSeconds(-5);
+
+        AttemptDeadline.RecordedSubmitTime(CloseAt, early, autoSubmitted: true).Should().Be(early);
+    }
+
+    [Fact]
+    public void Bai_em_tu_nop_truoc_gio_giu_nguyen_gio_that()
+    {
+        var submitted = CloseAt.AddMinutes(-7);
+
+        AttemptDeadline.RecordedSubmitTime(CloseAt, submitted, autoSubmitted: false).Should().Be(submitted);
+    }
+
+    [Fact]
+    public void Gio_nop_ghi_so_cung_chiu_moc_khong_ghi_Kind()
+    {
+        var unspecifiedExpiry = DateTime.SpecifyKind(CloseAt, DateTimeKind.Unspecified);
+
+        AttemptDeadline.RecordedSubmitTime(unspecifiedExpiry, CloseAt.AddHours(1), autoSubmitted: true)
+            .Should().Be(CloseAt);
+    }
 }

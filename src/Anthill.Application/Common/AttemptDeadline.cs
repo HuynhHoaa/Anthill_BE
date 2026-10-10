@@ -60,4 +60,21 @@ public static class AttemptDeadline
 
         return remaining <= 0 ? 0 : (int)Math.Ceiling(remaining);
     }
+
+    /// <summary>
+    /// Giờ nộp ghi vào sổ. Bài do hệ thống nộp thay không bao giờ có giờ nộp muộn hơn hạn của lượt.
+    /// </summary>
+    /// <remarks>
+    /// Tiến trình nền quét theo chu kỳ và em bỏ thi có thể không quay lại nữa, nên lúc chấm có thể
+    /// đã muộn hơn hạn hàng giờ. Ghi nguyên giờ đó thì "thời gian đã làm" trên bảng kết quả vượt
+    /// cả thời lượng đề cho phép, và bài tự nộp của một em bỏ thi sáng thứ Hai lại hiện là nộp
+    /// chiều thứ Ba. Bài em tự bấm nộp trước giờ giữ nguyên giờ thật.
+    /// </remarks>
+    public static DateTime RecordedSubmitTime(DateTime expiresAtUtc, DateTime nowUtc, bool autoSubmitted)
+    {
+        var now = nowUtc.ToUtc();
+        var expiresAt = expiresAtUtc.ToUtc();
+
+        return autoSubmitted && now > expiresAt ? expiresAt : now;
+    }
 }
