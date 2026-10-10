@@ -40,7 +40,7 @@ gì, và dọn trong `trap EXIT` kể cả khi hỏng giữa chừng. Dọn ch�
 
 ## Các bộ hiện có
 
-15 script, tổng cộng 1049 phép kiểm.
+19 script, hơn 1100 phép kiểm.
 
 | Script | Phủ |
 |---|---|

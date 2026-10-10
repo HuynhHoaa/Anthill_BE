@@ -168,7 +168,7 @@ khác. Đăng nhập bằng một tài khoản demo bên dưới.
 |---|---|
 | `http://localhost:5002/api/...` | API |
 | `http://localhost:5002/swagger` | Swagger UI, chỉ có ở Development |
-| `http://localhost:5002/health` | tiến trình còn sống + giờ server UTC |
+| `http://localhost:5002/health` | tiến trình còn sống, database với tới được (503 khi không) + giờ server UTC |
 | `http://localhost:5002/hubs/notifications` | SignalR |
 
 `launchSettings.json` còn có profile `https` (thêm `https://localhost:7153`), `http-no-autosubmit` (tắt
@@ -224,7 +224,7 @@ trống, và được tự chuyển sang chuỗi kết nối Npgsql. Hai điều
 
 ## Kiểm thử
 
-**Unit test** — `tests/Anthill.Tests/`, 361 test:
+**Unit test** — `tests/Anthill.Tests/`, 476 test:
 
 ```bash
 dotnet test
@@ -234,12 +234,12 @@ Chúng kiểm tra logic thuần, không cần database: chia blueprint, xáo đ�
 hạn giờ và điều kiện bắt đầu làm bài, chấm điểm, lịch theo lớp, cổng xem đáp án, ẩn danh hoá, phạm vi học
 sinh của giáo viên, kiểm phiên đăng nhập, luật validator.
 
-**Bộ kiểm HTTP** — `tests/api-checks/`, 15 script, 1049 phép kiểm; chi tiết từng bộ ở
+**Bộ kiểm HTTP** — `tests/api-checks/`, hơn 1100 phép kiểm trong 19 script; chi tiết từng bộ ở
 [tests/api-checks/README.md](tests/api-checks/README.md). Chúng chạy trên API thật để kiểm thứ unit test
 không với tới: 401/403/404, phân quyền theo vai trò, phạm vi dữ liệu, transaction. Có một bộ cho mỗi bước
-từ `step2` tới `step8`, và tám bộ cho các phần thêm sau đó: lớp do quản trị viên lập, luồng từ lớp tới
-học sinh, lịch theo lớp, luật sửa đề, xoá mềm, trạng thái tài khoản, thu hồi phiên, phạm vi học sinh của
-giáo viên.
+từ `step2` tới `step8`, và các bộ cho phần thêm sau đó: lớp do quản trị viên lập, luồng từ lớp tới học
+sinh, lịch theo lớp, luật sửa đề, xoá mềm, trạng thái tài khoản, thu hồi phiên, phạm vi học sinh của giáo
+viên, nhắc hạn, đổi lịch, và các lỗi từ đợt rà soát (`audit-fixes.sh`).
 
 Cần API đang chạy, database đã migrate và đã có tài khoản demo (script đăng nhập bằng chúng), cùng
 `bash`, `curl` và `python` (`lib.sh` dùng python để đọc JSON, `session-revocation.sh` dùng nó làm một

@@ -40,7 +40,7 @@ Chức năng chính:
 - Trang đăng nhập có lựa chọn vai trò; server đối chiếu với vai trò lưu trong database và từ chối nếu không khớp.
 - Tài khoản bị khóa, đang chờ xóa hoặc đã xóa không đăng nhập được.
 - Hệ thống điều hướng dashboard theo role.
-- Người dùng có thể xem và cập nhật thông tin cá nhân cơ bản, và đổi mật khẩu (phải nhập đúng mật khẩu hiện tại).
+- Người dùng có thể xem và cập nhật thông tin cá nhân cơ bản, và đổi mật khẩu (phải nhập đúng mật khẩu hiện tại). Riêng học sinh không tự đổi họ tên và email: hai trường này do Admin giữ (Stage 2).
 - Hệ thống kiểm tra quyền truy cập theo role ở server; giao diện chỉ làm nhiệm vụ điều hướng.
 - Khóa tài khoản, đổi mật khẩu hoặc Admin cấp lại mật khẩu làm mọi phiên đăng nhập đang mở của tài khoản đó mất hiệu lực ngay; giao diện đưa người dùng về trang đăng nhập.
 
