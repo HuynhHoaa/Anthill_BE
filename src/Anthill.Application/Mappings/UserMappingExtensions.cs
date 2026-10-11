@@ -37,7 +37,6 @@ public static class UserMappingExtensions
             Group = groupName ?? user.Group?.Name,
             GroupId = user.GroupId,
             Phone = user.Phone,
-            School = user.School,
             Subject = subjectName ?? user.Subject?.Name,
             AvatarColor = user.AvatarColor,
             JoinedAt = user.CreatedAt.ToUtc()

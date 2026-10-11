@@ -86,7 +86,6 @@ public static class StudentAnonymizer
         user.Username = token;
         user.Code = token;
         user.Phone = null;
-        user.School = null;
 
         // Đổi mật khẩu thành một chuỗi không ai biết, phòng trường hợp có đường đăng nhập nào đó
         // lọt qua kiểm tra trạng thái. Xoay SecurityStamp để mọi token đã phát chết ngay.
