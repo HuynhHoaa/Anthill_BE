@@ -194,20 +194,21 @@ trap 'rm -f "$HELPERS" "$SESSION_A"; cleanup' EXIT
 # cac cap khoa=gia tri truyen vao — moi phep kiem chi noi ro dung mot dieu no doi.
 TOPIC="SuaDe$STAMP"
 B_TITLE="De sua $STAMP"; B_DESC="Mo ta ban dau"; B_TOPIC="$TOPIC"
-B_TOTAL=4; B_EASY=50; B_MEDIUM=50; B_HARD=0; B_POINT=1; B_DURATION=30
+B_TOTAL=4; B_EASY=50; B_MEDIUM=50; B_HARD=0; B_PE=25; B_PM=25; B_PH=0; B_DURATION=30
 B_SQ=false; B_SA=false; B_SHOW=true
 B_OPEN=$(at_hours -1); B_CLOSE=$(at_hours 48)
 
 exam_json() {
   local title="$B_TITLE" desc="$B_DESC" topic="$B_TOPIC" total="$B_TOTAL" easy="$B_EASY" medium="$B_MEDIUM"
-  local hard="$B_HARD" point="$B_POINT" duration="$B_DURATION" sq="$B_SQ" sa="$B_SA" show="$B_SHOW"
+  local hard="$B_HARD" pe="$B_PE" pm="$B_PM" ph="$B_PH" duration="$B_DURATION" sq="$B_SQ" sa="$B_SA" show="$B_SHOW"
   local open="$B_OPEN" close="$B_CLOSE" lifecycle="" pair key value
   for pair in "$@"; do
     key="${pair%%=*}"; value="${pair#*=}"
     case "$key" in
       title) title="$value" ;;       desc) desc="$value" ;;         topic) topic="$value" ;;
       total) total="$value" ;;       easy) easy="$value" ;;         medium) medium="$value" ;;
-      hard) hard="$value" ;;         point) point="$value" ;;       duration) duration="$value" ;;
+      hard) hard="$value" ;;         pe) pe="$value" ;;             pm) pm="$value" ;;
+      ph) ph="$value" ;;             duration) duration="$value" ;;
       sq) sq="$value" ;;             sa) sa="$value" ;;             show) show="$value" ;;
       open) open="$value" ;;         close) close="$value" ;;       lifecycle) lifecycle="$value" ;;
       *) echo "exam_json: khoa la '$key'" >&2 ;;
@@ -215,8 +216,8 @@ exam_json() {
   done
   local life=""
   [[ -n "$lifecycle" ]] && life=",\"lifecycle\":\"$lifecycle\""
-  printf '{"title":"%s","description":"%s","topic":"%s","durationMinutes":%s,"totalQuestions":%s,"easyPercentage":%s,"mediumPercentage":%s,"hardPercentage":%s,"pointPerQuestion":%s,"shuffleQuestions":%s,"shuffleAnswers":%s,"showResultAfterSubmit":%s,"openAt":"%s","closeAt":"%s"%s}' \
-    "$title" "$desc" "$topic" "$duration" "$total" "$easy" "$medium" "$hard" "$point" "$sq" "$sa" "$show" "$open" "$close" "$life"
+  printf '{"title":"%s","description":"%s","topic":"%s","durationMinutes":%s,"totalQuestions":%s,"easyPercentage":%s,"mediumPercentage":%s,"hardPercentage":%s,"pointEasy":%s,"pointMedium":%s,"pointHard":%s,"shuffleQuestions":%s,"shuffleAnswers":%s,"showResultAfterSubmit":%s,"openAt":"%s","closeAt":"%s"%s}' \
+    "$title" "$desc" "$topic" "$duration" "$total" "$easy" "$medium" "$hard" "$pe" "$pm" "$ph" "$sq" "$sa" "$show" "$open" "$close" "$life"
 }
 
 put_exam() { local exam="$1"; shift; call PUT "/api/exams/$exam" "$TEACHER" "$(exam_json "$@")"; }
@@ -286,11 +287,12 @@ section "Da giao, chua ai lam: sua moi truong, ban de sinh lai"
 # Ban de 4 cau da sinh luc giao phai bi thay bang ban 10 cau. Lich giu nguyen: de dang mo va da giao nen
 # lich bi khoa (xem schedule-lock.sh).
 B_TITLE="De sua da doi $STAMP"; B_DESC="Mo ta da doi"
-B_TOTAL=10; B_EASY=60; B_MEDIUM=30; B_HARD=10; B_POINT=2; B_DURATION=40
+B_TOTAL=10; B_EASY=60; B_MEDIUM=30; B_HARD=10; B_PE=10; B_PM=10; B_PH=10; B_DURATION=40
 B_SQ=true; B_SA=true; B_SHOW=false
 expect_status "sua het moi truong → 200" 200 "$(put_exam "$E1")"
 expect_json   "  totalQuestions = 10"    totalQuestions 10
-expect_status "  pointPerQuestion = 2"   2 "$(num_field pointPerQuestion)"
+expect_status "  pointEasy = 10"         10 "$(num_field pointEasy)"
+expect_status "  totalScore = 100"       100 "$(num_field totalScore)"
 expect_json   "  durationMinutes = 40"   durationMinutes 40
 expect_json   "  shuffleQuestions = true" shuffleQuestions true
 expect_json   "  shuffleAnswers = true"  shuffleAnswers true
@@ -299,26 +301,26 @@ expect_json   "  title da doi"           title "$B_TITLE"
 expect_json   "  van chua khoa"          blueprintFrozen false
 
 section "Ngan hang khong du cau cho cau hinh moi: tu choi, khong doi gi"
-code=$(put_exam "$E1" total=12)
+code=$(put_exam "$E1" total=12 pe=8 pm=8 ph=12)
 case "$code" in 400|409) TU_CHOI=true ;; *) TU_CHOI=false ;; esac
 expect_status "12 cau 60/30/10 (can 7 cau De, co 6) → bi tu choi" true "$TU_CHOI"
 expect_status "doc lai de → 200" 200 "$(call GET "/api/exams/$E1" "$TEACHER")"
 expect_json   "  van 10 cau" totalQuestions 10
 
 section "Khung gio rieng ngan hon thoi luong moi: tu choi (de chua ai lam)"
-new_exam title="De khung gio $STAMP" total=4 easy=50 medium=50 hard=0 point=1 duration=30; E2=$NEW_EID
+new_exam title="De khung gio $STAMP" total=4 easy=50 medium=50 hard=0 pe=25 pm=25 ph=0 duration=30; E2=$NEW_EID
 expect_status "giao kem khung gio rieng 60 phut → 200" 200 \
   "$(assign_class "$E2" ",\"openAt\":\"$(at_hours 1)\",\"closeAt\":\"$(at_hours 2)\"")"
 expect_status "tang thoi luong len 90 phut → 400" 400 \
-  "$(put_exam "$E2" title="De khung gio $STAMP" total=4 easy=50 medium=50 hard=0 point=1 duration=90)"
+  "$(put_exam "$E2" title="De khung gio $STAMP" total=4 easy=50 medium=50 hard=0 pe=25 pm=25 ph=0 duration=90)"
 expect_status "thoi luong 45 phut → 200" 200 \
-  "$(put_exam "$E2" title="De khung gio $STAMP" total=4 easy=50 medium=50 hard=0 point=1 duration=45)"
+  "$(put_exam "$E2" title="De khung gio $STAMP" total=4 easy=50 medium=50 hard=0 pe=25 pm=25 ph=0 duration=45)"
 
 # ── 2. Hoc sinh vao thi: bang chung ban de da duoc sinh lai ─────────────────────────────────────
 section "Em A vao thi: bai nhan duoc khop cau hinh MOI"
 expect_status "em A bat dau → 200" 200 "$(start_exam "$TOK_A" "$E1")"
 expect_json   "  10 cau (khong phai 4 cua ban de cu)" totalQuestions 10
-expect_status "  thang diem 20 = 10 cau x 2 diem" 20 "$(num_field maxScore)"
+expect_status "  thang diem 100" 100 "$(num_field maxScore)"
 expect_json   "  thoi luong 40 phut" durationMinutes 40
 cp "$BODY_FILE" "$SESSION_A"
 ATT_A=$(json_field attemptId)
@@ -326,7 +328,7 @@ QIDS_A=$(qids_of "$SESSION_A")
 expect_status "em A nop bai, dung het → 200" 200 \
   "$(call POST "/api/exam-attempts/$ATT_A/submit" "$TOK_A" "$(python "$HELPERS" all_correct "$(to_native_path "$SESSION_A")")")"
 expect_status "giao vien xem bai em A → 200" 200 "$(call GET "/api/results/$ATT_A" "$TEACHER")"
-expect_status "  diem 20" 20 "$(num_field score)"
+expect_status "  diem 100 (dung het)" 100 "$(num_field score)"
 
 # ── 3. Da co em lam: khoa cau hinh ──────────────────────────────────────────────────────────────
 section "Da co em lam: cau hinh de bi khoa"
@@ -337,7 +339,7 @@ expect_json   "  blueprintFrozen = true"  blueprintFrozen true
 expect_status "doi so cau → 409" 409 "$(put_exam "$E1" total=8)"
 expect_status "  loi ke ten 'so cau hoi'" yes "$(body_says so_cau)"
 expect_status "  loi chi loi ra: nhan ban de" yes "$(body_says nhan_ban)"
-expect_status "doi diem moi cau → 409" 409 "$(put_exam "$E1" point=3)"
+expect_status "doi diem moi cau → 409" 409 "$(put_exam "$E1" pe=11)"
 expect_status "  loi ke ten 'diem moi cau'" yes "$(body_says diem)"
 expect_status "doi thoi luong → 409" 409 "$(put_exam "$E1" duration=50)"
 expect_status "  loi ke ten 'thoi gian lam bai'" yes "$(body_says thoi_luong)"
@@ -376,10 +378,10 @@ call PATCH "/api/questions/${QUESTION_IDS[0]}/status" "$TEACHER" '{"status":"act
 
 section "Diem da cham giu nguyen sau cac lan sua duoc phep"
 expect_status "giao vien xem lai bai em A → 200" 200 "$(call GET "/api/results/$ATT_A" "$TEACHER")"
-expect_status "  van 20 diem"       20 "$(num_field score)"
-expect_status "  thang diem van 20" 20 "$(num_field maxScore)"
+expect_status "  van 100 diem"      100 "$(num_field score)"
+expect_status "  thang diem van 100" 100 "$(num_field maxScore)"
 expect_status "em A xem ket qua (vua bat hien diem) → 200" 200 "$(call GET "/api/results/$ATT_A" "$TOK_A")"
-expect_status "  em A thay 20 diem" 20 "$(num_field score)"
+expect_status "  em A thay 100 diem" 100 "$(num_field score)"
 
 section "Sua duoc phep KHONG sinh lai ban de: em B lam dung bo cau em A da lam"
 expect_status "em B bat dau → 200" 200 "$(start_exam "$TOK_B" "$E1")"
@@ -388,7 +390,7 @@ expect_status "  cung bo cau voi em A (de chung)" true "$(same "$(qids_of "$BODY
 
 # ── 4. Moi em mot de rieng ──────────────────────────────────────────────────────────────────────
 section "Moi em mot de rieng: sinh lai ca hai ban"
-new_exam title="De rieng $STAMP" total=4 easy=50 medium=50 hard=0 point=1; E3=$NEW_EID
+new_exam title="De rieng $STAMP" total=4 easy=50 medium=50 hard=0 pe=25 pm=25 ph=0; E3=$NEW_EID
 expect_status "giao, randomizePerStudent = true → 200" 200 "$(assign_class "$E3" ',"randomizePerStudent":true')"
 expect_status "sua sang 10 cau → 200" 200 "$(put_exam "$E3" title="De rieng $STAMP")"
 expect_status "em A bat dau → 200" 200 "$(start_exam "$TOK_A" "$E3")"
@@ -402,7 +404,7 @@ expect_status "  hai em hai ban de khac nhau" false "$(same "$(qids_of "$BODY_FI
 section "Thu hoi het, doi cau hinh, giao lai: ban de theo cau hinh MOI"
 # Ban de chung khong gan voi luot giao nao, nen thu hoi het cac em khong xoa no. Truoc day lan sua luc
 # khong con luot giao nao cung khong dong toi no, va lan giao sau phat lai dung bo 4 cau cu.
-new_exam title="De thu hoi $STAMP" total=4 easy=50 medium=50 hard=0 point=1; E4=$NEW_EID
+new_exam title="De thu hoi $STAMP" total=4 easy=50 medium=50 hard=0 pe=25 pm=25 ph=0; E4=$NEW_EID
 expect_status "giao cho lop (de chung) → 200" 200 "$(assign_class "$E4")"
 expect_json   "  assignedCount = 2" assignedCount 2
 expect_status "danh sach giao bai → 200" 200 "$(call GET "/api/exams/$E4/assignments" "$TEACHER")"
@@ -413,13 +415,13 @@ done
 expect_status "thu hoi ca hai em" 2 "$REVOKED"
 expect_status "doc de → 200" 200 "$(call GET "/api/exams/$E4" "$TEACHER")"
 expect_json   "  assignedCount = 0" assignedCount 0
-expect_status "doi sang 6 cau luc khong con luot giao → 200" 200 \
-  "$(put_exam "$E4" title="De thu hoi $STAMP" total=6 easy=50 medium=50 hard=0 point=1)"
+expect_status "doi sang 8 cau luc khong con luot giao → 200" 200 \
+  "$(put_exam "$E4" title="De thu hoi $STAMP" total=8 easy=50 medium=50 hard=0 pe=12.5 pm=12.5 ph=0)"
 expect_status "giao lai cho lop → 200" 200 "$(assign_class "$E4")"
 expect_json   "  assignedCount = 2" assignedCount 2
 expect_status "em A bat dau → 200" 200 "$(start_exam "$TOK_A" "$E4")"
-expect_json   "  6 cau (khong phai 4 cua ban de truoc khi thu hoi)" totalQuestions 6
-expect_status "  thang diem 6 = 6 cau x 1 diem" 6 "$(num_field maxScore)"
+expect_json   "  8 cau (khong phai 4 cua ban de truoc khi thu hoi)" totalQuestions 8
+expect_status "  thang diem 100 = 4 cau x 12,5 + 4 cau x 12,5" 100 "$(num_field maxScore)"
 
 # ── 6. Nhan ban ─────────────────────────────────────────────────────────────────────────────────
 section "Nhan ban de da khoa"
@@ -433,7 +435,7 @@ expect_json   "  startedCount = 0"       startedCount 0
 expect_json   "  blueprintFrozen = false" blueprintFrozen false
 expect_json   "  cung so cau"            totalQuestions 10
 expect_json   "  cung ty le De"          easyPercentage 60
-expect_status "  cung diem moi cau"      2 "$(num_field pointPerQuestion)"
+expect_status "  cung diem muc De"       10 "$(num_field pointEasy)"
 expect_json   "  cung thoi luong"        durationMinutes 40
 expect_json   "  cung chu de"            topic "$TOPIC"
 expect_json   "  cung tuy chon tron cau" shuffleQuestions true

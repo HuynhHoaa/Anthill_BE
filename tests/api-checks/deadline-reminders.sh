@@ -105,7 +105,7 @@ build_class() {
 # De 9 cau, lam bai 1 phut: moc nhac la 31 phut truoc gio dong (1 phut lam bai + bien 30 phut mac dinh).
 new_exam() {
   local title="$1" code
-  code=$(call POST /api/exams "$TEACHER" "$(printf '{"title":"%s","topic":"","durationMinutes":1,"totalQuestions":9,"easyPercentage":45,"mediumPercentage":33,"hardPercentage":22,"pointPerQuestion":1,"shuffleQuestions":true,"shuffleAnswers":true,"showResultAfterSubmit":true,"openAt":"%s","closeAt":"%s"}' \
+  code=$(call POST /api/exams "$TEACHER" "$(printf '{"title":"%s","topic":"","durationMinutes":1,"totalQuestions":9,"easyPercentage":45,"mediumPercentage":33,"hardPercentage":22,"pointEasy":10,"pointMedium":10,"pointHard":15,"shuffleQuestions":true,"shuffleAnswers":true,"showResultAfterSubmit":true,"openAt":"%s","closeAt":"%s"}' \
     "$title" "$(at_minutes -1440)" "$(at_minutes 10080)")")
   [[ "$code" != "200" ]] && fail_fast "tao de $title: HTTP $code — $(body)"
   NEW_EID=$(json_field id); EXAM_IDS+=("$NEW_EID")

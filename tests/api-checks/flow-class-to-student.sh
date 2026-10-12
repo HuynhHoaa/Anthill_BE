@@ -56,7 +56,7 @@ section "3. Giao vien ra de"
 code=$(call POST /api/exams "$TEACHER" "$(cat <<JSON
 {
   "title": "De E2E $STAMP", "topic": "", "durationMinutes": 45, "totalQuestions": 9,
-  "easyPercentage": 45, "mediumPercentage": 33, "hardPercentage": 22, "pointPerQuestion": 1,
+  "easyPercentage": 45, "mediumPercentage": 33, "hardPercentage": 22, "pointEasy": 10, "pointMedium": 10, "pointHard": 15,
   "shuffleQuestions": true, "shuffleAnswers": true, "showResultAfterSubmit": true,
   "openAt": "2020-01-01T00:00:00Z", "closeAt": "2035-01-01T00:00:00Z"
 }

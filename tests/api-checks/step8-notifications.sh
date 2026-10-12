@@ -96,7 +96,9 @@ exam_body() {
   "durationMinutes": 45,
   "totalQuestions": 9,
   "easyPercentage": 45, "mediumPercentage": 33, "hardPercentage": 22,
-  "pointPerQuestion": 1,
+  "pointEasy": 10,
+  "pointMedium": 10,
+  "pointHard": 15,
   "openAt": "2020-01-01T00:00:00Z",
   "closeAt": "2035-01-01T00:00:00Z",
   "shuffleQuestions": true, "shuffleAnswers": true, "showResultAfterSubmit": true

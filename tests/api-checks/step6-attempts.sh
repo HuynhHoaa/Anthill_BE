@@ -209,7 +209,9 @@ exam_body() {
   "easyPercentage": 45,
   "mediumPercentage": 33,
   "hardPercentage": 22,
-  "pointPerQuestion": 1,
+  "pointEasy": 10,
+  "pointMedium": 10,
+  "pointHard": 15,
   "openAt": "$1",
   "closeAt": "$2",
   "shuffleQuestions": true,
@@ -289,7 +291,7 @@ cp "$BODY_FILE" "$SESSION_FILE"
 ATTEMPT_A=$(json_field attemptId)
 EXPIRES_FIRST=$(json_field expiresAt)
 expect_status "  đủ 9 câu" 9 "$(body | python -c 'import json,sys;print(len(json.load(sys.stdin)["questions"]))')"
-expect_number "  maxScore = 9" maxScore 9
+expect_number "  maxScore = 100" maxScore 100
 expect_json   "  savedAnswers rỗng" savedAnswers '{}'
 expect_json   "  status = inprogress" status inprogress
 
@@ -361,7 +363,14 @@ expect_status "lưu nháp trên lượt của người khác → 404" 404 \
 
 section "POST /submit — chấm ở server"
 
-# Câu đầu đã lưu đúng ở trên. Gửi kèm 6 câu đúng và 2 câu sai: điểm phải là 7/9.
+# Câu đầu đã lưu đúng ở trên. Gửi kèm 6 câu đúng và 2 câu sai: 7 câu đúng. Điểm kỳ vọng là tổng điểm của
+# 7 câu đầu theo đúng thứ tự phiên (điểm gắn theo mức độ nên không phải 7/9 của 100 mà phụ thuộc câu nào
+# sai); đọc từ chính phiên đã nhận để khỏi đoán.
+EXPECT_SCORE=$(python -c "
+import json,sys
+session = json.load(open(sys.argv[1], encoding='utf-8'))
+print('%g' % sum(float(q['point']) for index, q in enumerate(session['questions']) if index < 7))
+" "$SESSION_FILE")
 SUBMIT_BODY=$(python -c "
 import json,sys
 session = json.load(open(sys.argv[1], encoding='utf-8'))
@@ -381,15 +390,15 @@ expect_status "nộp bài kèm đáp án lạ → 422" 422 \
 expect_status "nộp bài → 200" 200 "$(call POST "/api/exam-attempts/$ATTEMPT_A/submit" "$STUDENT_A" "$SUBMIT_BODY")"
 expect_json   "  status = graded"       status graded
 expect_json   "  autoSubmitted = false" autoSubmitted false
-expect_number "  score = 7"             score 7
-expect_number "  maxScore = 9"          maxScore 9
+expect_number "  score = tổng điểm 7 câu đúng" score "$EXPECT_SCORE"
+expect_number "  maxScore = 100"        maxScore 100
 expect_status "  correctCount = 7" 7 "$(json_field correctCount)"
 expect_status "  answeredCount = 9" 9 "$(json_field answeredCount)"
 
 # Retry sau timeout mạng vẫn tới server hai lần, dù frontend có cờ chống bấm đúp.
 expect_status "nộp lại → 200 (idempotent)" 200 \
   "$(call POST "/api/exam-attempts/$ATTEMPT_A/submit" "$STUDENT_A" '{"answers":[]}')"
-expect_number "  vẫn đúng điểm cũ" score 7
+expect_number "  vẫn đúng điểm cũ" score "$EXPECT_SCORE"
 expect_status "  vẫn đúng lượt cũ" "$ATTEMPT_A" "$(json_field attemptId)"
 
 expect_status "lưu nháp sau khi nộp → 409" 409 \
@@ -401,7 +410,7 @@ expect_status "bắt đầu lại đúng bài đó → 409 (v1 không cho làm l
 section "Điểm lan tới hai màn hình còn lại"
 
 expect_status "danh sách của học sinh → 200" 200 "$(call GET "/api/my/exams?status=graded" "$STUDENT_A")"
-expect_number "  score = 7" 0.score 7
+expect_number "  score = tổng điểm 7 câu đúng" 0.score "$EXPECT_SCORE"
 expect_status "  correctCount = 7" 7 "$(json_field 0.correctCount)"
 
 expect_status "bảng theo dõi của giáo viên → 200" 200 "$(call GET "/api/exams/$OPEN_EXAM" "$TEACHER")"
