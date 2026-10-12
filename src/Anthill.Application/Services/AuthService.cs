@@ -209,8 +209,6 @@ public sealed class AuthService : IAuthService
             return Result.Failure<UserProfileDto>("Số điện thoại không hợp lệ.");
         }
 
-        var school = NormalizeOptional(request.School);
-
         // Tài khoản học sinh thuộc về quản trị viên (Requirement, Stage 2): họ tên và email là thứ giáo
         // viên đối chiếu trên bảng điểm, nên chính em không tự sửa. Form hồ sơ luôn gửi đủ bốn trường,
         // vì vậy gửi lại đúng giá trị đang có là hợp lệ — chỉ giá trị khác đi mới bị chặn.
@@ -242,8 +240,8 @@ public sealed class AuthService : IAuthService
             return Result.Conflict<UserProfileDto>("Email này đã được một tài khoản khác sử dụng.");
         }
 
-        // Danh sách trắng của §5 gồm năm trường: fullName, email, phone, school, subject.
-        // Bốn trường đầu gán ở đây; trường thứ năm KHÔNG có mặt trong UpdateProfileRequest nên không
+        // Danh sách trắng của §5 gồm bốn trường: fullName, email, phone, subject.
+        // Ba trường đầu gán ở đây; trường thứ tư KHÔNG có mặt trong UpdateProfileRequest nên không
         // tồn tại đường nào để đổi — môn của giáo viên do quản trị viên gắn bằng SubjectId, không đổi
         // bằng cách gõ tên môn, và học sinh thì không có môn. Id, Role, Username, Code, GroupId,
         // AvatarColor và CreatedAt cũng vắng mặt khỏi DTO vì cùng một lý do: client gửi lên thì rơi
@@ -255,7 +253,6 @@ public sealed class AuthService : IAuthService
         }
 
         account.Phone = phone;
-        account.School = school;
         account.UpdatedAt = DateTime.UtcNow;
 
         _unitOfWork.Users.Update(account);

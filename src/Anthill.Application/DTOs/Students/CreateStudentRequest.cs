@@ -17,8 +17,8 @@ namespace Anthill.Application.DTOs.Students;
 /// nhập đầu tiên.
 /// </para>
 /// <para>
-/// Cố ý không có <c>Phone</c>, <c>School</c> hay <c>AvatarColor</c>: đó là thông tin học sinh tự
-/// điền qua <c>PUT /api/auth/me</c>, không phải thứ quản trị viên khai hộ lúc mở tài khoản.
+/// Cố ý không có <c>Phone</c> hay <c>AvatarColor</c>: đó là thông tin học sinh tự điền qua
+/// <c>PUT /api/auth/me</c>, không phải thứ quản trị viên khai hộ lúc mở tài khoản.
 /// Cũng không có <c>Role</c> — endpoint này chỉ tạo được học sinh, và <c>CreatedAt</c> do server
 /// đặt bằng <c>DateTime.UtcNow</c> (§5).
 /// </para>

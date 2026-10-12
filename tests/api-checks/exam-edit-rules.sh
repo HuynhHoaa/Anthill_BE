@@ -154,8 +154,8 @@ sql() { "$PSQL" -q -At -v ON_ERROR_STOP=1 -c "$1"; }
 # Chep dong cua giao vien demo thanh mot giao vien moi, in id. $1 ho ten, $2 email (cung la ten dang
 # nhap), $3 bieu thuc SQL cho cot SubjectId — '"SubjectId"' de giu mon, NULL de bo mon.
 clone_teacher() {
-  sql "INSERT INTO \"Users\" (\"FullName\",\"Email\",\"Username\",\"PasswordHash\",\"SecurityStamp\",\"Role\",\"Status\",\"SubjectId\",\"School\",\"AvatarColor\",\"MustChangePassword\",\"CreatedAt\")
-    SELECT '$1', '$2', '$2', \"PasswordHash\", md5(random()::text), \"Role\", \"Status\", $3, \"School\", \"AvatarColor\", false, now()
+  sql "INSERT INTO \"Users\" (\"FullName\",\"Email\",\"Username\",\"PasswordHash\",\"SecurityStamp\",\"Role\",\"Status\",\"SubjectId\",\"AvatarColor\",\"MustChangePassword\",\"CreatedAt\")
+    SELECT '$1', '$2', '$2', \"PasswordHash\", md5(random()::text), \"Role\", \"Status\", $3, \"AvatarColor\", false, now()
     FROM \"Users\" WHERE \"Email\" = 'an.nv@anthill.edu.vn' RETURNING \"Id\";" | tr -d '\r'
 }
 

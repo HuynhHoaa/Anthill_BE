@@ -70,9 +70,6 @@ public class UserConfiguration : IEntityTypeConfiguration<User>
         builder.Property(u => u.Phone)
             .HasMaxLength(32);
 
-        builder.Property(u => u.School)
-            .HasMaxLength(256);
-
         builder.Property(u => u.AvatarColor)
             .IsRequired()
             .HasMaxLength(16);

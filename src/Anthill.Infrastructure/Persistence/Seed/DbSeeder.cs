@@ -30,7 +30,6 @@ public static class DbSeeder
     /// <summary>Mật khẩu dùng chung của ba tài khoản demo.</summary>
     public const string DemoPassword = "123456";
 
-    private const string DemoSchool = "Trường THPT Nguyễn Du";
     private const string SubjectCode = "KHTN";
     private const string SubjectName = "Khoa học tự nhiên";
     private const string GroupName = "Lớp 8A";
@@ -177,7 +176,6 @@ public static class DbSeeder
             Code = seed.Code,
             GroupId = seed.GroupId,
             Phone = seed.Phone,
-            School = DemoSchool,
             AvatarColor = seed.AvatarColor,
 
             // Tài khoản demo phải dùng được ngay, không chặn bằng màn hình đổi mật khẩu.

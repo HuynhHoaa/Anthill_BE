@@ -38,8 +38,6 @@ public class User : BaseEntity
 
     public string? Phone { get; set; }
 
-    public string? School { get; set; }
-
     public required string AvatarColor { get; set; }
 
     /// <summary>Bật khi admin cấp/reset mật khẩu; ép đổi ở lần đăng nhập kế tiếp.</summary>

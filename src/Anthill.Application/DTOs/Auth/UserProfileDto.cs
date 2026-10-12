@@ -35,8 +35,6 @@ public sealed record UserProfileDto
 
     public string? Phone { get; init; }
 
-    public string? School { get; init; }
-
     /// <summary>Tên môn của giáo viên, JOIN từ Subject. NULL với hai vai trò còn lại.</summary>
     public string? Subject { get; init; }
 

@@ -716,10 +716,6 @@ namespace Anthill.Infrastructure.Persistence.Migrations
                         .HasMaxLength(16)
                         .HasColumnType("character varying(16)");
 
-                    b.Property<string>("School")
-                        .HasMaxLength(256)
-                        .HasColumnType("character varying(256)");
-
                     b.Property<string>("SecurityStamp")
                         .IsRequired()
                         .HasMaxLength(64)

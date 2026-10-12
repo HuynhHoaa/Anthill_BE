@@ -170,7 +170,7 @@ expect_status "mo ta de 1000 ky tu → 200" 200 \
 EXAMS+=("$(json_field id)")
 
 expect_status "email ho so 300 ky tu → 400" 400 \
-  "$(call PUT /api/auth/me "$TEACHER" "{\"fullName\":\"Nguyen Van An\",\"email\":\"$LONG_EMAIL\",\"phone\":\"\",\"school\":\"\"}")"
+  "$(call PUT /api/auth/me "$TEACHER" "{\"fullName\":\"Nguyen Van An\",\"email\":\"$LONG_EMAIL\",\"phone\":\"\"}")"
 
 expect_status "anh dap an dai hon cot → 400" 400 \
   "$(call POST /api/questions "$TEACHER" "{\"content\":\"x $STAMP\",\"topic\":\"RaSoat$STAMP\",\"difficulty\":\"easy\",\"defaultPoint\":1,\"answers\":[{\"content\":\"A\",\"isCorrect\":true},{\"content\":\"B\",\"imageUrl\":\"$LONG_URL\"}]}")"
@@ -187,13 +187,13 @@ expect_status "xem ho so cua chinh minh → 200" 200 "$(call GET /api/auth/me "$
 MY_NAME=$(json_field fullName); MY_EMAIL=$(json_field email)
 
 expect_status "doi ho ten → 400" 400 \
-  "$(call PUT /api/auth/me "$STUDENT_A" "{\"fullName\":\"Ten Khac\",\"email\":\"$MY_EMAIL\",\"phone\":\"\",\"school\":\"\"}")"
+  "$(call PUT /api/auth/me "$STUDENT_A" "{\"fullName\":\"Ten Khac\",\"email\":\"$MY_EMAIL\",\"phone\":\"\"}")"
 expect_json   "  loi gan vao o fullName" errors.fullName.0 "Họ tên và email chỉ quản trị viên mới đổi được."
 expect_status "doi email → 400" 400 \
-  "$(call PUT /api/auth/me "$STUDENT_A" "{\"fullName\":\"$MY_NAME\",\"email\":\"khac$STAMP@kiemthu.vn\",\"phone\":\"\",\"school\":\"\"}")"
+  "$(call PUT /api/auth/me "$STUDENT_A" "{\"fullName\":\"$MY_NAME\",\"email\":\"khac$STAMP@kiemthu.vn\",\"phone\":\"\"}")"
 expect_json   "  loi gan vao o email" errors.email.0 "Họ tên và email chỉ quản trị viên mới đổi được."
 expect_status "giu nguyen ho ten va email, sua so dien thoai → 200" 200 \
-  "$(call PUT /api/auth/me "$STUDENT_A" "{\"fullName\":\"$MY_NAME\",\"email\":\"$MY_EMAIL\",\"phone\":\"0912345678\",\"school\":\"THPT Kiem Thu\"}")"
+  "$(call PUT /api/auth/me "$STUDENT_A" "{\"fullName\":\"$MY_NAME\",\"email\":\"$MY_EMAIL\",\"phone\":\"0912345678\"}")"
 expect_json   "  so dien thoai da luu" phone 0912345678
 expect_json   "  ho ten khong doi" fullName "$MY_NAME"
 

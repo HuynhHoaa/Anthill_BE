@@ -18,6 +18,4 @@ public sealed record UpdateProfileRequest
 
     /// <summary>Chuỗi rỗng nghĩa là xoá trắng số điện thoại.</summary>
     public string? Phone { get; init; }
-
-    public string? School { get; init; }
 }

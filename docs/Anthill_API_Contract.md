@@ -341,7 +341,7 @@ User      (Id, FullName, Email, Username, PasswordHash, SecurityStamp,
            GroupId        FK -> StudentGroup.Id NULL,
            Status,        -- Active | Locked | PendingDeletion | Deleted
            DeletionReason, DeletionRequestedAt, DeletionRequestedByUserId, DeletedAt,
-           Phone, School, AvatarColor, CreatedAt, MustChangePassword)
+           Phone, AvatarColor, CreatedAt, MustChangePassword)
 
 StudentGroup (Id, Name, Description,
               CreatedByUserId FK -> User.Id,   -- quản trị viên đã lập lớp, chỉ để truy vết

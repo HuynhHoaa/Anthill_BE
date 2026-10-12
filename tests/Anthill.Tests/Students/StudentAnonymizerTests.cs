@@ -15,7 +15,6 @@ public class StudentAnonymizerTests
         Username = "be.nv",
         Code = "HS1234",
         Phone = "0900000000",
-        School = "THPT Kiểm Thử",
         AvatarColor = "#6366F1",
         PasswordHash = "hash-cu",
         SecurityStamp = "stamp-cu",
@@ -35,7 +34,6 @@ public class StudentAnonymizerTests
 
         user.FullName.Should().Be(StudentAnonymizer.DisplayName);
         user.Phone.Should().BeNull();
-        user.School.Should().BeNull();
         user.Email.Should().NotContain("be.nv");
         user.Username.Should().NotContain("be.nv");
         user.Code.Should().NotBe("HS1234");
