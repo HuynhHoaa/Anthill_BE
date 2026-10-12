@@ -203,7 +203,7 @@ public class ExamAttemptRepository : GenericRepository<ExamAttempt>, IExamAttemp
     /// Làm tròn 1 chữ số theo §5. Chưa có bài nào được chấm thì trả 0, không phải NULL.
     /// </summary>
     /// <remarks>
-    /// Quy mỗi lượt về thang 10 (<c>Score / MaxScore * 10</c>) TRƯỚC khi lấy trung bình (H7): một
+    /// Quy mỗi lượt về thang 100 (<c>Score / MaxScore * 100</c>) TRƯỚC khi lấy trung bình (H7): một
     /// học sinh thường làm nhiều đề với điểm tối đa khác nhau (đề 10 câu, đề 20 câu…), và gộp thẳng
     /// điểm thô của chúng lại là cộng táo với cam — điểm trung bình ra sai thang, không nói lên
     /// được gì. Loại `MaxScore <= 0` để tránh chia cho 0 (không xảy ra với dữ liệu hợp lệ, nhưng
@@ -215,7 +215,7 @@ public class ExamAttemptRepository : GenericRepository<ExamAttempt>, IExamAttemp
     {
         var average = await DbSet
             .Where(a => a.Assignment.StudentId == studentId && a.Status == AssignmentStatus.Graded && a.MaxScore > 0)
-            .AverageAsync(a => (decimal?)(a.Score / a.MaxScore * 10m), cancellationToken);
+            .AverageAsync(a => (decimal?)(a.Score / a.MaxScore * 100m), cancellationToken);
 
         return average.HasValue ? Round1(average.Value) : 0m;
     }
@@ -226,7 +226,7 @@ public class ExamAttemptRepository : GenericRepository<ExamAttempt>, IExamAttemp
     /// kết quả nhưng chỉ dạng này chắc chắn dịch được thành một câu <c>GROUP BY</c> duy nhất.
     /// </summary>
     /// <remarks>
-    /// Cũng quy mỗi lượt về thang 10 trước khi cộng dồn, cùng lý do với
+    /// Cũng quy mỗi lượt về thang 100 trước khi cộng dồn, cùng lý do với
     /// <see cref="GetAverageScoreByStudentAsync"/> (H7) — một học sinh làm nhiều đề khác điểm tối
     /// đa thì tổng điểm thô không chia đều ra một trung bình có nghĩa.
     /// </remarks>
@@ -251,7 +251,7 @@ public class ExamAttemptRepository : GenericRepository<ExamAttempt>, IExamAttemp
                     a.Status == AssignmentStatus.Submitted || a.Status == AssignmentStatus.Graded ? 1 : 0),
                 GradedCount = g.Sum(a => a.Status == AssignmentStatus.Graded && a.MaxScore > 0 ? 1 : 0),
                 NormalizedScoreSum = g.Sum(a =>
-                    a.Status == AssignmentStatus.Graded && a.MaxScore > 0 ? a.Score / a.MaxScore * 10m : 0m)
+                    a.Status == AssignmentStatus.Graded && a.MaxScore > 0 ? a.Score / a.MaxScore * 100m : 0m)
             })
             .ToListAsync(cancellationToken);
 
@@ -303,14 +303,14 @@ public class ExamAttemptRepository : GenericRepository<ExamAttempt>, IExamAttemp
                 // Lọc ngay trong phép tổng hợp: gộp cả bài đang làm dở vào mẫu số sẽ kéo trung bình
                 // xuống theo tiến độ chấm chứ không theo năng lực học sinh.
                 //
-                // Quy về thang 10 (Score / MaxScore * 10) trước khi lấy Average/Max (H7): bộ lọc ở
+                // Quy về thang 100 (Score / MaxScore * 100) trước khi lấy Average/Max (H7): bộ lọc ở
                 // đây thường trải trên nhiều đề khác nhau của cùng một giáo viên/lớp, mỗi đề một
                 // MaxScore riêng — gộp điểm thô của chúng cho ra một con số không có đơn vị chung.
                 // Loại MaxScore <= 0 để không chia cho 0 (không có dữ liệu hợp lệ nào rơi vào đây).
                 Average = g.Where(a => a.Status == AssignmentStatus.Graded && a.MaxScore > 0)
-                    .Average(a => (decimal?)(a.Score / a.MaxScore * 10m)),
+                    .Average(a => (decimal?)(a.Score / a.MaxScore * 100m)),
                 Highest = g.Where(a => a.Status == AssignmentStatus.Graded && a.MaxScore > 0)
-                    .Max(a => (decimal?)(a.Score / a.MaxScore * 10m))
+                    .Max(a => (decimal?)(a.Score / a.MaxScore * 100m))
             })
             .FirstOrDefaultAsync(cancellationToken);
 
