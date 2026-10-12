@@ -23,18 +23,19 @@ public sealed class ChangePasswordRequestValidator : AbstractValidator<ChangePas
             .Must(password => !string.IsNullOrWhiteSpace(password))
             .WithMessage("Vui lòng nhập mật khẩu hiện tại.");
 
+        // Chuỗi chỉ toàn khoảng trắng coi như chưa nhập: bộ băm từ chối nó, và để lọt xuống đó là 500.
         RuleFor(request => request.NewPassword)
-            .Must(password => !string.IsNullOrEmpty(password))
+            .Must(password => !string.IsNullOrWhiteSpace(password))
             .WithMessage("Vui lòng nhập mật khẩu mới.");
 
         RuleFor(request => request.NewPassword)
             .Must(password => password!.Length >= ValidationPatterns.MinPasswordLength)
             .WithMessage($"Mật khẩu mới phải có ít nhất {ValidationPatterns.MinPasswordLength} ký tự.")
-            .When(request => !string.IsNullOrEmpty(request.NewPassword));
+            .When(request => !string.IsNullOrWhiteSpace(request.NewPassword));
 
         RuleFor(request => request.NewPassword)
             .NotEqual(request => request.CurrentPassword)
             .WithMessage("Mật khẩu mới phải khác mật khẩu hiện tại.")
-            .When(request => !string.IsNullOrEmpty(request.NewPassword));
+            .When(request => !string.IsNullOrWhiteSpace(request.NewPassword));
     }
 }

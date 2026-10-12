@@ -176,7 +176,12 @@ public class ExamAttemptRepository : GenericRepository<ExamAttempt>, IExamAttemp
         PaginationParams pagination,
         CancellationToken cancellationToken = default)
     {
-        var query = ResultsQuery().Where(a => a.Assignment.StudentId == studentId);
+        // Chỉ lượt đã nộp hoặc đã chấm. Lượt InProgress mà lọt vào đây thì cả trang "Kết quả của tôi"
+        // lẫn mục kết quả gần đây ở trang tổng quan đếm nó như một bài đã nộp, trong khi em vẫn đang
+        // làm và đồng hồ còn chạy.
+        var query = ResultsQuery().Where(a =>
+            a.Assignment.StudentId == studentId
+            && (a.Status == AssignmentStatus.Submitted || a.Status == AssignmentStatus.Graded));
 
         if (SearchText.ToLikePattern(search) is { } pattern)
         {
@@ -293,6 +298,7 @@ public class ExamAttemptRepository : GenericRepository<ExamAttempt>, IExamAttemp
                 Total = g.Count(),
                 Graded = g.Count(a => a.Status == AssignmentStatus.Graded),
                 Submitted = g.Count(a => a.Status == AssignmentStatus.Submitted || a.Status == AssignmentStatus.Graded),
+                InProgress = g.Count(a => a.Status == AssignmentStatus.InProgress),
 
                 // Lọc ngay trong phép tổng hợp: gộp cả bài đang làm dở vào mẫu số sẽ kéo trung bình
                 // xuống theo tiến độ chấm chứ không theo năng lực học sinh.
@@ -338,6 +344,7 @@ public class ExamAttemptRepository : GenericRepository<ExamAttempt>, IExamAttemp
             TotalAttempts = aggregate?.Total ?? 0,
             GradedCount = aggregate?.Graded ?? 0,
             SubmittedCount = aggregate?.Submitted ?? 0,
+            InProgressCount = aggregate?.InProgress ?? 0,
             AssignedCount = assignedCount,
             AverageScore = Round1(aggregate?.Average ?? 0m),
             // Làm tròn giống AverageScore. Không làm thì hai ô cạnh nhau hiện "3,1" và "9,00" —

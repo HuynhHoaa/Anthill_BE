@@ -730,6 +730,10 @@ namespace Anthill.Infrastructure.Persistence.Migrations
                         .HasMaxLength(16)
                         .HasColumnType("character varying(16)");
 
+                    b.Property<string>("StatusBeforeDeletion")
+                        .HasMaxLength(16)
+                        .HasColumnType("character varying(16)");
+
                     b.Property<int?>("SubjectId")
                         .HasColumnType("integer");
 

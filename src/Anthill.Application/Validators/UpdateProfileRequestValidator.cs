@@ -15,8 +15,12 @@ namespace Anthill.Application.Validators;
 /// </remarks>
 public sealed class UpdateProfileRequestValidator : AbstractValidator<UpdateProfileRequest>
 {
-    private const int MaxFullNameLength = 100;
+    /// <summary>Khớp cột <c>Users.FullName</c> và <c>StudentFieldRules.MaxFullNameLength</c>: quản trị viên tạo được tên dài tới đây.</summary>
+    private const int MaxFullNameLength = 128;
     private const int MaxSchoolLength = 200;
+
+    /// <summary>Khớp cột <c>Users.Email</c> và <c>StudentFieldRules.MaxEmailLength</c>.</summary>
+    private const int MaxEmailLength = 256;
 
     public UpdateProfileRequestValidator()
     {
@@ -36,6 +40,11 @@ public sealed class UpdateProfileRequestValidator : AbstractValidator<UpdateProf
         RuleFor(request => request.Email)
             .Must(email => ValidationPatterns.Email.IsMatch(email!.Trim()))
             .WithMessage("Email không đúng định dạng.")
+            .When(request => !string.IsNullOrWhiteSpace(request.Email));
+
+        RuleFor(request => request.Email)
+            .Must(email => email!.Trim().Length <= MaxEmailLength)
+            .WithMessage($"Email không được vượt quá {MaxEmailLength} ký tự.")
             .When(request => !string.IsNullOrWhiteSpace(request.Email));
 
         // Số điện thoại là tuỳ chọn: chuỗi rỗng nghĩa là xoá trắng, chỉ kiểm khi thật sự có nhập.

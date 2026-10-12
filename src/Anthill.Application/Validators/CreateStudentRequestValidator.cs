@@ -19,15 +19,16 @@ public sealed class CreateStudentRequestValidator : AbstractValidator<CreateStud
         StudentFieldRules.ApplyOptionalStatus(this, request => request.Status);
 
         // Mật khẩu không trim, cùng lý do đã ghi ở AuthService.ChangePasswordAsync: khoảng trắng
-        // đầu và cuối là ký tự hợp lệ, cắt đi là âm thầm đổi thứ người dùng đã gõ.
+        // đầu và cuối là ký tự hợp lệ, cắt đi là âm thầm đổi thứ người dùng đã gõ. Nhưng chuỗi chỉ
+        // toàn khoảng trắng thì coi như trống: bộ băm từ chối nó, và để lọt xuống đó là lỗi 500.
         RuleFor(request => request.Password)
-            .Must(password => !string.IsNullOrEmpty(password))
+            .Must(password => !string.IsNullOrWhiteSpace(password))
             .WithMessage("Mật khẩu ban đầu không được để trống.");
 
         RuleFor(request => request.Password)
             .Must(password => password!.Length >= ValidationPatterns.MinPasswordLength)
             .WithMessage($"Mật khẩu phải có ít nhất {ValidationPatterns.MinPasswordLength} ký tự.")
-            .When(request => !string.IsNullOrEmpty(request.Password));
+            .When(request => !string.IsNullOrWhiteSpace(request.Password));
 
         // Số âm không phải "chưa phân nhóm" (đó là 0) mà là dữ liệu hỏng — chặn ngay để service
         // không phải phân biệt hai trường hợp.

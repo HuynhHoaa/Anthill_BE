@@ -17,6 +17,7 @@ Ngày lập: 06/09/2026 · Nguồn: 9 service, ~50 hàm · Hiện tại: **69 en
 | Base URL | `/api` · biến môi trường FE: `VITE_API_BASE_URL` |
 | Xác thực | JWT Bearer. **Mọi endpoint đều yêu cầu token trừ `POST /api/auth/login`** |
 | Đường dẫn | Tiếng Anh, số nhiều, kebab-case: `/api/exam-attempts`, `/api/student-groups` |
+| Kiểm tra sống | `GET /health` (ngoài `/api`, không cần token): **200** `{ status, database, serverTimeUtc }` khi mở được kết nối database, **503** (`status = degraded`) khi không, giới hạn 5 giây. Dùng cho reverse proxy và cho lời gọi đánh thức API ngủ |
 | Phân trang | Query `page` (1-based), `pageSize`. Trả `{ items, total, page, pageSize }` |
 | Ngày giờ | **ISO 8601 UTC** ở mọi request và response |
 | Lỗi | `{ message: string, errors?: Record<string,string[]> }` — FE đọc trường `message` |
@@ -84,7 +85,7 @@ Quy tắc: giáo viên sở hữu đề luôn xem được. Học sinh xem **đi
 | POST | `/api/auth/login` | — | Đăng nhập bằng email (teacher/admin) hoặc username/mã HS (student). Trả JWT + hồ sơ |
 | POST | `/api/auth/refresh` | — | Cấp lại access token. **Bổ sung** — cần thiết vì học sinh làm bài 45–60 phút, hết token giữa chừng là mất bài |
 | GET | `/api/auth/me` | tất cả | Hồ sơ người đang đăng nhập, suy từ JWT |
-| PUT | `/api/auth/me` | tất cả | Cập nhật thông tin liên hệ của chính mình |
+| PUT | `/api/auth/me` | tất cả | Cập nhật thông tin liên hệ của chính mình. **Học sinh không tự đổi `fullName` và `email`** (quản trị viên giữ danh tính trên bảng điểm): gửi giá trị khác trả **400** kèm `errors.fullName` / `errors.email`, gửi lại đúng giá trị đang có thì hợp lệ. `email` tối đa 256 ký tự |
 | POST | `/api/auth/change-password` | tất cả | Đổi mật khẩu, xác minh mật khẩu hiện tại. Sai mật khẩu hiện tại → **400** kèm `errors.currentPassword`; 401 chỉ khi phiên đã chết |
 | POST | `/api/auth/logout` | tất cả | Thu hồi phiên (chỉ cần khi dùng refresh token) |
 
@@ -100,6 +101,8 @@ JWT claims tối thiểu: `sub` = userId, `role`, `name`, `subject_id` (giáo vi
 | PATCH | `/api/notifications/{id}/read` | tất cả | Đánh dấu một thông báo đã đọc |
 | POST | `/api/notifications/mark-all-read` | tất cả | Đánh dấu tất cả đã đọc |
 
+> **`link` của thông báo nộp bài** (`examSubmitted`, `autoSubmitted`) trỏ tới trang kết quả của chính lượt đó: `/giao-vien/ket-qua/{attemptId}` cho giáo viên, `/hoc-sinh/ket-qua/{attemptId}` cho học sinh.
+
 > **Khác biệt lớn so với FE:** mock lọc thông báo theo `audience === role` (dùng chung cho cả vai trò). Ở BE phải gắn với **`RecipientUserId`** cụ thể. `markAsRead` hiện tìm theo id trên toàn mảng — bất kỳ ai cũng đọc được thông báo của người khác; BE trả **404** (không phải 403) khi id không thuộc người gọi, để không dò được id hợp lệ.
 
 ### 4.3 Học sinh
@@ -113,7 +116,7 @@ JWT claims tối thiểu: `sub` = userId, `role`, `name`, `subject_id` (giáo vi
 | PATCH | `/api/students/{id}/status` | admin | Khoá / mở khoá — chỉ nhận `active` hoặc `locked`; hai trạng thái xoá đi qua hai endpoint riêng bên dưới |
 | POST | `/api/students/{id}/reset-password` | admin | **Bổ sung** — cấp lại mật khẩu khi học sinh quên |
 | POST | `/api/students/{id}/request-deletion` | admin | **Bổ sung** — đưa vào diện chờ xoá (`pendingDeletion`), lý do bắt buộc (≥ 10 ký tự). Không đăng nhập được, token cũ chết ngay. Sau 60 ngày tiến trình nền ẩn danh hoá, gỡ khỏi lớp và chuyển sang `deleted`; lượt làm bài và điểm giữ nguyên |
-| POST | `/api/students/{id}/restore` | admin | **Bổ sung** — khôi phục tài khoản đang chờ xoá. Đã ẩn danh hoá rồi thì **409** |
+| POST | `/api/students/{id}/restore` | admin | **Bổ sung** — khôi phục tài khoản đang chờ xoá, trả về **đúng trạng thái trước khi vào diện xoá**: em đang bị khoá vẫn `locked` (cột `StatusBeforeDeletion`); bản ghi chờ xoá từ trước khi có cột này về `active`. Đã ẩn danh hoá rồi thì **409** |
 | GET | `/api/students/availability` | admin | **Bổ sung** — kiểm tra email/username/code đã dùng chưa, thay cho việc FE tải 500 bản ghi về so sánh tại chỗ |
 
 `Student.status`: `active` · `locked` · `pendingDeletion` · `deleted`.
@@ -207,10 +210,10 @@ JWT claims tối thiểu: `sub` = userId, `role`, `name`, `subject_id` (giáo vi
 | Method | Path | Vai trò | Mô tả |
 |---|---|---|---|
 | GET | `/api/results` | teacher | Bảng kết quả, lọc chéo theo đề / học sinh / nhóm / trạng thái |
-| GET | `/api/results/stats` | teacher | Bốn ô số liệu đầu trang |
+| GET | `/api/results/stats` | teacher | Các ô số liệu đầu trang, nhận cùng bộ lọc với bảng kết quả: `totalAttempts`, `gradedCount`, `inProgressCount` (lượt đang làm dở, chưa nộp), `averageScore`, `highestScore`, `completionRate` |
 | GET | `/api/results/{attemptId}` | teacher, student | Chi tiết một lượt làm bài, soi từng câu |
 | GET | `/api/results/{attemptId}/summary` | student | **Bổ sung** — cho màn "Đã nộp bài". Hiện trang đó gọi `getAttemptDetail`, tức kéo về toàn bộ câu hỏi chỉ để hiện một vòng tròn điểm |
-| GET | `/api/my/results` | student | Lịch sử làm bài của chính mình |
+| GET | `/api/my/results` | student | Lịch sử làm bài của chính mình. **Chỉ gồm lượt đã nộp hoặc đã chấm**; bài đang làm dở nằm ở `GET /api/my/exams` |
 | GET | `/api/dashboard/teacher` | teacher | Endpoint **gộp** cho trang tổng quan |
 | GET | `/api/dashboard/student` | student | Endpoint **gộp** cho trang tổng quan |
 
@@ -264,6 +267,7 @@ Mock hiện tra ngược `mockQuestions` theo id lúc chấm — điều đó c�
 - **Kiểm tra phạm vi:** học sinh phải thuộc một lớp đã công bố mà giáo viên đó được phân công. Không cho giáo viên A giao bài cho lớp của giáo viên B bằng cách đoán id. Em ngoài phạm vi đếm vào `skippedOutOfScope`, xét **trước** trạng thái tài khoản. **Id không tồn tại (hoặc không phải tài khoản học sinh) đếm vào cùng con số đó** — không có trường riêng cho "không tìm thấy": hai con số tách rời cho phép giáo viên bắn từng id một rồi đọc xem id nào là học sinh thật của lớp người khác. Lớp cũng vậy: lớp không tồn tại và lớp của người khác cùng đếm vào `skippedOutOfScopeGroups`.
 - **Học sinh bị khoá:** FE hiển thị nhãn "Đã khóa" nhưng vẫn cho chọn và vẫn tạo assignment. BE **bỏ qua** và trả `skippedLocked` để giáo viên biết. Tài khoản đang chờ xoá cũng bị bỏ qua nhưng đếm riêng vào `skippedRetired` — em đã rời trường thì không có gì để mở khoá. Tài khoản đã xoá hẳn đã bị gỡ khỏi lớp nên rơi vào `skippedOutOfScope`.
 - **Chặn giao đề đang là nháp.** FE hoàn toàn không kiểm điều này.
+- **Giao vào khung giờ đã đóng** vẫn được (để dành cho lần mở lại), nhưng không sinh thông báo và không bắn `ExamAssigned`: không còn gì để "hoàn thành trước hạn nộp".
 - **`randomizePerStudent` chốt từ lần giao đầu tiên.** Đề đã có lượt giao mà request đổi cờ thì **409**; muốn đổi thì thu hồi hết rồi giao lại.
 
 ### Lưu nháp và nộp bài
@@ -271,6 +275,7 @@ Mock hiện tra ngược `mockQuestions` theo id lúc chấm — điều đó c�
 - **Chống ghi đè ngược thứ tự:** autosave chạy mỗi 800ms; mạng chậm khiến gói cũ tới sau gói mới. Server giữ `lastAppliedSeq` cho mỗi attempt và bỏ qua request có `clientSeq` nhỏ hơn. **Không dùng timestamp client** làm mốc.
 - **Hết giờ không nhận nháp mới:** `PUT answers` trả **410** khi `serverNow > expiresAt`, và vẫn 410 khi lượt đã bị chốt vì hết giờ từ trước (bảng 409/410 ở §4.7).
 - **Validate đáp án gửi lên:** `questionId` phải thuộc đúng attempt đó, `answerId` phải thuộc đúng `questionId` đó. Trả **422** nếu lạ, không âm thầm bỏ qua.
+- **`submittedAt` của bài hệ thống nộp thay là hạn của lượt** (`expiresAt`), không phải lúc tiến trình nền quét tới; nhờ vậy `durationUsedMinutes` không bao giờ vượt thời lượng của đề, kể cả khi em bỏ thi và bài được chốt hàng giờ sau. Bài em tự nộp trước giờ giữ giờ thật.
 - **Nộp idempotent:** nộp lại cùng `attemptId` trả đúng kết quả cũ (200), không tạo bản ghi thứ hai. FE có cờ chống bấm hai lần, nhưng retry sau timeout mạng vẫn tới server hai lần — chỉ khoá ở DB mới chắc.
 
 ### Dữ liệu dẫn xuất — BE tính, không nhận từ client
@@ -304,6 +309,15 @@ Mock hiện tra ngược `mockQuestions` theo id lúc chấm — điều đó c�
 - `createdAt` do server đặt = `DateTime.UtcNow`, không nhận từ client.
 - Mật khẩu do admin cấp: đặt cờ `mustChangePassword = true`, ép đổi ở lần đăng nhập đầu.
 - **Xoá sạch `demoAccounts` và `DEMO_PASSWORD` trước khi lên production.**
+
+### Giới hạn đầu vào
+
+Những đầu vào dưới đây trả **400** kèm câu nói đúng ô sai, không bao giờ 500:
+
+- **Ký tự NUL (U+0000)** trong bất kỳ chuỗi nào của body hay query: PostgreSQL không lưu và không so khớp được. `message = "Dữ liệu gửi lên có ký tự không hợp lệ."`
+- **Mật khẩu chỉ gồm khoảng trắng** (tạo học sinh, đổi mật khẩu). Khoảng trắng đầu và cuối của một mật khẩu có chữ vẫn hợp lệ — mật khẩu không bị trim.
+- **Phần tử `null` trong mảng** `answers` của câu hỏi hay của gói lưu nháp.
+- **Độ dài khớp cột:** mô tả đề 1000 ký tự, email 256, đường dẫn ảnh của câu hỏi và của đáp án 512.
 
 ### Tìm kiếm tiếng Việt
 
@@ -402,12 +416,12 @@ Phiên bị thu hồi (§5 Tài khoản) đóng bốn cửa: negotiate và reque
 | `ExamAssigned` | student | Giáo viên giao bài, chỉ khi `notify = true` |
 | `ExamSubmitted` | teacher | Học sinh nộp bài. Bắn cả vào group `exam:{examId}` để màn theo dõi tự tăng `submittedCount` |
 | `AutoSubmitted` | teacher + student | Hết giờ, hệ thống tự nộp. **Hai payload khác nhau** cho hai vai trò |
-| `DeadlineSoon` | student (chưa nộp) + teacher | Bài sắp đóng. **Chưa phát** — chưa có tiến trình nào sinh sự kiện này |
-| `ExamUpdated` | student | Giáo viên sửa đề đã giao (đổi lịch, đổi thời lượng). **Chưa phát** — sửa đề hiện không đẩy gì xuống học sinh |
-| `UnreadCountChanged` | tất cả | Thay thế trực tiếp cho việc poll `GET /notifications/unread-count` |
+| `DeadlineSoon` | student (chưa nộp) + teacher | Bài sắp đóng, do tiến trình nhắc hạn sinh. Học sinh nhận kèm một bản ghi thông báo; giáo viên nhận **mỗi em một sự kiện**, không kèm tên em và không có bản ghi thông báo (chỉ để màn theo dõi tự làm tươi) |
+| `ExamUpdated` | student | Giáo viên đổi lịch hoặc thời lượng của đề đã giao; mỗi học sinh bị ảnh hưởng nhận một sự kiện kèm giờ mở/đóng **có hiệu lực của chính em**, và một bản ghi thông báo |
+| `UnreadCountChanged` | tất cả | Bắn sau mỗi lần số chưa đọc đổi: giao bài, đổi giờ, nhắc hạn, đánh dấu đã đọc, và **nộp bài hay tự nộp** (cho giáo viên, và cho học sinh khi bị tự nộp). Thay thế trực tiếp cho việc poll `GET /notifications/unread-count` |
 
 > **Sinh thông báo là việc của BE**, trong **cùng transaction** với hành động nghiệp vụ. FE hiện tự `unshift` vào mảng mock — lên BE thì client không được phép tạo thông báo.
-> Endpoint `unread-count` hiện bị gọi lại **mỗi lần đổi trang** (`useAsync` phụ thuộc `location.pathname` ở cả hai layout) nên là endpoint bị gọi nhiều nhất hệ thống. `UnreadCountChanged` là thứ thay thế nó.
+> FE đọc `unread-count` **một lần** khi mở phiên và sau mỗi lần nối lại (để bù sự kiện lỡ trong lúc đứt); còn lại chuông chỉ nhận `UnreadCountChanged`. Client không cần gọi phương thức hub nào: mỗi kết nối tự vào group riêng của người dùng, và vào thêm `JoinExamGroup` thì giáo viên nhận `ExamSubmitted` hai lần.
 > **Tự động nộp bài và cảnh báo sắp hết hạn phải do BackgroundService/Hangfire** thực hiện dựa trên `ExpiresAt` trong DB, không phải do client bấm giờ.
 
 ---

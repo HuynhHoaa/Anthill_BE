@@ -27,7 +27,8 @@ namespace Anthill.Application.Validators;
 public sealed class SaveExamRequestValidator : AbstractValidator<SaveExamRequest>
 {
     public const int MaxTitleLength = 256;
-    public const int MaxDescriptionLength = 2000;
+    /// <summary>Khớp cột <c>Exams.Description</c> (1000); trần cao hơn chỉ đẩy lỗi xuống database thành 500.</summary>
+    public const int MaxDescriptionLength = 1000;
     public const int MaxTopicLength = 128;
 
     /// <summary>Cùng trần với frontend: quá 5 tiếng thì không còn là một buổi kiểm tra.</summary>

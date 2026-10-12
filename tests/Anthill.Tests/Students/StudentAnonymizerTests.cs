@@ -117,6 +117,74 @@ public class StudentAnonymizerTests
         (user.Email, user.Username, user.Code).Should().Be(afterFirst);
     }
 
+    [Fact]
+    public void Dinh_danh_thay_the_mac_dinh_sinh_tu_id()
+    {
+        var user = BuildStudent(42);
+
+        StudentAnonymizer.Anonymize(user, DateTime.UtcNow);
+
+        user.Username.Should().Be("deleted-42");
+        user.Code.Should().Be("deleted-42");
+        user.Email.Should().Be("deleted-42@deleted.local");
+    }
+
+    [Fact]
+    public void Dinh_danh_thay_the_tranh_va_cham_bang_hau_to_dem()
+    {
+        // Gốc deleted-42 đã có người khác giữ: lượt xoá thật chọn deleted-42-1 thay vì đâm vào chỉ mục
+        // duy nhất và làm cả lô một trăm tài khoản cuộn lại mãi mãi.
+        var token = StudentAnonymizer.TokenFor(42, collisions: 1);
+        var user = BuildStudent(42);
+
+        StudentAnonymizer.Anonymize(user, DateTime.UtcNow, token);
+
+        token.Should().Be("deleted-42-1");
+        user.Username.Should().Be("deleted-42-1");
+        user.Code.Should().Be("deleted-42-1");
+        user.Email.Should().Be("deleted-42-1@deleted.local");
+    }
+
+    [Fact]
+    public async Task Chon_dinh_danh_dung_dang_goc_khi_chua_ai_dung()
+    {
+        var token = await StudentAnonymizer.ChooseFreeTokenAsync(42, _ => Task.FromResult(false));
+
+        token.Should().Be("deleted-42");
+    }
+
+    [Fact]
+    public async Task Chon_dinh_danh_them_duoi_dem_khi_dang_goc_da_bi_chiem()
+    {
+        var taken = new HashSet<string> { "deleted-42", "deleted-42-1" };
+
+        var token = await StudentAnonymizer.ChooseFreeTokenAsync(42, candidate => Task.FromResult(taken.Contains(candidate)));
+
+        token.Should().Be("deleted-42-2");
+    }
+
+    [Fact]
+    public async Task Chon_dinh_danh_chuyen_sang_GUID_khi_moi_duoi_dem_deu_bi_chiem()
+    {
+        var token = await StudentAnonymizer.ChooseFreeTokenAsync(42, _ => Task.FromResult(true));
+
+        // Cột Code dài 32 ký tự; chuỗi dự phòng phải vừa và vẫn mang id để không va với tài khoản khác.
+        token.Length.Should().BeLessThanOrEqualTo(32);
+        token.Should().StartWith("deleted-42-");
+    }
+
+    [Fact]
+    public void Anonymize_xoa_trang_thai_truoc_khi_vao_dien_xoa()
+    {
+        // Không còn gì để khôi phục sau khi dữ liệu đã bị xoá, nên không giữ lại trạng thái cũ.
+        var user = BuildStudent();
+        user.StatusBeforeDeletion = UserStatus.Locked;
+
+        StudentAnonymizer.Anonymize(user, DateTime.UtcNow);
+
+        user.StatusBeforeDeletion.Should().BeNull();
+    }
+
     [Theory]
     [InlineData(59, false)]
     [InlineData(60, true)]

@@ -63,11 +63,15 @@ new_student() {
 }
 new_student "${STAMP}a"; S_A=$NEW_STUDENT_ID
 new_student "${STAMP}b"; S_B=$NEW_STUDENT_ID
+# Em thu ba dung cho phep kiem "bai dang lam do khong phai bai da nop" o cuoi script. Phai co mat tu
+# luc giao de, vi em vao lop sau khi de da giao thi khong co dong giao bai nao.
+new_student "${STAMP}c"; S_C=$NEW_STUDENT_ID
 
 # Tai khoan vua tao mang MustChangePassword=true (Sec.5) — doi ngay sang mat khau rieng truoc khi
 # dung token cho nghiep vu, dung nhu mot hoc sinh that lam sau lan dang nhap dau tien.
 STUDENT_A=$(login_and_clear_must_change "r${STAMP}a" "123456" "R7a$STAMP")
 STUDENT_B=$(login_and_clear_must_change "r${STAMP}b" "123456" "R7b$STAMP")
+STUDENT_C=$(login_and_clear_must_change "r${STAMP}c" "123456" "R7c$STAMP")
 
 for pair in easy:1 easy:2 easy:3 easy:4 medium:1 medium:2 medium:3 hard:1 hard:2; do
   d="${pair%%:*}"; i="${pair##*:}"
@@ -116,7 +120,7 @@ print(next((item['assignmentId'] for item in items if item['examId'] == int(sys.
 
 new_exam true " mo"; OPEN_EXAM=$NEW_EXAM_ID
 new_exam false " kin"; HIDDEN_EXAM=$NEW_EXAM_ID
-printf '  nhom %s · 2 hoc sinh · 9 cau hoi · 2 de\n' "$GROUP_ID"
+printf '  nhom %s · 3 hoc sinh · 9 cau hoi · 2 de\n' "$GROUP_ID"
 
 section "Hai hoc sinh lam bai de co du lieu that"
 
@@ -321,5 +325,40 @@ expect_status "  group khong rong" true   "$(body | python -c 'import json,sys;p
 # 5) O tim kiem cua hoc sinh khop ca chu de, dung nhu tai lieu noi.
 expect_status "A tim theo chu de → 200" 200 "$(call GET "/api/my/results?search=KiemThu$STAMP" "$STUDENT_A")"
 expect_json   "  ra du 2 luot" total 2
+
+section "Bai dang lam do khong phai bai da nop"
+
+# C vao thi de mo roi dung lai, khong nop. Luot do con InProgress, chua co diem, chua co gio nop.
+ASSIGNMENT_C=$(assignment_for "$STUDENT_C" "$OPEN_EXAM")
+expect_status "C vao thi, khong nop → 200" 200 "$(call POST /api/exam-attempts "$STUDENT_C" "{\"assignmentId\":$ASSIGNMENT_C}")"
+
+# Phia hoc sinh: "ket qua cua toi" va muc ket qua gan day chi gom bai da nop. Truoc day luot dang lam
+# lot vao day nen trang hien "1 bai da nop · cho cong bo diem" trong luc em van dang thi.
+expect_status "C xem lich su → 200" 200 "$(call GET "/api/my/results" "$STUDENT_C")"
+expect_json   "  chua co bai nao da nop" total 0
+expect_status "dashboard cua C → 200" 200 "$(call GET "/api/dashboard/student" "$STUDENT_C")"
+expect_status "  recentResults rong" 0   "$(body | python -c 'import json,sys;print(len(json.load(sys.stdin)["recentResults"]))')"
+expect_status "  completedExams = 0" 0   "$(body | python -c 'import json,sys;print(json.load(sys.stdin)["stats"]["completedExams"])')"
+# A van thay du hai bai da nop, khong bi anh huong boi bo loc moi.
+expect_status "A van thay lich su day du → 200" 200 "$(call GET "/api/my/results" "$STUDENT_A")"
+expect_json   "  van 2 luot" total 2
+
+# Phia giao vien: luot dang lam van hien trong bang (giao vien can thay em nao dang thi), nhung mang
+# dung trang thai va duoc dem rieng, khong lan vao so bai da nop.
+expect_status "giao vien loc theo C → 200" 200 "$(call GET "/api/results?studentId=$S_C" "$TEACHER")"
+expect_json   "  co 1 dong" total 1
+expect_json   "  trang thai = inprogress" items.0.status inprogress
+expect_status "  chua co gio nop" absent   "$(body | python -c "import json,sys;print('present' if 'submittedAt' in json.load(sys.stdin)['items'][0] else 'absent')")"
+expect_status "stats loc theo C → 200" 200 "$(call GET "/api/results/stats?studentId=$S_C" "$TEACHER")"
+expect_json   "  totalAttempts = 1" totalAttempts 1
+expect_json   "  inProgressCount = 1" inProgressCount 1
+expect_json   "  gradedCount = 0" gradedCount 0
+expect_status "  completionRate = 0 (chua nop bai nao)" 0.0   "$(body | python -c 'import json,sys;print(float(json.load(sys.stdin)["completionRate"]))')"
+expect_status "stats loc theo de → 200" 200 "$(call GET "/api/results/stats?examId=$OPEN_EXAM" "$TEACHER")"
+expect_json   "  3 luot: 2 da cham + 1 dang lam" totalAttempts 3
+expect_json   "  inProgressCount = 1" inProgressCount 1
+expect_json   "  gradedCount = 2" gradedCount 2
+expect_status "loc trang thai=inprogress → 200" 200 "$(call GET "/api/results?status=inprogress&examId=$OPEN_EXAM" "$TEACHER")"
+expect_json   "  dung 1 luot" total 1
 
 summary

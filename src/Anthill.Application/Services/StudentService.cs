@@ -340,6 +340,7 @@ public sealed class StudentService : IStudentService
 
         var now = DateTime.UtcNow;
 
+        account.StatusBeforeDeletion = account.Status;
         account.Status = UserStatus.PendingDeletion;
         account.DeletionReason = request.Reason.Trim();
         account.DeletionRequestedAt = now;
@@ -394,7 +395,12 @@ public sealed class StudentService : IStudentService
 
         var now = DateTime.UtcNow;
 
-        account.Status = UserStatus.Active;
+        // Về đúng trạng thái trước khi bị đưa vào diện xoá. Em đang bị khoá thì vẫn bị khoá; mở lại là
+        // việc của lệnh mở khoá. Bản ghi cũ chưa có cột này thì coi như đang hoạt động.
+        account.Status = account.StatusBeforeDeletion == UserStatus.Locked
+            ? UserStatus.Locked
+            : UserStatus.Active;
+        account.StatusBeforeDeletion = null;
         account.UpdatedAt = now;
 
         // Xoá dấu vết yêu cầu: giữ lại thì lần xoá sau sẽ mang theo lý do của lần trước, và tiến
@@ -453,7 +459,9 @@ public sealed class StudentService : IStudentService
             // thông báo cũ của giáo viên — sau dòng Anonymize thì FullName đã là tên chung chung rồi.
             var previousFullName = account.FullName;
 
-            StudentAnonymizer.Anonymize(account, now);
+            var token = await FindFreeAnonymousTokenAsync(account.Id, cancellationToken);
+
+            StudentAnonymizer.Anonymize(account, now, token);
             _unitOfWork.Users.Update(account);
             purged.Add(account.Id);
 
@@ -472,6 +480,24 @@ public sealed class StudentService : IStudentService
 
         return Result.Success(purged.Count);
     }
+
+    /// <summary>
+    /// Chọn định danh thay thế chưa ai dùng cho một tài khoản sắp bị ẩn danh hoá.
+    /// </summary>
+    /// <remarks>
+    /// Dạng gốc <c>deleted-{id}</c> không va với ai nếu không có người cố tình đặt trùng, nhưng tên đăng
+    /// nhập, mã và email do người dùng tự nhập. Một lần va là vi phạm chỉ mục duy nhất, cả lô một trăm
+    /// tài khoản bị cuộn lại, và lượt quét sáu tiếng sau lại chọn đúng lô đó rồi hỏng y như cũ.
+    /// </remarks>
+    private Task<string> FindFreeAnonymousTokenAsync(int userId, CancellationToken cancellationToken) =>
+        // Ba cột là một không gian tên khi kiểm trùng (xem UserRepository), nên một lượt hỏi theo tên
+        // đăng nhập đã soi cả email lẫn mã; email thay thế có đuôi riêng nên phải hỏi thêm.
+        StudentAnonymizer.ChooseFreeTokenAsync(
+            userId,
+            async token =>
+                await _unitOfWork.Users.IsUsernameTakenAsync(token, userId, cancellationToken)
+                || await _unitOfWork.Users.IsEmailTakenAsync(
+                    StudentAnonymizer.EmailFor(token), userId, cancellationToken));
 
     /// <summary>
     /// Dọn tên thật khỏi thông báo nộp bài cũ của giáo viên khi xoá một học sinh (§5, H22).

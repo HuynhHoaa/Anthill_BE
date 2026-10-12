@@ -195,6 +195,10 @@ public sealed class ExamAttemptService : IExamAttemptService
                 // Trả về một phiên còn gõ được cho một lượt đã hết giờ nghĩa là mở lại cửa sổ ghi
                 // đã đóng. Chốt sổ ngay rồi mới báo hết giờ.
                 var finalised = await FinaliseExpiredUnderLockAsync(attempt!, now, cancellationToken);
+                if (finalised.IsSuccess && finalised.ValueOrThrow)
+                {
+                    await TryPublishAutoSubmittedAsync(attempt!, cancellationToken);
+                }
 
                 return finalised.IsFailure
                     ? Result.Failure<AttemptSessionDto>(finalised.Error!, finalised.ErrorCode)
@@ -255,6 +259,10 @@ public sealed class ExamAttemptService : IExamAttemptService
         if (AttemptDeadline.IsExpired(attempt.ExpiresAt, now))
         {
             var finalised = await FinaliseExpiredUnderLockAsync(attempt, now, cancellationToken);
+            if (finalised.IsSuccess && finalised.ValueOrThrow)
+            {
+                await TryPublishAutoSubmittedAsync(attempt, cancellationToken);
+            }
 
             return finalised.IsFailure
                 ? Result.Failure<AttemptSessionDto>(finalised.Error!, finalised.ErrorCode)
@@ -336,6 +344,7 @@ public sealed class ExamAttemptService : IExamAttemptService
             }
 
             await transaction.CommitAsync(cancellationToken);
+            await TryPublishAutoSubmittedAsync(attempt, cancellationToken);
 
             return Result.Gone<SaveAnswersResponse>(ExpiredMessage);
         }
@@ -493,13 +502,41 @@ public sealed class ExamAttemptService : IExamAttemptService
         var submittedCount = await _unitOfWork.ExamAssignments.CountSubmittedByExamAsync(
             attempt.Assignment.ExamId, cancellationToken);
 
+        // Bài nộp sau chuông (lateSubmit) còn sinh thêm một thông báo cho chính em, nên em cũng cần số mới.
+        var unreadRecipients = lateSubmit
+            ? new[] { attempt.Assignment.Exam.CreatedByUserId, attempt.Assignment.StudentId }
+            : new[] { attempt.Assignment.Exam.CreatedByUserId };
+
         await transaction.CommitAsync(cancellationToken);
+
+        // Số chưa đọc đọc SAU commit, khác với số bài đã nộp ở trên. Số này đẩy đi như một giá trị tuyệt đối,
+        // nên đọc trong transaction thì cả lớp nộp cùng giây sẽ mỗi người chỉ thấy phần đã commit cộng dòng
+        // của mình và đẩy N+1 thay vì N+30. Đọc muộn hơn thì lỗi thoáng qua không được phép biến một bài đã
+        // nộp thành 500, nên nuốt lỗi: chuông chỉ chậm tới lần tải kế.
+        var unreadCounts = await TryReadUnreadCountsAsync(unreadRecipients, cancellationToken);
 
         // SAU commit, không sớm hơn một dòng nào: giáo viên nhận thông báo về một bài đã thực sự
         // nằm trong database, không phải về một transaction có thể cuộn lại ngay sau đó (§7).
-        await PublishSubmittedAsync(attempt, submittedCount, cancellationToken);
+        await PublishSubmittedAsync(attempt, submittedCount, unreadCounts, cancellationToken);
 
         return graded;
+    }
+
+    /// <summary>
+    /// <see cref="PublishAutoSubmittedAsync"/> cho các đường chốt sổ do chính request của học sinh kích hoạt
+    /// (vào lại bài, nạp phiên, lưu nháp trễ). Bài đã được chốt và commit trước đó, nên một lỗi đọc ở đây
+    /// không được biến câu trả lời "hết giờ" thành 500. Tiến trình nền có try/catch riêng ở ngoài.
+    /// </summary>
+    private async Task TryPublishAutoSubmittedAsync(ExamAttempt attempt, CancellationToken cancellationToken)
+    {
+        try
+        {
+            await PublishAutoSubmittedAsync(attempt, cancellationToken);
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            // Chỉ là thông báo nhanh; lần tải trang kế tiếp sẽ thấy đúng dữ liệu.
+        }
     }
 
     /// <summary>Báo cho cả học sinh lẫn giáo viên về một bài vừa được hệ thống tự nộp.</summary>
@@ -523,6 +560,13 @@ public sealed class ExamAttemptService : IExamAttemptService
 
         var submittedCount = await _unitOfWork.ExamAssignments.CountSubmittedByExamAsync(
             exam.Id, cancellationToken);
+
+        // Hệ thống nộp thay sinh thông báo cho cả giáo viên lẫn học sinh; cả hai chuông cần số mới.
+        var unreadCounts = await ReadUnreadCountsAsync(
+            [exam.CreatedByUserId, detail.Assignment.StudentId],
+            cancellationToken);
+
+        await PublishUnreadCountsAsync(unreadCounts, cancellationToken);
 
         await _realtime.AutoSubmittedAsync(
             detail.Assignment.StudentId,
@@ -552,6 +596,50 @@ public sealed class ExamAttemptService : IExamAttemptService
             cancellationToken);
     }
 
+    /// <summary>Như <see cref="ReadUnreadCountsAsync"/> nhưng không bao giờ ném: dùng sau commit, khi bài đã lưu.</summary>
+    private async Task<IReadOnlyDictionary<int, int>> TryReadUnreadCountsAsync(
+        IEnumerable<int> userIds,
+        CancellationToken cancellationToken)
+    {
+        try
+        {
+            return await ReadUnreadCountsAsync(userIds, cancellationToken);
+        }
+        catch (Exception exception) when (exception is not OperationCanceledException)
+        {
+            return new Dictionary<int, int>();
+        }
+    }
+
+    /// <summary>Số thông báo chưa đọc hiện tại của từng người trong danh sách.</summary>
+    private async Task<IReadOnlyDictionary<int, int>> ReadUnreadCountsAsync(
+        IEnumerable<int> userIds,
+        CancellationToken cancellationToken)
+    {
+        var counts = new Dictionary<int, int>();
+
+        foreach (var userId in userIds.Distinct())
+        {
+            counts[userId] = await _unitOfWork.Notifications.CountUnreadAsync(userId, cancellationToken);
+        }
+
+        return counts;
+    }
+
+    /// <summary>
+    /// Đẩy số chưa đọc mới tới chuông thông báo. Bài vừa nộp sinh thông báo trong database, nhưng nếu
+    /// không đẩy số này thì chuông đứng yên cho tới lần tải trang kế tiếp.
+    /// </summary>
+    private async Task PublishUnreadCountsAsync(
+        IReadOnlyDictionary<int, int> unreadCounts,
+        CancellationToken cancellationToken)
+    {
+        foreach (var (userId, unreadCount) in unreadCounts)
+        {
+            await _realtime.UnreadCountChangedAsync(userId, unreadCount, cancellationToken);
+        }
+    }
+
     /// <summary>Báo cho giáo viên biết có học sinh vừa nộp bài.</summary>
     /// <remarks>
     /// Màn hình theo dõi của giáo viên dùng sự kiện này để tự tăng <c>submittedCount</c> mà không
@@ -563,10 +651,13 @@ public sealed class ExamAttemptService : IExamAttemptService
     private async Task PublishSubmittedAsync(
         ExamAttempt attempt,
         int submittedCount,
+        IReadOnlyDictionary<int, int> unreadCounts,
         CancellationToken cancellationToken)
     {
         var exam = attempt.Assignment.Exam;
         var student = attempt.Assignment.Student;
+
+        await PublishUnreadCountsAsync(unreadCounts, cancellationToken);
 
         await _realtime.ExamSubmittedAsync(
             exam.CreatedByUserId,
@@ -899,7 +990,7 @@ public sealed class ExamAttemptService : IExamAttemptService
         // Gán thẳng là đủ để EF ghi đúng những cột này vì thực thể đang được change tracker theo dõi;
         // gọi Update() sẽ đánh dấu mọi cột là đã sửa và biến lệnh ghi thành một lần chép đè cả dòng.
         attempt.Status = AssignmentStatus.Graded;
-        attempt.SubmittedAt = now;
+        attempt.SubmittedAt = AttemptDeadline.RecordedSubmitTime(attempt.ExpiresAt, now, autoSubmitted);
         attempt.Score = result.Score;
         attempt.CorrectCount = result.CorrectCount;
         attempt.MaxScore = result.MaxScore;
@@ -1034,7 +1125,7 @@ public sealed class ExamAttemptService : IExamAttemptService
                 Message = autoSubmitted
                     ? $"{studentName} hết giờ làm bài \"{exam.Title}\" nên hệ thống đã nộp phần em làm được."
                     : $"{studentName} vừa nộp bài \"{exam.Title}\".",
-                Link = "/giao-vien/ket-qua",
+                Link = $"/giao-vien/ket-qua/{attempt.Id}",
                 TargetType = nameof(ExamAttempt),
                 TargetId = attempt.Id,
                 IsRead = false,
@@ -1053,7 +1144,7 @@ public sealed class ExamAttemptService : IExamAttemptService
                 Type = NotificationType.AutoSubmitted,
                 Title = "Bài kiểm tra đã hết giờ",
                 Message = $"Hết giờ làm bài \"{exam.Title}\". Hệ thống đã nộp phần bạn làm được.",
-                Link = "/hoc-sinh/ket-qua",
+                Link = $"/hoc-sinh/ket-qua/{attempt.Id}",
                 TargetType = nameof(ExamAttempt),
                 TargetId = attempt.Id,
                 IsRead = false,

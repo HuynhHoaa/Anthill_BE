@@ -121,6 +121,7 @@ public sealed class ResultService : IResultService
         {
             TotalAttempts = stats.TotalAttempts,
             GradedCount = stats.GradedCount,
+            InProgressCount = stats.InProgressCount,
 
             // NULL chứ không phải 0 khi chưa chấm bài nào. Trả 0 thì màn hình hiện "trung bình 0
             // điểm" cho một lớp chưa ai thi, và giáo viên đọc con số đó sẽ tưởng cả lớp làm sai hết.
