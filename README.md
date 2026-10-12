@@ -37,7 +37,9 @@ gian thực. Có thêm xoá mềm học sinh và khung giờ riêng cho từng l
 Giới hạn đã biết:
 
 - `POST /api/auth/refresh` luôn trả 401: chưa có bảng lưu refresh token nên `login` chưa trả refresh
-  token. Access token sống 120 phút (480 ở Development), đủ cho một bài 45–60 phút.
+  token. Access token sống 480 phút, dài hơn bài kiểm tra dài nhất được phép (300 phút); API từ chối khởi động nếu
+  `Jwt:ExpiryMinutes` thấp hơn 330. Khoá hoặc đổi mật khẩu vẫn cắt phiên ngay nhờ `SecurityStamp`, nên token
+  sống lâu không làm mất khả năng thu hồi.
 - Ảnh câu hỏi ghi xuống đĩa của máy chạy API (`wwwroot/uploads`); nền tảng nào xoá đĩa khi khởi động
   lại thì cần một cài đặt `IFileService` khác.
 - Sổ kết nối SignalR (`UserConnectionRegistry`) nằm trong bộ nhớ của một tiến trình, nên lệnh cắt lúc
@@ -108,7 +110,7 @@ mỗi lời gọi hub; cố ý không cache, vì cache có hạn là mở lại 
 
 **Kết nối realtime chết ngay khi phiên chết.** Sự kiện server đẩy xuống không đi qua phương thức hub nào,
 nên trước đây một WebSocket mở trước lúc khoá vẫn nhận thông báo cá nhân — và cả tiến độ nộp bài nếu là
-giáo viên đang theo dõi một đề — cho tới lần gọi hub kế tiếp hoặc tới khi token hết hạn (tối đa 120 phút).
+giáo viên đang theo dõi một đề — cho tới lần gọi hub kế tiếp hoặc tới khi token hết hạn (tối đa 480 phút).
 Hub ghi từng kết nối vào một sổ theo tài khoản, và mọi lối xoay `SecurityStamp` gọi cắt ngay sau khi
 transaction commit (cắt trước commit thì client nối lại kịp đọc stamp cũ). Sổ nằm trong bộ nhớ một tiến
 trình — giới hạn ghi ở đầu file lớp đó. (`UserConnectionRegistry`, `IUserConnectionCloser`)
@@ -202,7 +204,7 @@ từng chạy môi trường Development trên database thật thì phải xoá 
 |---|---|---|
 | `ConnectionStrings:DefaultConnection` | `ConnectionStrings__DefaultConnection`, hoặc `DATABASE_URL` dạng URI | bắt buộc |
 | `Jwt:SecretKey` | `Jwt__SecretKey` hoặc `JWT_SECRET_KEY` | bắt buộc, tối thiểu 32 byte |
-| `Jwt:Issuer`, `Jwt:Audience`, `Jwt:ExpiryMinutes` | `Jwt__*` | `Anthill`, `Anthill.Client`, 120 phút |
+| `Jwt:Issuer`, `Jwt:Audience`, `Jwt:ExpiryMinutes` | `Jwt__*` | `Anthill`, `Anthill.Client`, 480 phút (tối thiểu 330) |
 | `Cors:AllowedOrigins` | `Cors__AllowedOrigins__0`, `__1`, ... | không có mặc định; **bắt buộc** ở Production, thiếu thì API dừng lúc khởi động |
 | `AutoSubmit:Enabled`, `IntervalSeconds`, `BatchSize` | `AutoSubmit__*` | `true`, 30, 50 |
 | `FileStorage:MaxBytes` | `FileStorage__MaxBytes` | 4 MB |

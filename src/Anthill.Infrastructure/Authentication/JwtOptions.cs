@@ -1,4 +1,5 @@
 using System.Text;
+using Anthill.Application.Validators;
 
 namespace Anthill.Infrastructure.Authentication;
 
@@ -23,10 +24,22 @@ public class JwtOptions
     public string SecretKey { get; set; } = string.Empty;
 
     /// <summary>
-    /// Mặc định 120 phút. Học sinh làm bài 45–60 phút nên token hết hạn giữa chừng là mất bài;
-    /// đường cấp lại chính thức vẫn là refresh token (§4.1), giá trị này chỉ là lớp đệm.
+    /// Phần bù cộng thêm vào bài kiểm tra dài nhất được phép: học sinh đăng nhập trước giờ làm bài một chút, và
+    /// cửa sổ ân hạn nộp trễ cũng cần token còn sống.
     /// </summary>
-    public int ExpiryMinutes { get; set; } = 120;
+    public const int ExamMarginMinutes = 30;
+
+    /// <summary>
+    /// Mốc thấp nhất của <see cref="ExpiryMinutes"/>: bài dài nhất mà validator cho phép cộng phần bù. Thấp hơn thì
+    /// một học sinh làm bài đủ dài sẽ hết phiên giữa buổi thi, và vì chưa có refresh token nên không có đường cấp lại.
+    /// </summary>
+    public static int MinimumExpiryMinutes => SaveExamRequestValidator.MaxDurationMinutes + ExamMarginMinutes;
+
+    /// <summary>
+    /// Mặc định 480 phút (8 giờ). Phải dài hơn bài kiểm tra dài nhất được phép; token chết sớm hơn thì vẫn có
+    /// <c>SecurityStamp</c> thu hồi ngay khi khoá hay đổi mật khẩu, nên sống lâu không làm mất khả năng cắt phiên.
+    /// </summary>
+    public int ExpiryMinutes { get; set; } = 480;
 
     /// <summary>Ném lỗi ngay khi cấu hình thiếu, thay vì cấp ra token không ai kiểm được.</summary>
     public void Validate()
@@ -46,6 +59,13 @@ public class JwtOptions
         if (ExpiryMinutes <= 0)
         {
             throw new InvalidOperationException($"'{SectionName}:ExpiryMinutes' phải lớn hơn 0.");
+        }
+
+        if (ExpiryMinutes < MinimumExpiryMinutes)
+        {
+            throw new InvalidOperationException(
+                $"'{SectionName}:ExpiryMinutes' ({ExpiryMinutes}) phải từ {MinimumExpiryMinutes} phút trở lên: bài kiểm tra dài nhất "
+                + $"được phép là {SaveExamRequestValidator.MaxDurationMinutes} phút, token ngắn hơn thì học sinh hết phiên giữa buổi thi.");
         }
     }
 }
