@@ -38,7 +38,21 @@ public sealed record ExamDto
 
     public required int HardPercentage { get; init; }
 
-    public required decimal PointPerQuestion { get; init; }
+    /// <summary>Điểm của một câu Dễ.</summary>
+    public required decimal PointEasy { get; init; }
+
+    /// <summary>Điểm của một câu Trung bình.</summary>
+    public required decimal PointMedium { get; init; }
+
+    /// <summary>Điểm của một câu Khó.</summary>
+    public required decimal PointHard { get; init; }
+
+    /// <summary>
+    /// Tổng điểm của đề theo ma trận: số câu mỗi mức × điểm mức đó. Chuẩn là 100 nhưng server không bắt
+    /// buộc: giáo viên được lưu một đề chưa đủ 100 sau khi giao diện hỏi xác nhận, và đề có từ trước luật
+    /// này (ví dụ 9 câu × 1 điểm) giữ nguyên điểm cũ.
+    /// </summary>
+    public required decimal TotalScore { get; init; }
 
     public required bool ShuffleQuestions { get; init; }
 
@@ -78,7 +92,7 @@ public sealed record ExamDto
 
     /// <summary>
     /// <c>true</c> khi đã có em bắt đầu làm bài (<see cref="StartedCount"/> &gt; 0). Từ lúc đó số câu,
-    /// ba tỷ lệ, chủ đề, điểm mỗi câu, thời lượng và hai tuỳ chọn trộn không đổi được nữa — muốn khác
+    /// ba tỷ lệ, chủ đề, điểm từng mức, thời lượng và hai tuỳ chọn trộn không đổi được nữa — muốn khác
     /// thì nhân bản đề. Server tính sẵn để giao diện không phải tự suy lại luật khoá.
     /// </summary>
     public required bool BlueprintFrozen { get; init; }

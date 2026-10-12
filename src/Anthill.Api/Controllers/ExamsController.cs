@@ -132,7 +132,7 @@ public sealed class ExamsController : ApiControllerBase
     /// <remarks>
     /// Tồn tại riêng vì đây là thao tác hay làm nhất sau khi đề đã giao. Dùng PUT cho việc này
     /// nghĩa là gửi lại trọn cấu hình, và chỉ cần client bỏ sót một trường là tỷ lệ độ khó hoặc
-    /// điểm mỗi câu bị ghi đè bằng giá trị mặc định — trên một đề học sinh đang chờ làm.
+    /// điểm từng mức bị ghi đè bằng giá trị mặc định — trên một đề học sinh đang chờ làm.
     /// Trả <b>409</b> khi đề đã giao và đang trong lúc khoá giờ (từ dưới 120 phút trước giờ mở tới hết giờ đóng).
     /// </remarks>
     [HttpPatch("{id:int}/schedule")]

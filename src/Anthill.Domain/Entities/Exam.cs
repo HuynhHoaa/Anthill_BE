@@ -25,7 +25,26 @@ public class Exam : BaseEntity
 
     public int HardPercentage { get; set; }
 
-    public decimal PointPerQuestion { get; set; }
+    /// <summary>
+    /// Điểm của MỘT câu ở mức Dễ. Tổng điểm của đề là số câu mỗi mức nhân điểm mức đó, và phải đúng bằng
+    /// 100 mỗi khi đề được lưu không phải nháp (xem <c>ExamScoring</c> ở tầng Application).
+    /// </summary>
+    public decimal PointEasy { get; set; }
+
+    /// <summary>Điểm của MỘT câu ở mức Trung bình. Xem <see cref="PointEasy"/>.</summary>
+    public decimal PointMedium { get; set; }
+
+    /// <summary>Điểm của MỘT câu ở mức Khó. Xem <see cref="PointEasy"/>.</summary>
+    public decimal PointHard { get; set; }
+
+    /// <summary>Điểm của một câu thuộc mức độ <paramref name="difficulty"/> trong đề này.</summary>
+    public decimal PointFor(Anthill.Domain.Enums.QuestionDifficulty difficulty) => difficulty switch
+    {
+        Anthill.Domain.Enums.QuestionDifficulty.Easy => PointEasy,
+        Anthill.Domain.Enums.QuestionDifficulty.Medium => PointMedium,
+        Anthill.Domain.Enums.QuestionDifficulty.Hard => PointHard,
+        _ => throw new ArgumentOutOfRangeException(nameof(difficulty), difficulty, null)
+    };
 
     public bool ShuffleQuestions { get; set; }
 

@@ -178,7 +178,9 @@ public sealed class ExamService : IExamService
             EasyPercentage = request.EasyPercentage,
             MediumPercentage = request.MediumPercentage,
             HardPercentage = request.HardPercentage,
-            PointPerQuestion = request.PointPerQuestion,
+            PointEasy = request.PointEasy,
+            PointMedium = request.PointMedium,
+            PointHard = request.PointHard,
             ShuffleQuestions = request.ShuffleQuestions,
             ShuffleAnswers = request.ShuffleAnswers,
             ShowResultAfterSubmit = request.ShowResultAfterSubmit,
@@ -312,7 +314,9 @@ public sealed class ExamService : IExamService
         exam.EasyPercentage = request.EasyPercentage;
         exam.MediumPercentage = request.MediumPercentage;
         exam.HardPercentage = request.HardPercentage;
-        exam.PointPerQuestion = request.PointPerQuestion;
+        exam.PointEasy = request.PointEasy;
+        exam.PointMedium = request.PointMedium;
+        exam.PointHard = request.PointHard;
         exam.ShuffleQuestions = request.ShuffleQuestions;
         exam.ShuffleAnswers = request.ShuffleAnswers;
         exam.ShowResultAfterSubmit = request.ShowResultAfterSubmit;
@@ -654,7 +658,9 @@ public sealed class ExamService : IExamService
             EasyPercentage = source.EasyPercentage,
             MediumPercentage = source.MediumPercentage,
             HardPercentage = source.HardPercentage,
-            PointPerQuestion = source.PointPerQuestion,
+            PointEasy = source.PointEasy,
+            PointMedium = source.PointMedium,
+            PointHard = source.PointHard,
             ShuffleQuestions = source.ShuffleQuestions,
             ShuffleAnswers = source.ShuffleAnswers,
             ShowResultAfterSubmit = source.ShowResultAfterSubmit,

@@ -347,9 +347,10 @@ public sealed class ExamGeneratorService : IExamGeneratorService
                 ContentSnapshot = question.Content,
                 ImageUrlSnapshot = question.ImageUrl,
 
-                // Điểm lấy từ đề, không lấy từ DefaultPoint của câu hỏi: cùng một câu có thể đáng
-                // 0,5 điểm trong bài 15 phút và 1 điểm trong bài kiểm tra một tiết.
-                Point = exam.PointPerQuestion,
+                // Điểm lấy từ đề theo mức độ của câu, không lấy từ DefaultPoint của câu hỏi: cùng một
+                // câu có thể đáng 0,5 điểm trong bài 15 phút và 1 điểm trong bài kiểm tra một tiết. Số
+                // câu mỗi mức cố định theo ma trận nên mọi bản đề của một đề cùng một tổng điểm.
+                Point = exam.PointFor(question.Difficulty),
 
                 CreatedAt = paper.CreatedAt
             };

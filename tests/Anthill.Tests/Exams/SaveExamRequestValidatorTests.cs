@@ -23,7 +23,10 @@ public class SaveExamRequestValidatorTests
         int hard = 20,
         decimal pointPerQuestion = 0.5m,
         int windowHours = 2,
-        string? lifecycle = null) => new()
+        string? lifecycle = null,
+        decimal? pointEasy = null,
+        decimal? pointMedium = null,
+        decimal? pointHard = null) => new()
     {
         Title = title,
         Description = "Nội dung chương 1 và 2",
@@ -33,7 +36,10 @@ public class SaveExamRequestValidatorTests
         EasyPercentage = easy,
         MediumPercentage = medium,
         HardPercentage = hard,
-        PointPerQuestion = pointPerQuestion,
+        // Một giá trị cho cả ba mức, trừ khi ca test chỉ rõ từng mức.
+        PointEasy = pointEasy ?? pointPerQuestion,
+        PointMedium = pointMedium ?? pointPerQuestion,
+        PointHard = pointHard ?? pointPerQuestion,
         OpenAt = OpenAt,
         CloseAt = OpenAt.AddHours(windowHours),
         Lifecycle = lifecycle
@@ -132,8 +138,43 @@ public class SaveExamRequestValidatorTests
     [InlineData(-5)]
     public void Diem_moi_cau_khong_duong_bi_tu_choi(decimal pointPerQuestion)
     {
-        ErrorsOf(Valid(pointPerQuestion: pointPerQuestion))
-            .Should().Contain(message => message.Contains("Điểm mỗi câu phải lớn hơn 0"));
+        // 20 câu chia 8/8/4 nên cả ba mức đều có câu: mức nào có điểm không dương cũng bị nêu tên.
+        var errors = ErrorsOf(Valid(pointPerQuestion: pointPerQuestion));
+
+        errors.Should().Contain(message => message.Contains("điểm mỗi câu Dễ phải lớn hơn 0"));
+        errors.Should().Contain(message => message.Contains("điểm mỗi câu Trung bình phải lớn hơn 0"));
+        errors.Should().Contain(message => message.Contains("điểm mỗi câu Khó phải lớn hơn 0"));
+    }
+
+    [Fact]
+    public void Muc_khong_co_cau_nao_thi_diem_bang_0_van_hop_le()
+    {
+        // 100% câu Dễ: hai mức còn lại không có câu nên điểm của chúng vô nghĩa.
+        _validator
+            .Validate(Valid(easy: 100, medium: 0, hard: 0, pointEasy: 5m, pointMedium: 0m, pointHard: 0m))
+            .IsValid.Should().BeTrue();
+    }
+
+    [Fact]
+    public void Diem_am_bi_tu_choi_ke_ca_o_muc_khong_co_cau()
+    {
+        ErrorsOf(Valid(easy: 100, medium: 0, hard: 0, pointEasy: 5m, pointMedium: -1m, pointHard: 0m))
+            .Should().Contain(message => message.Contains("mỗi câu Trung bình") && message.Contains("không được âm"));
+    }
+
+    [Fact]
+    public void Diem_mot_cau_khong_duoc_vuot_tong_diem_cua_de()
+    {
+        ErrorsOf(Valid(pointHard: 100.01m))
+            .Should().Contain(message => message.Contains("mỗi câu Khó") && message.Contains("không được vượt quá"));
+    }
+
+    [Fact]
+    public void Tong_diem_khac_100_khong_bi_validator_chan()
+    {
+        // Cố ý: giáo viên được lưu một đề chưa đủ 100 điểm sau khi giao diện hỏi xác nhận (56 câu chẳng
+        // hạn khó chia đúng 100), nên tổng điểm khác 100 không phải lỗi của request.
+        _validator.Validate(Valid(pointPerQuestion: 0.5m)).IsValid.Should().BeTrue();
     }
 
     [Fact]
@@ -165,17 +206,20 @@ public class SaveExamRequestValidatorTests
     [Fact]
     public void Tich_so_cau_va_diem_dung_bang_tran_thi_hop_le()
     {
-        // Biên hợp lệ: 3 câu × 3333.33 điểm = 9999.99 đúng bằng trần numeric(6,2), không hơn không kém.
-        _validator.Validate(Valid(totalQuestions: 3, pointPerQuestion: 3333.33m)).IsValid.Should().BeTrue();
+        // Biên hợp lệ: 100 câu × 99.99 điểm = 9999 nằm dưới trần numeric(6,2) (9999.99). Điểm một câu
+        // bị chặn ở 100 nên không còn ca nào chạm đúng 9999.99.
+        _validator
+            .Validate(Valid(totalQuestions: 100, pointPerQuestion: 99.99m, windowHours: 999))
+            .IsValid.Should().BeTrue();
     }
 
     [Fact]
     public void Tich_so_cau_va_diem_vuot_tran_numeric_6_2_du_it_bi_tu_choi()
     {
-        // 3 câu × 3333.34 = 10000.02, vượt trần đúng 0.03 — đúng ca báo cáo mô tả (PostgresException
+        // 100 câu × 100 điểm = 10000, vượt trần đúng 0.01 — đúng kiểu ca báo cáo mô tả (PostgresException
         // 22003 lúc học sinh đầu tiên bắt đầu làm, vì MaxScore không còn vừa numeric(6,2)). Không so
         // chuỗi "9999.99": dấu thập phân trong thông điệp phụ thuộc văn hoá (culture) của máy chạy test.
-        ErrorsOf(Valid(totalQuestions: 3, pointPerQuestion: 3333.34m))
+        ErrorsOf(Valid(totalQuestions: 100, pointPerQuestion: 100m, windowHours: 999))
             .Should().Contain(message => message.Contains("Tổng điểm bài kiểm tra"));
     }
 

@@ -43,7 +43,7 @@ public sealed record AttemptSessionDto
 
     public required int TotalQuestions { get; init; }
 
-    /// <summary>Tổng điểm của bản đề, để màn hình hiện "x/10" ngay từ lúc bắt đầu.</summary>
+    /// <summary>Tổng điểm của bản đề, để màn hình hiện "x/100" ngay từ lúc bắt đầu.</summary>
     public required decimal MaxScore { get; init; }
 
     public required IReadOnlyList<AttemptQuestionDto> Questions { get; init; }

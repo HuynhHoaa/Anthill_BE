@@ -27,7 +27,9 @@ public class ClassWindowTests
         EasyPercentage = 45,
         MediumPercentage = 33,
         HardPercentage = 22,
-        PointPerQuestion = 1,
+        PointEasy = 1,
+        PointMedium = 1,
+        PointHard = 1,
         OpenAt = ExamOpen,
         CloseAt = ExamClose,
         CreatedByUserId = 2

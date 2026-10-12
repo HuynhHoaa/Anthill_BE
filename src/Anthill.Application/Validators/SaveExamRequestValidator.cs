@@ -1,5 +1,7 @@
+using Anthill.Application.Common;
 using Anthill.Application.DTOs.Exams;
 using Anthill.Application.Mappings;
+using Anthill.Domain.Enums;
 using FluentValidation;
 
 namespace Anthill.Application.Validators;
@@ -37,20 +39,22 @@ public sealed class SaveExamRequestValidator : AbstractValidator<SaveExamRequest
     /// <summary>Trần thực dụng cho một đề trắc nghiệm; cũng chặn một request đòi sinh 100000 câu.</summary>
     public const int MaxTotalQuestions = 500;
 
-    /// <summary>Cột <c>PointPerQuestion</c> khai <c>precision(6, 2)</c>.</summary>
-    public const decimal MaxPointPerQuestion = 9999.99m;
+    /// <summary>
+    /// Điểm một câu không bao giờ lớn hơn tổng điểm của cả đề. Cũng nằm gọn trong cột điểm của đề
+    /// (<c>numeric(6, 2)</c>).
+    /// </summary>
+    public const decimal MaxPointPerQuestion = ExamScoring.TotalScore;
 
     /// <summary>
-    /// Trần của <c>TotalQuestions × PointPerQuestion</c> — chính là <c>MaxScore</c> của mọi lượt làm
+    /// Trần của tổng <c>số câu mỗi mức × điểm mức đó</c> — chính là <c>MaxScore</c> của mọi lượt làm
     /// đề này. Cột <c>ExamAttempt.Score</c>/<c>MaxScore</c> khai <c>numeric(6, 2)</c>, nên vượt mốc
-    /// này không phải là "điểm cao bất thường" mà là <c>PostgresException 22003</c> ngay lúc học sinh
-    /// đầu tiên bắt đầu làm bài — quá muộn để giáo viên sửa. Hai trần riêng lẻ ở trên (500 câu,
-    /// 9999.99 điểm/câu) không chặn nổi tích của chúng.
+    /// này là <c>PostgresException 22003</c> ngay lúc học sinh đầu tiên bắt đầu làm bài — quá muộn để
+    /// giáo viên sửa. Bản nháp vẫn qua cửa này (nó chưa phải bằng 100) nhưng không được tràn cột.
     /// </summary>
     public const decimal MaxTotalScore = 9999.99m;
 
-    /// <summary>Số chữ số thập phân tối đa của <c>PointPerQuestion</c>, khớp phần lẻ của <c>numeric(6, 2)</c>.</summary>
-    public const int PointPerQuestionDecimalPlaces = 2;
+    /// <summary>Số chữ số thập phân tối đa của điểm một câu, khớp phần lẻ của <c>numeric(6, 2)</c>.</summary>
+    public const int PointDecimalPlaces = 2;
 
     public SaveExamRequestValidator()
     {
@@ -75,24 +79,18 @@ public sealed class SaveExamRequestValidator : AbstractValidator<SaveExamRequest
             .InclusiveBetween(1, MaxTotalQuestions)
             .WithMessage($"Số câu hỏi của đề phải từ 1 đến {MaxTotalQuestions}.");
 
-        RuleFor(request => request.PointPerQuestion)
-            .GreaterThan(0m).WithMessage("Điểm mỗi câu phải lớn hơn 0.")
-            .LessThanOrEqualTo(MaxPointPerQuestion)
-            .WithMessage($"Điểm mỗi câu không được vượt quá {MaxPointPerQuestion}.")
-            .Must(HaveAtMostTwoDecimalPlaces)
-            .WithMessage(
-                $"Điểm mỗi câu chỉ được tối đa {PointPerQuestionDecimalPlaces} chữ số thập phân, "
-                + "vì cột điểm trong hệ thống lưu đúng chừng đó — phần lẻ dư ra sẽ bị làm tròn âm thầm "
-                + "lúc lưu.");
+        AddPointRules(request => request.PointEasy, "Dễ", QuestionDifficulty.Easy);
+        AddPointRules(request => request.PointMedium, "Trung bình", QuestionDifficulty.Medium);
+        AddPointRules(request => request.PointHard, "Khó", QuestionDifficulty.Hard);
 
-        // Tích hai trần đã kiểm riêng ở trên (500 câu, 9999.99 điểm/câu) vẫn vượt xa numeric(6,2) —
-        // đây là mốc thật, tính trên chính công thức MaxScore = TotalQuestions × PointPerQuestion.
+        // Tích của số câu và điểm vẫn có thể vượt numeric(6,2) dù từng trần đã qua — mốc thật, tính
+        // trên chính công thức MaxScore. "Đúng bằng 100" là việc của service (nháp được miễn).
         RuleFor(request => request)
             .Must(FitsMaxTotalScore)
-            .WithName(nameof(SaveExamRequest.PointPerQuestion))
+            .WithName(nameof(SaveExamRequest.PointEasy))
             .WithMessage(
-                $"Tổng điểm bài kiểm tra (số câu × điểm mỗi câu) không được vượt quá {MaxTotalScore}. "
-                + "Hãy giảm số câu hoặc điểm mỗi câu.");
+                $"Tổng điểm bài kiểm tra không được vượt quá {MaxTotalScore}. "
+                + "Hãy giảm số câu hoặc điểm từng mức.");
 
         // Ba tỷ lệ kiểm riêng từng cái ở đây; tổng của chúng chỉ bắt buộc bằng 100 khi đề không
         // phải bản nháp, nên phép kiểm đó thuộc về service.
@@ -122,11 +120,44 @@ public sealed class SaveExamRequestValidator : AbstractValidator<SaveExamRequest
             .WithMessage("Trường 'lifecycle' chỉ nhận giá trị 'draft', hoặc bỏ trống để đề có hiệu lực theo lịch.");
     }
 
+    /// <summary>
+    /// Quy tắc cho điểm của một mức. Mức không có câu nào trong đề thì điểm của nó vô nghĩa, nên chỉ cần
+    /// không âm; mức có câu thì phải lớn hơn 0.
+    /// </summary>
+    private void AddPointRules(
+        System.Linq.Expressions.Expression<Func<SaveExamRequest, decimal>> selector,
+        string levelLabel,
+        QuestionDifficulty difficulty)
+    {
+        var read = selector.Compile();
+
+        RuleFor(selector)
+            .GreaterThanOrEqualTo(0m).WithMessage($"Điểm mỗi câu {levelLabel} không được âm.")
+            .LessThanOrEqualTo(MaxPointPerQuestion)
+            .WithMessage($"Điểm mỗi câu {levelLabel} không được vượt quá {MaxPointPerQuestion}.")
+            .Must(HaveAtMostTwoDecimalPlaces)
+            .WithMessage(
+                $"Điểm mỗi câu {levelLabel} chỉ được tối đa {PointDecimalPlaces} chữ số thập phân, "
+                + "vì cột điểm trong hệ thống lưu đúng chừng đó — phần lẻ dư ra sẽ bị làm tròn âm thầm "
+                + "lúc lưu.");
+
+        RuleFor(selector)
+            .GreaterThan(0m)
+            .When(request => CountOf(request, difficulty) > 0)
+            .WithMessage($"Đề có câu {levelLabel}, nên điểm mỗi câu {levelLabel} phải lớn hơn 0.");
+    }
+
+    private static int CountOf(SaveExamRequest request, QuestionDifficulty difficulty) =>
+        BlueprintCalculator.CalculateRequiredCounts(
+            request.TotalQuestions,
+            request.EasyPercentage,
+            request.MediumPercentage)[difficulty];
+
     private static bool FitsMaxTotalScore(SaveExamRequest request) =>
-        request.TotalQuestions * request.PointPerQuestion <= MaxTotalScore;
+        ExamScoring.TotalOf(request) <= MaxTotalScore;
 
     private static bool HaveAtMostTwoDecimalPlaces(decimal value) =>
-        decimal.Round(value, PointPerQuestionDecimalPlaces) == value;
+        decimal.Round(value, PointDecimalPlaces) == value;
 
     private static bool FitsInsideWindow(SaveExamRequest request)
     {

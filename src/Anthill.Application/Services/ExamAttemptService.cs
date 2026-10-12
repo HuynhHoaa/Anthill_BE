@@ -790,9 +790,8 @@ public sealed class ExamAttemptService : IExamAttemptService
                 AssignmentSchedule.Resolve(locked).CloseAt),
             Status = AssignmentStatus.InProgress,
 
-            // Thang điểm chốt ngay lúc bắt đầu và đọc từ bản đề, không nhân TotalQuestions với
-            // PointPerQuestion: giáo viên sửa điểm mỗi câu giữa buổi thi không được đổi thang điểm
-            // của một bài đang làm dở.
+            // Thang điểm chốt ngay lúc bắt đầu và đọc từ bản đề, không tính lại từ điểm từng mức của
+            // đề: giáo viên sửa điểm giữa buổi thi không được đổi thang điểm của một bài đang làm dở.
             MaxScore = AttemptGrading.MaxScoreOf(paper.Questions),
 
             LastAppliedSeq = 0,

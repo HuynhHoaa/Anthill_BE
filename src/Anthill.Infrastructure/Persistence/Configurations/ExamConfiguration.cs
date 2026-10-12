@@ -26,7 +26,13 @@ public class ExamConfiguration : IEntityTypeConfiguration<Exam>
         builder.Property(e => e.Topic)
             .HasMaxLength(128);
 
-        builder.Property(e => e.PointPerQuestion)
+        builder.Property(e => e.PointEasy)
+            .HasPrecision(6, 2);
+
+        builder.Property(e => e.PointMedium)
+            .HasPrecision(6, 2);
+
+        builder.Property(e => e.PointHard)
             .HasPrecision(6, 2);
 
         builder.HasOne(e => e.CreatedBy)

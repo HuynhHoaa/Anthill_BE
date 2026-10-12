@@ -35,7 +35,15 @@ public sealed record SaveExamRequest
 
     public required int HardPercentage { get; init; }
 
-    public required decimal PointPerQuestion { get; init; }
+    /// <summary>
+    /// Điểm của một câu ở từng mức độ. Tổng (số câu mỗi mức × điểm mức đó) chuẩn là 100 nhưng server
+    /// không bắt buộc: giao diện báo "n / 100" và hỏi xác nhận trước khi chốt một đề chưa đủ.
+    /// </summary>
+    public required decimal PointEasy { get; init; }
+
+    public required decimal PointMedium { get; init; }
+
+    public required decimal PointHard { get; init; }
 
     public bool ShuffleQuestions { get; init; }
 

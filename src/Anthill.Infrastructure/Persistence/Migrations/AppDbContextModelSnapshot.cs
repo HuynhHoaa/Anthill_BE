@@ -105,7 +105,15 @@ namespace Anthill.Infrastructure.Persistence.Migrations
                     b.Property<DateTime>("OpenAt")
                         .HasColumnType("timestamp with time zone");
 
-                    b.Property<decimal>("PointPerQuestion")
+                    b.Property<decimal>("PointEasy")
+                        .HasPrecision(6, 2)
+                        .HasColumnType("numeric(6,2)");
+
+                    b.Property<decimal>("PointHard")
+                        .HasPrecision(6, 2)
+                        .HasColumnType("numeric(6,2)");
+
+                    b.Property<decimal>("PointMedium")
                         .HasPrecision(6, 2)
                         .HasColumnType("numeric(6,2)");
 

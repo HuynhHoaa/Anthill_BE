@@ -132,9 +132,19 @@ public static class ExamEditPolicy
             changed.Add("thời gian làm bài");
         }
 
-        if (exam.PointPerQuestion != request.PointPerQuestion)
+        if (exam.PointEasy != request.PointEasy)
         {
-            changed.Add("điểm mỗi câu");
+            changed.Add("điểm mỗi câu Dễ");
+        }
+
+        if (exam.PointMedium != request.PointMedium)
+        {
+            changed.Add("điểm mỗi câu Trung bình");
+        }
+
+        if (exam.PointHard != request.PointHard)
+        {
+            changed.Add("điểm mỗi câu Khó");
         }
 
         if (!SameTopic(exam, request))
@@ -191,7 +201,9 @@ public static class ExamEditPolicy
                || exam.EasyPercentage != request.EasyPercentage
                || exam.MediumPercentage != request.MediumPercentage
                || exam.HardPercentage != request.HardPercentage
-               || exam.PointPerQuestion != request.PointPerQuestion
+               || exam.PointEasy != request.PointEasy
+               || exam.PointMedium != request.PointMedium
+               || exam.PointHard != request.PointHard
                || !SameTopic(exam, request)
                || exam.ShuffleQuestions != request.ShuffleQuestions
                || exam.ShuffleAnswers != request.ShuffleAnswers;

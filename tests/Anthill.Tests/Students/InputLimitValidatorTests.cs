@@ -156,7 +156,9 @@ public class InputLimitValidatorTests
         EasyPercentage = 40,
         MediumPercentage = 40,
         HardPercentage = 20,
-        PointPerQuestion = 0.5m,
+        PointEasy = 0.5m,
+        PointMedium = 0.5m,
+        PointHard = 0.5m,
         OpenAt = new DateTime(2026, 10, 1, 8, 0, 0, DateTimeKind.Utc),
         CloseAt = new DateTime(2026, 10, 1, 10, 0, 0, DateTimeKind.Utc)
     };
