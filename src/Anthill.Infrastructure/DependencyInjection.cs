@@ -9,6 +9,7 @@ using Anthill.Infrastructure.Repositories;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
+using Microsoft.Extensions.Options;
 using Npgsql;
 using UnitOfWorkImplementation = Anthill.Infrastructure.UnitOfWork.UnitOfWork;
 
@@ -34,12 +35,12 @@ public static class DependencyInjection
     }
 
     /// <summary>
-    /// Nơi cất ảnh câu hỏi. Bản cài đặt hiện tại ghi xuống đĩa của chính máy chạy API.
+    /// Nơi cất ảnh câu hỏi: đĩa của chính máy chạy API (mặc định) hoặc Cloudinary, chọn bằng
+    /// <c>FileStorage:Provider</c>.
     /// </summary>
     /// <remarks>
-    /// Kế hoạch deploy chọn Cloudinary cho production vì Render xoá sạch đĩa mỗi lần khởi động lại.
-    /// Đổi sang Cloudinary là thêm một lớp cài đặt <c>IFileService</c> và sửa đúng dòng
-    /// <c>AddSingleton</c> dưới đây — không controller nào phải sửa.
+    /// Production dùng Cloudinary vì Render xoá sạch đĩa mỗi lần khởi động lại. Cả hai nằm sau
+    /// <c>IFileService</c> nên không controller nào phải biết.
     /// </remarks>
     private static IServiceCollection AddFileStorage(this IServiceCollection services, IConfiguration configuration)
     {
@@ -58,10 +59,37 @@ public static class DependencyInjection
             options.MaxBytes = long.TryParse(section["MaxBytes"], out var maxBytes) && maxBytes > 0
                 ? maxBytes
                 : defaults.MaxBytes;
+
+            options.Provider = FirstNonEmpty(section["Provider"], defaults.Provider);
+            options.Cloudinary = new CloudinaryOptions
+            {
+                CloudName = FirstNonEmpty(section["Cloudinary:CloudName"], string.Empty),
+                ApiKey = FirstNonEmpty(section["Cloudinary:ApiKey"], string.Empty),
+                ApiSecret = FirstNonEmpty(section["Cloudinary:ApiSecret"], string.Empty),
+                Folder = FirstNonEmpty(section["Cloudinary:Folder"], defaults.Cloudinary.Folder)
+            };
         });
 
-        // Không giữ trạng thái theo request: một thể hiện cho cả tiến trình là đủ.
-        services.AddSingleton<IFileService, LocalFileStorageService>();
+        // Chọn nơi cất lúc đăng ký: cấu hình sai (nơi cất không có, thiếu khoá Cloudinary) thì chết ngay lúc khởi
+        // động, xem ValidateSecurityConfiguration, chứ không đợi tới lần tải ảnh đầu tiên.
+        if (string.Equals(section["Provider"], FileStorageOptions.CloudinaryProvider, StringComparison.OrdinalIgnoreCase))
+        {
+            // Một HttpClient dùng chung cho cả tiến trình, có thời hạn: một lời gọi treo không được giữ chân request
+            // của giáo viên mãi. Kết nối được làm mới định kỳ để không giữ mãi một địa chỉ DNS đã đổi. Không dùng
+            // IHttpClientFactory vì tầng này không kéo thêm gói chỉ để có một client.
+            var cloudinaryClient = new HttpClient(new SocketsHttpHandler { PooledConnectionLifetime = TimeSpan.FromMinutes(5) })
+            {
+                Timeout = TimeSpan.FromSeconds(30)
+            };
+
+            services.AddSingleton<IFileService>(provider => new CloudinaryFileService(
+                cloudinaryClient, provider.GetRequiredService<IOptions<FileStorageOptions>>()));
+        }
+        else
+        {
+            // Không giữ trạng thái theo request: một thể hiện cho cả tiến trình là đủ.
+            services.AddSingleton<IFileService, LocalFileStorageService>();
+        }
 
         return services;
     }

@@ -1,0 +1,37 @@
+# Render Blueprint cho Anthill API. Dùng: Render Dashboard -> New -> Blueprint -> chọn repo này.
+# Các biến `sync: false` Render sẽ hỏi lúc tạo (không bao giờ nằm trong repo). Từng bước đầy đủ ở
+# docs/Anthill_Deploy_Runbook.md.
+services:
+  - type: web
+    name: anthill-api
+    runtime: docker
+    dockerfilePath: ./Dockerfile
+    plan: free
+    # /health chạm database nên giữ ấm cả API lẫn Neon; Render cũng dùng nó để biết bản mới đã sống.
+    healthCheckPath: /health
+    autoDeploy: true
+    envVars:
+      # Chuỗi kết nối dạng URI của Neon (dùng endpoint có -pooler). API tự đổi sang dạng Npgsql, bật SSL và đặt
+      # Maximum Pool Size=10 cho khỏi chạm trần kết nối của gói miễn phí.
+      - key: DATABASE_URL
+        sync: false
+      # Khoá ký JWT: để Render tự sinh một chuỗi ngẫu nhiên 256 bit. Đổi khoá là mọi phiên đăng nhập hiện có hết hạn.
+      - key: Jwt__SecretKey
+        generateValue: true
+      # Địa chỉ THẬT của frontend trên Vercel, ví dụ https://anthill.vercel.app (không có dấu / ở cuối). Thiếu thì
+      # API từ chối khởi động. Thêm Cors__AllowedOrigins__1 nếu có thêm tên miền.
+      - key: Cors__AllowedOrigins__0
+        sync: false
+      # Ảnh câu hỏi: đĩa của Render bị xoá mỗi lần khởi động lại nên bắt buộc dùng Cloudinary.
+      - key: FileStorage__Provider
+        value: Cloudinary
+      - key: FileStorage__Cloudinary__CloudName
+        sync: false
+      - key: FileStorage__Cloudinary__ApiKey
+        sync: false
+      - key: FileStorage__Cloudinary__ApiSecret
+        sync: false
+      # Nạp ba tài khoản demo (mật khẩu công khai trong README) ở lần chạy đầu. Đặt lại thành false hoặc xoá biến
+      # này khi không còn là bản demo.
+      - key: Seed__DemoData
+        value: "true"

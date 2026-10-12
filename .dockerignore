@@ -1,0 +1,19 @@
+# Chỉ những gì docker build cần mới vào ngữ cảnh build: nhỏ hơn thì chép nhanh hơn, và bí mật/dữ liệu cục bộ
+# không bao giờ lọt vào image.
+**/bin/
+**/obj/
+**/.vs/
+**/.idea/
+.git/
+.gitignore
+.gitattributes
+tests/
+docs/
+**/*.user
+**/wwwroot/uploads/
+**/appsettings.Development.json
+**/secrets.json
+Dockerfile
+.dockerignore
+render.yaml
+*.md

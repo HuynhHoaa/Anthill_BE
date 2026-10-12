@@ -6,14 +6,52 @@ namespace Anthill.Infrastructure.FileStorage;
 /// Cấu hình nơi cất ảnh câu hỏi và giới hạn của nó.
 /// </summary>
 /// <remarks>
-/// Bản cài đặt hiện tại ghi xuống đĩa của chính máy chạy API. Kế hoạch deploy chọn Cloudinary cho
-/// production, vì Render xoá sạch đĩa mỗi lần khởi động lại — ảnh sẽ biến mất sau lần deploy kế
-/// tiếp. Toàn bộ phần đó nằm sau <c>IFileService</c>, nên đổi sang Cloudinary là thêm một lớp cài
-/// đặt mới và đổi một dòng đăng ký; không controller nào phải sửa.
+/// Có hai nơi cất, chọn bằng <see cref="Provider"/>: đĩa của chính máy chạy API (mặc định, cho máy lập trình)
+/// và Cloudinary (cho production, vì Render xoá sạch đĩa mỗi lần khởi động lại — ảnh sẽ biến mất sau lần deploy
+/// kế tiếp). Cả hai nằm sau <c>IFileService</c> và cùng cấp một đường dẫn tương đối <c>/uploads/...</c>, nên
+/// database, validator và frontend không biết ảnh đang nằm ở đâu.
 /// </remarks>
 public sealed class FileStorageOptions
 {
     public const string SectionName = "FileStorage";
+
+    public const string LocalProvider = "Local";
+    public const string CloudinaryProvider = "Cloudinary";
+
+    /// <summary><see cref="LocalProvider"/> hoặc <see cref="CloudinaryProvider"/>.</summary>
+    public string Provider { get; set; } = LocalProvider;
+
+    /// <summary>Thông tin tài khoản Cloudinary; chỉ đọc khi <see cref="Provider"/> là Cloudinary.</summary>
+    public CloudinaryOptions Cloudinary { get; set; } = new();
+
+    public bool UsesCloudinary => string.Equals(Provider, CloudinaryProvider, StringComparison.OrdinalIgnoreCase);
+
+    /// <summary>Dừng ngay lúc khởi động nếu chọn một nơi cất không có, hoặc chọn Cloudinary mà thiếu khoá.</summary>
+    public void Validate()
+    {
+        if (!UsesCloudinary)
+        {
+            if (!string.Equals(Provider, LocalProvider, StringComparison.OrdinalIgnoreCase))
+            {
+                throw new InvalidOperationException(
+                    $"'{SectionName}:Provider' chỉ nhận '{LocalProvider}' hoặc '{CloudinaryProvider}', đang là '{Provider}'.");
+            }
+
+            return;
+        }
+
+        var missing = new List<string>();
+        if (string.IsNullOrWhiteSpace(Cloudinary.CloudName)) missing.Add("CloudName");
+        if (string.IsNullOrWhiteSpace(Cloudinary.ApiKey)) missing.Add("ApiKey");
+        if (string.IsNullOrWhiteSpace(Cloudinary.ApiSecret)) missing.Add("ApiSecret");
+
+        if (missing.Count > 0)
+        {
+            throw new InvalidOperationException(
+                $"Chọn Cloudinary nhưng thiếu {string.Join(", ", missing)}. Đặt bằng biến môi trường "
+                + $"{SectionName}__Cloudinary__CloudName, {SectionName}__Cloudinary__ApiKey, {SectionName}__Cloudinary__ApiSecret.");
+        }
+    }
 
     /// <summary>Thư mục gốc trên đĩa, tương đối so với thư mục nội dung của ứng dụng.</summary>
     public string RootPath { get; set; } = "wwwroot";
