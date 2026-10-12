@@ -84,6 +84,12 @@ public sealed record ExamDto
     public required bool BlueprintFrozen { get; init; }
 
     /// <summary>
+    /// <c>true</c> khi lịch chung của đề không đổi được nữa: đề đã giao và chỉ còn dưới 120 phút nữa là
+    /// mở, hoặc đang mở. Hết giờ đóng thì mở khoá lại. Server tính sẵn, cùng phép so với lúc từ chối đổi lịch.
+    /// </summary>
+    public required bool ScheduleLocked { get; init; }
+
+    /// <summary>
     /// Khung giờ đang áp cho từng lớp đã giao, rồi tới các nhóm học sinh chọn lẻ theo từng khung giờ.
     /// Mảng rỗng khi đề chưa giao cho ai.
     /// </summary>

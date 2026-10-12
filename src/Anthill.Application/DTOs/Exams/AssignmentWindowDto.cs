@@ -34,6 +34,11 @@ public sealed record AssignmentWindowDto
     /// <summary><c>"draft"</c> · <c>"scheduled"</c> · <c>"open"</c> · <c>"closed"</c>, tính theo giờ server lúc đọc.</summary>
     public required string Lifecycle { get; init; }
 
+    /// <summary>
+    /// <c>true</c> khi khung giờ này không đổi được nữa (còn dưới 120 phút nữa là mở, hoặc đang mở).
+    /// </summary>
+    public required bool ScheduleLocked { get; init; }
+
     /// <summary>Số em thuộc phần này. Với một lớp là cả lớp, kể cả em đã bắt đầu theo khung cũ.</summary>
     public required int AssignedCount { get; init; }
 

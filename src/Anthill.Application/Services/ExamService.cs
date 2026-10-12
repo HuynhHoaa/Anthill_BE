@@ -82,11 +82,10 @@ public sealed class ExamService : IExamService
     private static string FrozenBlueprintMessage(int startedCount, IReadOnlyList<string> fields) =>
         $"Đã có {startedCount} học sinh bắt đầu làm bài nên cấu hình đề đã bị khoá, không đổi được "
         + $"{string.Join(", ", fields)}. Muốn dùng cấu hình khác, hãy nhân bản đề thành một đề mới rồi sửa "
-        + "trên bản sao. Tên, mô tả, lịch mở/đóng và tuỳ chọn hiện kết quả vẫn sửa được như thường.";
+        + "trên bản sao. Tên, mô tả và tuỳ chọn hiện kết quả vẫn sửa được như thường.";
 
     private static string BackToDraftMessage(int startedCount) =>
-        $"Đã có {startedCount} học sinh bắt đầu làm bài nên không đưa đề về bản nháp được nữa. "
-        + "Muốn dừng nhận bài, hãy dời giờ đóng bài.";
+        $"Đã có {startedCount} học sinh bắt đầu làm bài nên không đưa đề về bản nháp được nữa.";
 
     private int CurrentUserId => _currentUser.RequireUserId();
 
@@ -259,13 +258,23 @@ public sealed class ExamService : IExamService
                 return Result.Conflict<ExamDto>(FrozenBlueprintMessage(startedCount, plan.FrozenFieldsChanged));
         }
 
+        // Lịch mở/đóng chỉ đổi được khi còn xa giờ mở (hoặc khi đề đã đóng). Giữ nguyên lịch thì không bị
+        // chặn, nên sửa tên hay mô tả của một đề sắp thi vẫn làm được.
+        var now = DateTime.UtcNow;
+
+        if (AssignmentSchedule.ExamWindowChanges(exam, request.OpenAt, request.CloseAt)
+            && AssignmentSchedule.IsExamScheduleLocked(exam, assignments.Count, now))
+        {
+            return Result.Conflict<ExamDto>(ScheduleLockMessage.For(ScheduleLockMessage.ExamSubject, exam.OpenAt, now));
+        }
+
         var regenerate = plan.Decision == ExamEditDecision.ApplyAndRegenerate;
 
         // Hai trường hợp được miễn phép kiểm ngân hàng, và chỉ hai:
         //  - Lưu nháp mà không phải sinh lại gì — mục đích của nháp là cất một cấu hình chưa xong. Sinh lại
         //    là rút câu thật, nên một đề đã giao mà rút về nháp kèm cấu hình dở dang vẫn phải qua phép kiểm.
         //  - Đề đã xuất bản mà cấu hình đề không đổi. Không có miễn trừ này thì chỉ cần đồng nghiệp ẩn bớt
-        //    câu hỏi là giáo viên hết cả sửa tên hay dời lịch — đúng những thứ luật khoá hứa vẫn sửa được.
+        //    câu hỏi là giáo viên hết cả sửa tên hay mô tả — đúng những thứ luật khoá hứa vẫn sửa được.
         var skipBankCheck = (isDraft && !regenerate)
                             || (!exam.IsDraft && !ExamEditPolicy.ChangesGeneratedPaper(exam, request));
 
@@ -294,8 +303,6 @@ public sealed class ExamService : IExamService
                 $"Có lớp được đặt khung giờ riêng ngắn hơn {request.DurationMinutes} phút. "
                 + "Hãy nới khung giờ của lớp đó trước, hoặc giữ thời lượng làm bài cũ.");
         }
-
-        var now = DateTime.UtcNow;
 
         exam.Title = request.Title.Trim();
         exam.Description = Normalize(request.Description);
@@ -431,10 +438,16 @@ public sealed class ExamService : IExamService
 
         // Khoá các dòng giao bài như lần sửa cả đề, để danh sách em "chưa bắt đầu" được báo không lệch với
         // một em đang bấm "Vào thi" đúng lúc này.
-        await _unitOfWork.ExamAssignments.LockByExamAsync(exam.Id, cancellationToken);
+        var assignments = await _unitOfWork.ExamAssignments.LockByExamAsync(exam.Id, cancellationToken);
 
         var timingBefore = AssignmentSchedule.ExamTiming.Of(exam);
         var now = DateTime.UtcNow;
+
+        if (AssignmentSchedule.ExamWindowChanges(exam, request.OpenAt, request.CloseAt)
+            && AssignmentSchedule.IsExamScheduleLocked(exam, assignments.Count, now))
+        {
+            return Result.Conflict<ExamDto>(ScheduleLockMessage.For(ScheduleLockMessage.ExamSubject, exam.OpenAt, now));
+        }
 
         exam.OpenAt = request.OpenAt.ToUtc();
         exam.CloseAt = request.CloseAt.ToUtc();

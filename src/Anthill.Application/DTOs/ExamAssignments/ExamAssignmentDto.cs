@@ -71,6 +71,11 @@ public sealed record ExamAssignmentDto
     /// </summary>
     public required bool HasScheduleOverride { get; init; }
 
+    /// <summary>
+    /// <c>true</c> khi khung giờ của em này không đổi được nữa (còn dưới 120 phút nữa là mở, hoặc đang mở).
+    /// </summary>
+    public required bool ScheduleLocked { get; init; }
+
     /// <summary>Lớp mà bài được giao qua đó. NULL (vắng khỏi JSON) khi giáo viên chọn đích danh em này.</summary>
     public int? AssignedViaGroupId { get; init; }
 }

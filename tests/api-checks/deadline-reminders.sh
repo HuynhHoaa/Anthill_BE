@@ -7,7 +7,7 @@
 # giay). Bon dieu can chung minh:
 #   1. Em chua bat dau, con vua du gio lam bai cong bien -> duoc nhac dung mot lan, kem duong dan toi bai.
 #   2. Quet lai khong nhac lan thu hai — dau da nhac nam trong database nen khoi dong lai cung khong nhac lai.
-#   3. Giao vien gia han khung gio -> em duoc nhac lai theo gio moi, vi do la mot khung khac.
+#   3. Khung gio dang mo bi khoa gio nen giao vien khong gia han duoc (409), va em khong bi nhac lan thu hai.
 #   4. Em da vao thi thi khong bi nhac; lop co khung vua khit mot tiet hoc cung khong (giao vien dang o do).
 
 source "$(dirname "$0")/lib.sh"
@@ -157,12 +157,15 @@ expect_status "em lop A van chi co mot loi nhac" 1 "$(reminders_of "$TOK_A")"
 expect_status "em lop B da vao thi: khong bi nhac" 0 "$(reminders_of "$TOK_B")"
 expect_status "lop C khung vua khit mot tiet: khong bi nhac" 0 "$(reminders_of "$TOK_C")"
 
-section "Gia han khung gio thi nhac lai theo gio moi"
-expect_status "keo gio dong cua lop A ra them → 200" 200 \
+section "Khung gio dang mo khong gia han duoc, nen khong co loi nhac thu hai"
+# Loi nhac chi toi luc khung da mo, ma khung dang mo thi bi khoa gio (xem schedule-lock.sh): khong con cach
+# nao keo gio dong ra de sinh mot khung moi giua luc em dang duoc nhac.
+expect_status "keo gio dong cua lop A ra them → 409" 409 \
   "$(call POST "/api/exams/$EID/assignments" "$TEACHER" \
     "{\"studentIds\":[],\"classes\":[{\"groupId\":$G_A,\"openAt\":\"$A_OPEN\",\"closeAt\":\"$(at_minutes 12)\"}],\"notify\":false}")"
-printf '  cho tien trinh nen quet lai (toi da 45 giay)...\n'
-expect_status "em lop A duoc nhac lai theo khung moi" 2 "$(wait_for_reminders "$TOK_A" 2 45)"
-expect_status "em lop C van khong bi nhac"            0 "$(reminders_of "$TOK_C")"
+printf '  cho them mot nhip quet...\n'
+sleep 35
+expect_status "em lop A van chi co mot loi nhac" 1 "$(reminders_of "$TOK_A")"
+expect_status "em lop C van khong bi nhac"       0 "$(reminders_of "$TOK_C")"
 
 summary

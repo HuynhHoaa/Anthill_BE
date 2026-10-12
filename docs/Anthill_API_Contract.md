@@ -170,15 +170,16 @@ JWT claims tối thiểu: `sub` = userId, `role`, `name`, `subject_id` (giáo vi
 | GET | `/api/exams` | teacher, admin | Danh sách, tìm kiếm + lọc theo vòng đời |
 | GET | `/api/exams/{id}` | teacher, admin | Chi tiết một đề |
 | POST | `/api/exams` | teacher | Tạo đề theo blueprint. **Đề không chứa danh sách câu hỏi cụ thể** |
-| PUT | `/api/exams/{id}` | teacher | Sửa toàn bộ cấu hình. Chưa em nào bắt đầu làm: sửa được mọi trường, bản đề đã sinh cho các lượt giao được **sinh lại** theo cấu hình mới (ngân hàng không đủ câu thì từ chối, không đổi gì); đề không còn lượt giao nào (đã thu hồi hết) thì bản đề cũ bị bỏ, lần giao sau sinh theo cấu hình mới. Đã có em bắt đầu (`blueprintFrozen`): đổi số câu, ba tỷ lệ, chủ đề, điểm mỗi câu, thời lượng, tuỳ chọn trộn hoặc đưa về nháp trả **409**; tên, mô tả, lịch và `showResultAfterSubmit` vẫn sửa được. Điểm đã chấm không bao giờ đổi |
-| PATCH | `/api/exams/{id}/schedule` | teacher | **Chỉ** đổi lịch mở/đóng — hẹp và an toàn hơn PUT |
+| PUT | `/api/exams/{id}` | teacher | Sửa toàn bộ cấu hình. Chưa em nào bắt đầu làm: sửa được mọi trường, bản đề đã sinh cho các lượt giao được **sinh lại** theo cấu hình mới (ngân hàng không đủ câu thì từ chối, không đổi gì); đề không còn lượt giao nào (đã thu hồi hết) thì bản đề cũ bị bỏ, lần giao sau sinh theo cấu hình mới. Đã có em bắt đầu (`blueprintFrozen`): đổi số câu, ba tỷ lệ, chủ đề, điểm mỗi câu, thời lượng, tuỳ chọn trộn hoặc đưa về nháp trả **409**; tên, mô tả và `showResultAfterSubmit` vẫn sửa được. Lịch có luật khoá riêng (xem `scheduleLocked`): đề đã giao thì đổi lịch trả **409** từ lúc còn dưới 120 phút nữa là mở cho tới hết giờ đóng, gửi lại đúng lịch đang có thì không bị chặn. Điểm đã chấm không bao giờ đổi |
+| PATCH | `/api/exams/{id}/schedule` | teacher | **Chỉ** đổi lịch mở/đóng — hẹp và an toàn hơn PUT. **409** khi đề đã giao và lịch đang khoá (từ dưới 120 phút trước giờ mở tới hết giờ đóng) |
 | DELETE | `/api/exams/{id}` | teacher | Xoá đề kèm toàn bộ bản ghi giao bài và bản đề đã sinh. Đã có học sinh nộp bài thì **409** — để đề tự đóng theo lịch, kết quả của các em vẫn tra cứu được |
 | POST | `/api/exams/blueprint-preview` | teacher | **Trái tim của tính năng.** Nhận cấu hình đang gõ dở, trả số câu cần / số câu có / hợp lệ hay không |
 | GET | `/api/exams/{id}/blueprint` | teacher | Blueprint của đề đã lưu |
 | POST | `/api/exams/{id}/publish` | teacher | **Bổ sung** — chuyển nháp sang xuất bản. FE hiện làm việc này bằng cách gửi PUT với `lifecycle` bỏ trống |
 | POST | `/api/exams/{id}/duplicate` | teacher | **Bổ sung** — nhân bản đề của chính mình thành một bản **nháp** mới, cùng cấu hình, tên thêm " (bản sao)", chưa giao cho ai. Lối ra khi cấu hình đã khoá. Đề của giáo viên khác trả 404; giáo viên chưa được gán môn trả 403 như khi tạo đề |
 | GET | `/api/exams/{id}/assignments` | teacher | Danh sách học sinh đã giao kèm trạng thái làm bài. Mỗi dòng mang khung giờ thật của em (`openAt`, `closeAt`, `hasScheduleOverride`, `assignedViaGroupId`); `expired` tính theo khung giờ đó |
-| POST | `/api/exams/{id}/assignments` | teacher | Giao bài cho học sinh lẻ và/hoặc cả nhóm, tuỳ chọn kèm khung giờ riêng (`openAt` + `closeAt`, phải chứa trọn `durationMinutes`, nếu không 400). Gửi lại một lớp kèm khung giờ là sửa giờ cho em chưa bắt đầu (`scheduleUpdatedCount`, `scheduleKeptStartedCount`) |
+| POST | `/api/exams/{id}/assignments` | teacher | Giao bài cho học sinh lẻ và/hoặc cả nhóm, tuỳ chọn kèm khung giờ riêng (`openAt` + `closeAt`, phải chứa trọn `durationMinutes`, nếu không 400). Gửi lại một lớp kèm khung giờ là sửa giờ cho em chưa bắt đầu (`scheduleUpdatedCount`, `scheduleKeptStartedCount`); **409** nếu khung giờ lớp đang theo đã khoá, gửi lại đúng khung cũ hoặc giao thêm em vào lớp thì không bị chặn |
+| PATCH | `/api/exams/{examId}/assignments/{assignmentId}/schedule` | teacher | Dời giờ riêng cho một em chọn đích danh (`openAt` + `closeAt`, bỏ trống cả hai để về lịch chung). **409** khi em được giao qua lớp, em đã bắt đầu làm, hoặc khung giờ hiện tại của em đang khoá |
 | DELETE | `/api/exams/{examId}/assignments/{assignmentId}` | teacher | **Bổ sung** — thu hồi bài đã giao. Giao nhầm lớp là chuyện thường, mà endpoint giao bài lại cố ý idempotent nên không có đường lùi |
 
 ### 4.7 Làm bài (phía học sinh)
@@ -285,7 +286,9 @@ Mock hiện tra ngược `mockQuestions` theo id lúc chấm — điều đó c�
 | `Exam.assignedCount` | số assignment của đề |
 | `Exam.submittedCount` | số assignment có status ∈ {submitted, graded} |
 | `Exam.startedCount` | số assignment đã có lượt làm bài, ở mọi trạng thái |
-| `Exam.blueprintFrozen` | `startedCount > 0` — cấu hình đề đã khoá, `PUT` chỉ còn đổi được tên, mô tả, lịch và `showResultAfterSubmit` |
+| `Exam.blueprintFrozen` | `startedCount > 0` — cấu hình đề đã khoá, `PUT` chỉ còn đổi được tên, mô tả và `showResultAfterSubmit` |
+| `Exam.scheduleLocked` | `assignedCount > 0` và còn dưới 120 phút nữa là tới `openAt` của đề, hoặc đang mở (tới hết `closeAt`). Lịch chung không đổi được; hết giờ đóng thì mở khoá lại |
+| `ExamAssignment.scheduleLocked`, `AssignmentWindow.scheduleLocked` | Như trên nhưng tính theo khung giờ thật của em hoặc của lớp |
 | `Student.completedExams` | COUNT lượt có status ∈ {submitted, graded} |
 | `Student.averageScore` | AVG(score) trên các lượt `graded`, làm tròn 1 chữ số |
 | `Student.deletionScheduledAt` | `deletionRequestedAt` + 60 ngày, chỉ có khi `status = pendingDeletion`. Server tính sẵn — FE không tự cộng ngày |

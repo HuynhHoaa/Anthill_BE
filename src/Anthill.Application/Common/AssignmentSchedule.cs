@@ -133,6 +133,70 @@ public static class AssignmentSchedule
     public static bool FitsDuration(DateTime openAt, DateTime closeAt, int durationMinutes) =>
         durationMinutes <= (closeAt.ToUtc() - openAt.ToUtc()).TotalMinutes;
 
+    /// <summary>Còn chừng này phút nữa là tới giờ mở thì khung giờ đó không đổi được nữa.</summary>
+    public const int ScheduleLockLeadMinutes = 120;
+
+    /// <summary>
+    /// Khung giờ này đang bị khoá: từ lúc còn dưới <see cref="ScheduleLockLeadMinutes"/> phút nữa là mở
+    /// cho tới hết giờ đóng.
+    /// </summary>
+    /// <remarks>
+    /// Khoảng này là lúc học sinh đã được báo giờ và có thể đang làm bài, nên dời giờ chỉ gây hại. Còn
+    /// đúng 120 phút vẫn đổi được. Hết giờ đóng thì mở khoá lại: lúc đó không ai đang làm dở, và đây là
+    /// đường cứu em lỡ giờ hoặc mở lại đề. Bằng giờ đóng vẫn còn khoá, cùng cách
+    /// <c>ResolveWindowLifecycle</c> coi đó là còn mở.
+    /// </remarks>
+    public static bool IsScheduleLocked(DateTime openAt, DateTime closeAt, DateTime now)
+    {
+        var moment = now.ToUtc();
+
+        return openAt.ToUtc() - moment < TimeSpan.FromMinutes(ScheduleLockLeadMinutes)
+               && moment <= closeAt.ToUtc();
+    }
+
+    /// <summary>
+    /// Lịch chung của đề có đang bị khoá không. Chỉ khoá khi đề đã giao cho ai đó: đề chưa giao thì chưa
+    /// em nào bị ảnh hưởng, nên giáo viên vẫn xếp lại lịch thoải mái.
+    /// </summary>
+    /// <remarks>
+    /// Không loại đề nháp ra. Đề đã giao mà chưa ai làm vẫn đưa về nháp được, nên nếu nháp được miễn khoá thì
+    /// chỉ cần đưa về nháp, dời lịch, rồi xuất bản lại là lách được khoá mà không em nào được báo. Đề nháp mà
+    /// chưa từng giao thì <paramref name="assignedCount"/> bằng 0 và vẫn sửa tự do.
+    /// </remarks>
+    public static bool IsExamScheduleLocked(Exam exam, int assignedCount, DateTime now)
+    {
+        ArgumentNullException.ThrowIfNull(exam);
+
+        return assignedCount > 0 && IsScheduleLocked(exam.OpenAt, exam.CloseAt, now);
+    }
+
+    /// <summary>Request có đưa lịch chung của đề sang một cặp giờ khác không.</summary>
+    public static bool ExamWindowChanges(Exam exam, DateTime openAt, DateTime closeAt)
+    {
+        ArgumentNullException.ThrowIfNull(exam);
+
+        return exam.OpenAt.ToUtc() != openAt.ToUtc() || exam.CloseAt.ToUtc() != closeAt.ToUtc();
+    }
+
+    /// <summary>Cặp giờ thô sẽ nằm trên bản ghi sau khi áp một yêu cầu: thiếu một nửa thì cả cặp là NULL.</summary>
+    private static (DateTime? OpenAt, DateTime? CloseAt) NormalizeWindow(DateTime? openAt, DateTime? closeAt) =>
+        openAt is null || closeAt is null ? (null, null) : (openAt.ToUtc(), closeAt.ToUtc());
+
+    /// <summary>Áp cặp giờ này lên bản ghi thì có đổi gì không, tính theo đúng phép so của <see cref="Reschedule"/>.</summary>
+    /// <remarks>
+    /// So cột thô, không so giờ có hiệu lực: đặt giờ riêng trùng đúng lịch đề, hay gỡ giờ riêng vốn trùng lịch
+    /// đề, vẫn tính là đổi và bị chặn trong lúc khoá. Chặt hơn một chút nhưng đơn giản, và chỉ ảnh hưởng những
+    /// thao tác không dời em phút nào.
+    /// </remarks>
+    public static bool WindowWouldChange(ExamAssignment assignment, DateTime? openAt, DateTime? closeAt)
+    {
+        ArgumentNullException.ThrowIfNull(assignment);
+
+        var (open, close) = NormalizeWindow(openAt, closeAt);
+
+        return assignment.OpenAt?.ToUtc() != open || assignment.CloseAt?.ToUtc() != close;
+    }
+
     /// <summary>
     /// Đặt khung giờ mới cho những bản ghi CHƯA có lượt làm bài; bản ghi đã bắt đầu thì giữ nguyên.
     /// </summary>
@@ -151,9 +215,7 @@ public static class AssignmentSchedule
     {
         ArgumentNullException.ThrowIfNull(assignments);
 
-        var toExamSchedule = openAt is null || closeAt is null;
-        var open = toExamSchedule ? null : openAt.ToUtc();
-        var close = toExamSchedule ? null : closeAt.ToUtc();
+        var (open, close) = NormalizeWindow(openAt, closeAt);
         var kept = 0;
         var changes = new List<RescheduleChange>();
 
@@ -161,7 +223,7 @@ public static class AssignmentSchedule
         {
             // So theo thời điểm đã quy về UTC: cùng một khoảnh khắc gửi lên dưới Kind khác nhau
             // không được tính là "đổi giờ". Bản ghi lỡ mang một nửa cặp thì vẫn bị dọn về cặp đích.
-            if (assignment.OpenAt?.ToUtc() == open && assignment.CloseAt?.ToUtc() == close)
+            if (!WindowWouldChange(assignment, openAt, closeAt))
             {
                 continue;
             }

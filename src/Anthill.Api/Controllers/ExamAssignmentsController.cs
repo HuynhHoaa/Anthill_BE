@@ -61,6 +61,11 @@ public sealed class ExamAssignmentsController : ApiControllerBase
     /// Trả <b>400</b> khi khung giờ riêng ngắn hơn thời lượng làm bài, <b>409</b> khi đề còn là bản
     /// nháp; frontend hoàn toàn không kiểm điều này.
     /// </para>
+    /// <para>
+    /// Gửi lại một lớp kèm khung giờ khác trả <b>409</b> nếu khung giờ lớp đang theo đã khoá (còn dưới 120
+    /// phút nữa là mở cho tới hết giờ đóng) và còn em chưa bắt đầu bị đổi. Giao thêm em vào lớp, hoặc gửi lại
+    /// đúng khung đang giữ, thì vẫn được.
+    /// </para>
     /// </remarks>
     [HttpPost]
     [Authorize(Roles = SystemRoles.Teacher)]
@@ -82,7 +87,8 @@ public sealed class ExamAssignmentsController : ApiControllerBase
     /// Trả về dòng theo dõi của em với khung giờ đã phân giải.
     /// </para>
     /// <para>
-    /// <b>409</b> khi em được giao qua lớp (sửa giờ của lớp bằng cách gửi lại lớp) hoặc em đã bắt đầu làm bài;
+    /// <b>409</b> khi em được giao qua lớp (sửa giờ của lớp bằng cách gửi lại lớp), em đã bắt đầu làm bài, hoặc
+    /// khung giờ hiện tại của em đang khoá (còn dưới 120 phút nữa là mở cho tới hết giờ đóng);
     /// <b>400</b> khi khung giờ ngắn hơn thời lượng làm bài.
     /// </para>
     /// </remarks>
