@@ -217,6 +217,16 @@ Trong lúc Teacher chỉnh tỷ lệ, hệ thống đối chiếu blueprint vớ
 - Nếu số câu hỏi không đủ, hệ thống cần báo lỗi rõ ràng cho Teacher.
 - Thời gian làm bài không được dài hơn khoảng từ lúc mở đến lúc đóng bài.
 
+Điểm của bài kiểm tra — thang chuẩn là 100 điểm, không có thang khác:
+
+- Điểm gắn theo mức độ khó chứ không theo từng câu: Teacher nhập điểm của một câu Easy, một câu Medium, một câu Hard (không âm, tối đa hai chữ số thập phân, mức nào có câu thì điểm phải lớn hơn 0). Câu hỏi thật chỉ xuất hiện khi sinh đề nên không có điểm riêng từng câu.
+- Tổng = số câu Easy × điểm Easy + số câu Medium × điểm Medium + số câu Hard × điểm Hard. Teacher chọn số câu bất kỳ nên tổng không phải lúc nào cũng ra đúng 100; hệ thống luôn hiện tổng dạng "n / 100" và nói còn thiếu hay đang thừa bao nhiêu.
+- Chưa đủ 100 vẫn lưu được, nhưng khi Teacher chốt (lưu bài, xuất bản, lưu và giao bài) hệ thống hỏi xác nhận: xác nhận thì lưu như vậy, không thì quay lại sửa số câu hoặc điểm mỗi câu. Bản nháp không bị hỏi.
+- Nút gợi ý chia điểm điền sẵn cách chia đủ 100 nếu có, câu khó điểm cao hơn câu dễ (trọng số mặc định 1 : 1,5 : 2), ưu tiên điểm tròn hoặc nửa điểm; Teacher vẫn tự chỉnh được.
+- Có những cách chia số câu không thể ra đúng 100 khi điểm chỉ có hai chữ số thập phân (ví dụ 9 / 15 / 6 câu: tổng luôn là bội của 0,03). Khi đó hệ thống nói rõ, điền cách chia sát 100 nhất và gợi ý số câu gần nhất chia được đúng.
+- Bài kiểm tra có từ trước quy tắc này giữ nguyên điểm cũ và không bị hỏi xác nhận chừng nào chưa đổi cấu hình đề.
+- Mọi lượt làm bài của một bài kiểm tra cùng tổng điểm; kết quả và thống kê quy về thang 100.
+
 Vòng đời bài kiểm tra:
 
 | Lifecycle | Ý nghĩa |
@@ -236,7 +246,7 @@ Vòng đời bài kiểm tra:
 Sửa bài kiểm tra đã xuất bản — mốc phân chia là **lượt làm bài đầu tiên**, không phải lúc giao hay lúc xuất bản:
 
 - Chưa Student nào bắt đầu làm: Teacher sửa được mọi trường (riêng lịch mở/đóng theo luật khóa đổi giờ ở trên). Đề đã sinh cho các Student được giao sẽ được sinh lại theo cấu hình mới; ngân hàng không đủ câu cho cấu hình mới thì hệ thống từ chối và giữ nguyên cấu hình cũ. Bài kiểm tra đã thu hồi hết các lượt giao thì đề cũ bị bỏ, lần giao sau sinh theo cấu hình mới.
-- Đã có Student bắt đầu làm: cấu hình đề bị khóa — số câu, ba tỷ lệ độ khó, chủ đề, điểm mỗi câu, thời gian làm bài và hai tùy chọn trộn không đổi được nữa, và không đưa bài kiểm tra về bản nháp được. Tên, mô tả và tùy chọn cho xem điểm ngay vẫn sửa được; lịch mở/đóng đổi theo luật khóa đổi giờ ở trên. Hệ thống báo rõ trường nào bị khóa.
+- Đã có Student bắt đầu làm: cấu hình đề bị khóa — số câu, ba tỷ lệ độ khó, chủ đề, điểm từng mức độ, thời gian làm bài và hai tùy chọn trộn không đổi được nữa, và không đưa bài kiểm tra về bản nháp được. Tên, mô tả và tùy chọn cho xem điểm ngay vẫn sửa được; lịch mở/đóng đổi theo luật khóa đổi giờ ở trên. Hệ thống báo rõ trường nào bị khóa.
 - Muốn dùng cấu hình khác cho một bài đã khóa, Teacher nhân bản bài kiểm tra: bản sao là một bản nháp mới cùng cấu hình, chưa giao cho ai, sửa được thoải mái. Teacher chưa được gán môn không nhân bản được, giống như không tạo được bài kiểm tra.
 - Điểm đã chấm không bao giờ thay đổi vì bất kỳ lần sửa nào: bài làm được chấm trên bản đề đã chụp lúc sinh đề.
 

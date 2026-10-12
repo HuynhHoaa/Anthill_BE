@@ -463,7 +463,9 @@ ExamRule
 - MediumPercentage
 - HardPercentage
 - TopicFilter
-- PointPerQuestion
+- PointEasy
+- PointMedium
+- PointHard
 ```
 
 ### ExamAssignment

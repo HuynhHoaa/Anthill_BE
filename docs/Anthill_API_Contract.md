@@ -175,7 +175,7 @@ JWT claims tối thiểu: `sub` = userId, `role`, `name`, `subject_id` (giáo vi
 | DELETE | `/api/exams/{id}` | teacher | Xoá đề kèm toàn bộ bản ghi giao bài và bản đề đã sinh. Đã có học sinh nộp bài thì **409** — để đề tự đóng theo lịch, kết quả của các em vẫn tra cứu được |
 | POST | `/api/exams/blueprint-preview` | teacher | **Trái tim của tính năng.** Nhận cấu hình đang gõ dở, trả số câu cần / số câu có / hợp lệ hay không |
 | GET | `/api/exams/{id}/blueprint` | teacher | Blueprint của đề đã lưu |
-| POST | `/api/exams/{id}/publish` | teacher | **Bổ sung** — chuyển nháp sang xuất bản. FE hiện làm việc này bằng cách gửi PUT với `lifecycle` bỏ trống |
+| POST | `/api/exams/{id}/publish` | teacher | **Bổ sung** — chuyển nháp sang xuất bản. FE hiện làm việc này bằng cách gửi PUT với `lifecycle` bỏ trống. Kiểm lại hai điều kiện mà nháp được miễn: tổng ba tỷ lệ và ngân hàng đủ câu. Tổng điểm không phải điều kiện (xem "Điểm của đề") |
 | POST | `/api/exams/{id}/duplicate` | teacher | **Bổ sung** — nhân bản đề của chính mình thành một bản **nháp** mới, cùng cấu hình, tên thêm " (bản sao)", chưa giao cho ai. Lối ra khi cấu hình đã khoá. Đề của giáo viên khác trả 404; giáo viên chưa được gán môn trả 403 như khi tạo đề |
 | GET | `/api/exams/{id}/assignments` | teacher | Danh sách học sinh đã giao kèm trạng thái làm bài. Mỗi dòng mang khung giờ thật của em (`openAt`, `closeAt`, `hasScheduleOverride`, `assignedViaGroupId`); `expired` tính theo khung giờ đó |
 | POST | `/api/exams/{id}/assignments` | teacher | Giao bài cho học sinh lẻ và/hoặc cả nhóm, tuỳ chọn kèm khung giờ riêng (`openAt` + `closeAt`, phải chứa trọn `durationMinutes`, nếu không 400). Gửi lại một lớp kèm khung giờ là sửa giờ cho em chưa bắt đầu (`scheduleUpdatedCount`, `scheduleKeptStartedCount`); **409** nếu khung giờ lớp đang theo đã khoá, gửi lại đúng khung cũ hoặc giao thêm em vào lớp thì không bị chặn |
@@ -239,8 +239,23 @@ Mức Khó nhận phần dư nên **tổng luôn bằng `totalQuestions`**. Tron
 
 **BE tự tính, không tin số client gửi.** Client chỉ gửi `(totalQuestions, 3 tỷ lệ, topic)`.
 
-**Validate đề:** `title` không rỗng sau trim · `1 ≤ durationMinutes ≤ 300` · `totalQuestions ≥ 1` · `pointPerQuestion > 0` · `closeAt > openAt` · nếu `lifecycle ≠ 'draft'` thì tổng ba tỷ lệ phải bằng 100 và ngân hàng phải đủ câu.
+**Validate đề:** `title` không rỗng sau trim · `1 ≤ durationMinutes ≤ 300` · `totalQuestions ≥ 1` · `pointEasy`, `pointMedium`, `pointHard` không âm, tối đa 100 và tối đa 2 chữ số thập phân (mức có câu thì phải > 0) · `closeAt > openAt` · nếu `lifecycle ≠ 'draft'` thì tổng ba tỷ lệ phải bằng 100 và ngân hàng phải đủ câu. Tổng điểm khác 100 **không** bị chặn (mục dưới).
 Bổ sung một kiểm tra FE chỉ cảnh báo ở UI: **`durationMinutes` không được lớn hơn khoảng cách `openAt..closeAt`** — làm bài 90 phút trong cửa sổ mở 30 phút là vô nghĩa.
+
+### Điểm của đề: chuẩn 100, gắn theo mức độ khó
+
+Tổng điểm **chuẩn** của một đề là 100, nhưng server không bắt buộc (xem dưới). Điểm gắn theo **mức độ khó**, không theo từng câu cụ thể: đề chỉ là ma trận (xem trên), câu hỏi thật chỉ xuất hiện khi sinh bản đề và khác nhau giữa các học sinh, nên giáo viên đặt ba số `pointEasy`, `pointMedium`, `pointHard` (điểm của MỘT câu ở mức đó).
+
+```
+tổng điểm = nDễ × pointEasy + nTrungBình × pointMedium + nKhó × pointHard      (nDễ, nTB, nKhó: số câu từ ma trận)
+```
+
+- Số câu mỗi mức cố định theo ma trận nên **mọi học sinh cùng một tổng điểm**, kể cả khi `randomizePerStudent` bật. `ExamPaperQuestion.point` lấy theo mức của câu lúc sinh bản đề.
+- **Server không chặn tổng khác 100** ở bất kỳ đường lưu nào (tạo, sửa, nhân bản, xuất bản). Giáo viên chọn số câu bất kỳ — 56 câu chẳng hạn — và nhiều cấu hình không chia ra đúng 100,00 với hai chữ số thập phân; bắt đủ 100 thì họ kẹt ở những số câu đó. Server giữ đúng con số thật (phép cộng dùng `decimal`, không làm tròn) và báo lại ở `totalScore`; giao diện hiện "n / 100" và hỏi xác nhận trước khi chốt một đề chưa đủ, nên luật nhắc nhở nằm ở FE chứ không ở API.
+- Đề có từ trước luật này (ví dụ 9 câu × 1 điểm) giữ nguyên điểm cũ; không có phép chuyển dữ liệu nào đổi tổng của chúng. Đề đã có người làm vẫn bị khoá cấu hình như cũ (§5), điểm đã chấm không bao giờ đổi.
+- **Không phải cấu hình nào cũng chia được đúng 100.** Tổng điểm luôn là bội của ước chung lớn nhất của ba số câu (khi điểm có hai chữ số thập phân), nên 30 câu chia 12/12/6 hay 9 câu chia 3/3/3 không thể ra đúng 100,00. Frontend báo điều đó, điền cách chia sát 100 nhất và gợi ý số câu gần nhất chia được đúng.
+- Response `ExamDto` có `pointEasy`, `pointMedium`, `pointHard` và `totalScore` (tính sẵn). Học sinh chỉ nhận `totalScore` ở `StudentExamItemDto`, không nhận điểm từng mức: ba số đó hé lộ cấu trúc ba mức độ.
+- Điểm tổng hợp (`averageScore`, `highestScore`, `Student.averageScore`) **quy về thang 100** (`score / maxScore × 100`) trước khi gộp, để đề cũ có `maxScore` khác 100 vẫn so được với đề mới.
 
 ### Sinh đề và cờ `randomizePerStudent`
 
@@ -290,7 +305,7 @@ Mock hiện tra ngược `mockQuestions` theo id lúc chấm — điều đó c�
 | `Exam.scheduleLocked` | `assignedCount > 0` và còn dưới 120 phút nữa là tới `openAt` của đề, hoặc đang mở (tới hết `closeAt`). Lịch chung không đổi được; hết giờ đóng thì mở khoá lại |
 | `ExamAssignment.scheduleLocked`, `AssignmentWindow.scheduleLocked` | Như trên nhưng tính theo khung giờ thật của em hoặc của lớp |
 | `Student.completedExams` | COUNT lượt có status ∈ {submitted, graded} |
-| `Student.averageScore` | AVG(score) trên các lượt `graded`, làm tròn 1 chữ số |
+| `Student.averageScore` | AVG(score / maxScore × 100) trên các lượt `graded` (thang 100), làm tròn 1 chữ số |
 | `Student.deletionScheduledAt` | `deletionRequestedAt` + 60 ngày, chỉ có khi `status = pendingDeletion`. Server tính sẵn — FE không tự cộng ngày |
 | `AddMembersResponse.skippedRetired` | Số tài khoản chờ xoá hoặc đã xoá bị bỏ qua, không đưa vào lớp |
 | `AssignExamResponse.skippedRetired` | Số tài khoản **đang chờ xoá** bị bỏ qua khi giao bài — không tính vào `skippedLocked`. Tài khoản đã xoá hẳn không có lớp nên nằm trong `skippedOutOfScope` |
@@ -361,7 +376,7 @@ Question  (Id, Content, ImageUrl, Topic, Difficulty, DefaultPoint, Status,
 AnswerOption (Id, QuestionId FK, Content, ImageUrl, IsCorrect, Ordinal)
 
 Exam      (Id, Title, Description, Topic, DurationMinutes, TotalQuestions,
-           EasyPercentage, MediumPercentage, HardPercentage, PointPerQuestion,
+           EasyPercentage, MediumPercentage, HardPercentage, PointEasy, PointMedium, PointHard,
            ShuffleQuestions, ShuffleAnswers, RandomizePerStudent,
            ShowResultAfterSubmit, OpenAt, CloseAt, IsDraft, PublishedAt,
            CreatedByUserId FK -> User.Id)
