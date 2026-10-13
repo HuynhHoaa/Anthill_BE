@@ -12,7 +12,7 @@ namespace Anthill.Infrastructure.Persistence.Migrations
         {
             // Điểm một câu trước đây là một con số cho cả đề. Đổi tên cột đó thành điểm mức Trung bình rồi
             // chép sang hai mức còn lại, để đề cũ giữ đúng điểm từng câu như cũ (tổng điểm vẫn là số câu x
-            // điểm đó, có thể khác 100: chỉ bị bắt chỉnh lại khi giáo viên đổi cấu hình bản đề).
+            // điểm đó, có thể khác 100: giáo viên chỉ bị hỏi xác nhận khi đổi cấu hình bản đề).
             migrationBuilder.RenameColumn(
                 name: "PointPerQuestion",
                 table: "Exams",
@@ -43,7 +43,14 @@ namespace Anthill.Infrastructure.Persistence.Migrations
         /// <inheritdoc />
         protected override void Down(MigrationBuilder migrationBuilder)
         {
-            // Quay về một điểm cho cả đề: giữ điểm mức Trung bình, điểm hai mức kia mất.
+            // Quay về một điểm cho cả đề: giữ điểm mức Trung bình, điểm hai mức kia mất. Mức không có câu nào
+            // có điểm 0 (hợp lệ), mà một điểm duy nhất cho cả đề thì không được 0 khi đề còn câu: đề toàn câu
+            // Dễ sẽ có PointMedium = 0 và mọi bản đề sau đó cho 0 điểm. Nên lấy điểm Trung bình nếu có, không
+            // thì điểm Dễ, không thì điểm Khó.
+            migrationBuilder.Sql(
+                "UPDATE \"Exams\" SET \"PointMedium\" = COALESCE(NULLIF(\"PointMedium\", 0), "
+                + "NULLIF(\"PointEasy\", 0), NULLIF(\"PointHard\", 0), 0) WHERE \"PointMedium\" = 0;");
+
             migrationBuilder.DropColumn(
                 name: "PointEasy",
                 table: "Exams");

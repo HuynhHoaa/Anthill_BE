@@ -35,8 +35,9 @@ public sealed record StudentExamItemDto
     public required int TotalQuestions { get; init; }
 
     /// <summary>
-    /// Tổng điểm tối đa của đề (số câu mỗi mức × điểm mức đó). Chỉ là con số hiển thị ở màn giới thiệu —
-    /// không lộ số câu hay điểm từng mức, tức không lộ cấu trúc đề.
+    /// Tổng điểm tối đa của đề (số câu mỗi mức × điểm mức đó), hiển thị ở màn giới thiệu. Thẻ bài không
+    /// mang điểm từng mức. Điểm của từng câu trong bản đề (<c>AttemptQuestionDto.Point</c>) thì có chủ ý
+    /// hiện lúc làm bài và ở kết quả, để học sinh biết câu nào nặng hơn.
     /// </summary>
     public required decimal TotalScore { get; init; }
 

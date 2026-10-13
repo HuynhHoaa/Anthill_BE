@@ -192,7 +192,9 @@ Content-Type: application/json
   "easyPercentage": 30,
   "mediumPercentage": 30,
   "hardPercentage": 30,
-  "pointPerQuestion": 0.5,
+  "pointEasy": 4,
+  "pointMedium": 5,
+  "pointHard": 6.5,
   "openAt": "2026-10-01T01:00:00Z",
   "closeAt": "2026-10-01T04:00:00Z",
   "shuffleQuestions": true,
@@ -217,7 +219,9 @@ Content-Type: application/json
   "easyPercentage": 30,
   "mediumPercentage": 30,
   "hardPercentage": 30,
-  "pointPerQuestion": 0.5,
+  "pointEasy": 4,
+  "pointMedium": 5,
+  "pointHard": 6.5,
   "openAt": "2026-10-01T01:00:00Z",
   "closeAt": "2026-10-01T04:00:00Z"
 }
@@ -237,7 +241,9 @@ Content-Type: application/json
   "easyPercentage": 100,
   "mediumPercentage": 0,
   "hardPercentage": 0,
-  "pointPerQuestion": 1,
+  "pointEasy": 10,
+  "pointMedium": 0,
+  "pointHard": 0,
   "openAt": "2026-10-01T01:00:00Z",
   "closeAt": "2026-10-01T01:30:00Z"
 }
@@ -257,7 +263,9 @@ Content-Type: application/json
   "easyPercentage": 100,
   "mediumPercentage": 0,
   "hardPercentage": 0,
-  "pointPerQuestion": 1,
+  "pointEasy": 10,
+  "pointMedium": 0,
+  "pointHard": 0,
   "openAt": "2026-10-01T01:00:00Z",
   "closeAt": "2026-10-01T04:00:00Z",
   "lifecycle": "open"
@@ -323,7 +331,9 @@ Content-Type: application/json
   "easyPercentage": 50,
   "mediumPercentage": 30,
   "hardPercentage": 20,
-  "pointPerQuestion": 1,
+  "pointEasy": 10,
+  "pointMedium": 15,
+  "pointHard": 40,
   "openAt": "2026-10-02T01:00:00Z",
   "closeAt": "2026-10-02T05:00:00Z",
   "lifecycle": "draft"
@@ -356,7 +366,9 @@ Content-Type: application/json
   "easyPercentage": 100,
   "mediumPercentage": 0,
   "hardPercentage": 0,
-  "pointPerQuestion": 2,
+  "pointEasy": 20,
+  "pointMedium": 0,
+  "pointHard": 0,
   "openAt": "2026-10-01T01:00:00Z",
   "closeAt": "2026-10-01T04:00:00Z"
 }

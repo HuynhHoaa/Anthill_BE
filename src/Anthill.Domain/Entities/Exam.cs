@@ -26,8 +26,8 @@ public class Exam : BaseEntity
     public int HardPercentage { get; set; }
 
     /// <summary>
-    /// Điểm của MỘT câu ở mức Dễ. Tổng điểm của đề là số câu mỗi mức nhân điểm mức đó, và phải đúng bằng
-    /// 100 mỗi khi đề được lưu không phải nháp (xem <c>ExamScoring</c> ở tầng Application).
+    /// Điểm của MỘT câu ở mức Dễ. Tổng điểm của đề là số câu mỗi mức nhân điểm mức đó; 100 là tổng chuẩn
+    /// chứ không bắt buộc (xem <c>ExamScoring</c> ở tầng Application).
     /// </summary>
     public decimal PointEasy { get; set; }
 
