@@ -91,9 +91,9 @@ exam_body() {
   "easyPercentage": 45,
   "mediumPercentage": 33,
   "hardPercentage": 22,
-  "pointEasy": 10,
-  "pointMedium": 10,
-  "pointHard": 15,
+  "pointEasy": ${POINTS_E:-10},
+  "pointMedium": ${POINTS_M:-10},
+  "pointHard": ${POINTS_H:-15},
   "openAt": "2020-01-01T00:00:00Z",
   "closeAt": "2035-01-01T00:00:00Z",
   "shuffleQuestions": true,
@@ -362,5 +362,18 @@ expect_json   "  inProgressCount = 1" inProgressCount 1
 expect_json   "  gradedCount = 2" gradedCount 2
 expect_status "loc trang thai=inprogress → 200" 200 "$(call GET "/api/results?status=inprogress&examId=$OPEN_EXAM" "$TEACHER")"
 expect_json   "  dung 1 luot" total 1
+
+section "Diem tong hop quy ve thang 100, khong cong tho giua cac de khac tong diem"
+
+# De thu ba chi 50 diem (5 / 5 / 7.5 nhan 4 / 3 / 2 cau). A lam dung het nen duoc 50/50. Trung binh THO
+# cua A tren hai de mo la (100 + 50) / 2 = 75 va cao nhat tho la 100; quy ve thang 100 theo diem toi da
+# cua tung de thi ca hai deu la 100. Con so do dung phai la 100, khong phai 75.
+POINTS_E=5 POINTS_M=5 POINTS_H=7.5 new_exam true " nua"; HALF_EXAM=$NEW_EXAM_ID
+ATTEMPT_A_HALF=$(take_exam "$STUDENT_A" "$HALF_EXAM" dung)
+expect_status "A xem de 50 diem cua minh → 200" 200 "$(call GET "/api/results/$ATTEMPT_A_HALF" "$STUDENT_A")"
+expect_status "  maxScore = 50" 50.0 "$(body | python -c 'import json,sys;print(float(json.load(sys.stdin)["maxScore"]))')"
+expect_status "dashboard hoc sinh → 200" 200 "$(call GET "/api/dashboard/student" "$STUDENT_A")"
+expect_status "  averageScore quy ve thang 100 (khong phai 75)" 100.0   "$(body | python -c 'import json,sys;print(float(json.load(sys.stdin)["stats"]["averageScore"]))')"
+expect_status "  highestScore = 100" 100.0   "$(body | python -c 'import json,sys;print(float(json.load(sys.stdin)["stats"]["highestScore"]))')"
 
 summary
