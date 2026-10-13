@@ -141,11 +141,18 @@ public sealed class SaveExamRequestValidator : AbstractValidator<SaveExamRequest
                 + "vì cột điểm trong hệ thống lưu đúng chừng đó — phần lẻ dư ra sẽ bị làm tròn âm thầm "
                 + "lúc lưu.");
 
+        // Chỉ khi ba tỷ lệ cộng đúng 100 thì số câu mỗi mức mới nói lên điều giáo viên muốn. Bản nháp có thể
+        // mới nhập dở, và khi đó mức Khó nhận cả phần dư: 30/30/0 trên 10 câu cho 4 câu Khó dù giáo viên
+        // nhập 0%. Không xuất bản được trong tình trạng đó (tổng tỷ lệ chặn), còn khi tỷ lệ đủ 100 thì
+        // luật này chạy lại ở chính request xuất bản.
         RuleFor(selector)
             .GreaterThan(0m)
-            .When(request => CountOf(request, difficulty) > 0)
+            .When(request => PercentagesAddUpToWhole(request) && CountOf(request, difficulty) > 0)
             .WithMessage($"Đề có câu {levelLabel}, nên điểm mỗi câu {levelLabel} phải lớn hơn 0.");
     }
+
+    private static bool PercentagesAddUpToWhole(SaveExamRequest request) =>
+        (long)request.EasyPercentage + request.MediumPercentage + request.HardPercentage == 100;
 
     private static int CountOf(SaveExamRequest request, QuestionDifficulty difficulty) =>
         BlueprintCalculator.CalculateRequiredCounts(
@@ -153,8 +160,21 @@ public sealed class SaveExamRequestValidator : AbstractValidator<SaveExamRequest
             request.EasyPercentage,
             request.MediumPercentage)[difficulty];
 
-    private static bool FitsMaxTotalScore(SaveExamRequest request) =>
-        ExamScoring.TotalOf(request) <= MaxTotalScore;
+    private static bool FitsMaxTotalScore(SaveExamRequest request)
+    {
+        // Điểm vượt trần từng câu đã có rule riêng báo lỗi. Không tính tổng trên con số đó: decimal có thể
+        // tràn (điểm cỡ 7.9e28 nhân số câu) và ném OverflowException, tức 500 thay vì 400.
+        if (!IsWithinPointRange(request.PointEasy)
+            || !IsWithinPointRange(request.PointMedium)
+            || !IsWithinPointRange(request.PointHard))
+        {
+            return true;
+        }
+
+        return ExamScoring.TotalOf(request) <= MaxTotalScore;
+    }
+
+    private static bool IsWithinPointRange(decimal point) => point >= 0m && point <= MaxPointPerQuestion;
 
     private static bool HaveAtMostTwoDecimalPlaces(decimal value) =>
         decimal.Round(value, PointDecimalPlaces) == value;

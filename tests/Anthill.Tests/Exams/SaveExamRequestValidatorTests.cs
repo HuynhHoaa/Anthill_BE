@@ -226,11 +226,44 @@ public class SaveExamRequestValidatorTests
     [Fact]
     public void Tich_vuot_tran_du_tung_truong_rieng_van_hop_le_van_bi_tu_choi()
     {
-        // Đúng ví dụ 100×100 mà báo cáo H6 nêu: 100 câu nằm trong [1, 500], 100 điểm/câu nằm trong
-        // (0, 9999.99] — cả hai trần riêng đều thoả từng cái một, chỉ luật tích (10000 > 9999.99) mới
-        // chặn được tổ hợp này.
-        ErrorsOf(Valid(totalQuestions: 100, pointPerQuestion: 100m, windowHours: 999))
+        // 500 câu (đúng trần số câu) × 20 điểm = 10000: cả hai trần riêng đều thoả từng cái một, chỉ luật
+        // tích (10000 > 9999.99) mới chặn được tổ hợp này.
+        ErrorsOf(Valid(totalQuestions: 500, pointPerQuestion: 20m, windowHours: 999))
             .Should().Contain(message => message.Contains("Tổng điểm bài kiểm tra"));
+    }
+
+    [Fact]
+    public void Diem_khong_lo_khong_lam_vo_phep_cong_tong_diem()
+    {
+        // decimal.MaxValue nhân số câu tràn decimal. Phép tính tổng không được chạy trên con số đó, nếu
+        // không validator ném OverflowException và request nhận 500 thay vì 400.
+        var request = Valid(totalQuestions: 10, easy: 100, medium: 0, hard: 0, pointEasy: decimal.MaxValue,
+            pointMedium: 0m, pointHard: 0m);
+
+        var act = () => ErrorsOf(request);
+
+        act.Should().NotThrow();
+        act().Should().Contain(message => message.Contains("không được vượt quá"));
+    }
+
+    [Fact]
+    public void Ban_nhap_nhap_do_ty_le_khong_bi_doi_diem_cho_muc_chi_co_vi_phan_du()
+    {
+        // 30/30/0 trên 10 câu: tổng 60%, mức Khó nhận cả phần dư 4 câu dù giáo viên nhập 0%. Bản nháp
+        // còn dở này lưu được, kể cả khi điểm Khó là 0.
+        var draft = Valid(totalQuestions: 10, easy: 30, medium: 30, hard: 0, pointEasy: 5m, pointMedium: 5m,
+            pointHard: 0m, lifecycle: "draft");
+
+        _validator.Validate(draft).IsValid.Should().BeTrue();
+    }
+
+    [Fact]
+    public void Ty_le_du_100_thi_muc_co_cau_van_phai_co_diem_lon_hon_0()
+    {
+        var request = Valid(totalQuestions: 10, easy: 30, medium: 30, hard: 40, pointEasy: 5m, pointMedium: 5m,
+            pointHard: 0m);
+
+        ErrorsOf(request).Should().Contain(message => message.Contains("điểm mỗi câu Khó phải lớn hơn 0"));
     }
 
     [Theory]
