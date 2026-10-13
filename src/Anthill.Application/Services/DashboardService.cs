@@ -141,9 +141,12 @@ public sealed class DashboardService : IDashboardService
             {
                 attempt.Assignment = assignment;
 
-                if (attempt.CanRevealScore(isOwningTeacher: false))
+                // Quy về thang 100 theo điểm tối đa của chính đề đó, như mọi số liệu tổng hợp khác
+                // (ExamAttemptRepository): đề cũ 9 điểm và đề mới 100 điểm không cộng thô được với nhau.
+                if (attempt.CanRevealScore(isOwningTeacher: false)
+                    && ExamScoring.ToStandardScale(attempt.Score, attempt.MaxScore) is { } normalized)
                 {
-                    visibleScores.Add(attempt.Score);
+                    visibleScores.Add(normalized);
                 }
             }
         }

@@ -1,5 +1,6 @@
 using Anthill.Application.Common;
 using Anthill.Domain.Entities;
+using Anthill.Domain.Enums;
 using FluentAssertions;
 
 namespace Anthill.Tests.Exams;
@@ -22,10 +23,48 @@ public class ExamScoringTests
     [Fact]
     public void Muc_Kho_nhan_phan_du_nen_tong_so_cau_luon_dung()
     {
-        // 10 câu, 33/33/34: Dễ 3, Trung bình 3, Khó 4 (phần dư), không phải 3 + 3 + 3.
-        var total = ExamScoring.TotalOf(10, 33, 33, pointEasy: 10m, pointMedium: 10m, pointHard: 10m);
+        // 10 câu, 33/33/34: Dễ 3, Trung bình 3, Khó 4 (phần dư), không phải 3 + 3 + 3. Ba điểm khác nhau
+        // để chứng minh đúng 4 câu Khó được tính: 3×1 + 3×2 + 4×3 = 21 (chỉ 3 câu Khó thì ra 18).
+        var total = ExamScoring.TotalOf(10, 33, 33, pointEasy: 1m, pointMedium: 2m, pointHard: 3m);
 
-        total.Should().Be(100m);
+        total.Should().Be(21m);
+    }
+
+    [Fact]
+    public void Diem_cua_mot_cau_lay_dung_theo_muc_do()
+    {
+        // Ba điểm khác nhau: đảo nhầm hai mức (Dễ với Trung bình) sẽ lộ ra ngay ở đây.
+        var exam = new Exam { Title = "x", PointEasy = 1m, PointMedium = 2m, PointHard = 3m };
+
+        exam.PointFor(QuestionDifficulty.Easy).Should().Be(1m);
+        exam.PointFor(QuestionDifficulty.Medium).Should().Be(2m);
+        exam.PointFor(QuestionDifficulty.Hard).Should().Be(3m);
+    }
+
+    [Theory]
+    [InlineData(9, 10, 90)]
+    [InlineData(60, 100, 60)]
+    [InlineData(47.5, 50, 95)]
+    public void Quy_ve_thang_100_chia_cho_diem_toi_da_cua_chinh_de(double score, double maxScore, double expected)
+    {
+        ExamScoring.ToStandardScale((decimal)score, (decimal)maxScore).Should().Be((decimal)expected);
+    }
+
+    [Fact]
+    public void De_khong_co_diem_toi_da_thi_khong_quy_doi_duoc()
+    {
+        ExamScoring.ToStandardScale(5m, 0m).Should().BeNull();
+    }
+
+    [Fact]
+    public void Trung_binh_cua_de_cu_va_de_moi_khong_cong_tho()
+    {
+        // Em được 9/10 ở đề cũ và 60/100 ở đề mới: trung bình thô là 34,5, trung bình đúng là 75.
+        var scores = new[] { (9m, 10m), (60m, 100m) }
+            .Select(pair => ExamScoring.ToStandardScale(pair.Item1, pair.Item2)!.Value)
+            .ToList();
+
+        scores.Average().Should().Be(75m);
     }
 
     [Fact]

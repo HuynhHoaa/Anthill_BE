@@ -56,6 +56,17 @@ public static class ExamScoring
             request.PointHard);
     }
 
+    /// <summary>
+    /// Điểm <paramref name="score"/> trên điểm tối đa <paramref name="maxScore"/> của chính đề đó, quy về thang
+    /// <see cref="TotalScore"/>; <c>null</c> khi đề không có điểm tối đa nên không chia được.
+    /// </summary>
+    /// <remarks>
+    /// Mọi con số tổng hợp (trung bình, cao nhất) phải đi qua phép này trước khi gộp: một em có đề cũ 9 điểm
+    /// và đề mới 100 điểm thì trung bình của hai điểm thô không có nghĩa gì.
+    /// </remarks>
+    public static decimal? ToStandardScale(decimal score, decimal maxScore) =>
+        maxScore > 0 ? score / maxScore * TotalScore : null;
+
     public static decimal TotalOf(Exam exam)
     {
         ArgumentNullException.ThrowIfNull(exam);
