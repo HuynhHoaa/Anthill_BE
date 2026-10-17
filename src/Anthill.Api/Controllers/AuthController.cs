@@ -91,6 +91,22 @@ public sealed class AuthController : ApiControllerBase
         CancellationToken cancellationToken)
         => FromResult(await _authService.UpdateCurrentProfileAsync(request, cancellationToken));
 
+    /// <summary>Đặt hay gỡ ảnh đại diện của chính mình.</summary>
+    /// <remarks>
+    /// Ảnh tải lên trước ở <c>POST /api/uploads/images</c>, rồi gửi đường dẫn nhận về vào đây; bỏ trống là gỡ ảnh.
+    /// Chỉ quản trị viên và giáo viên — học sinh nhận 403.
+    /// </remarks>
+    [ReportsBlockedAccount]
+    [HttpPut("me/avatar")]
+    [ProducesResponseType<UserProfileDto>(StatusCodes.Status200OK)]
+    [ProducesResponseType<ApiErrorResponse>(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType<ApiErrorResponse>(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType<ApiErrorResponse>(StatusCodes.Status403Forbidden)]
+    public async Task<IActionResult> UpdateMyAvatar(
+        [FromBody] UpdateAvatarRequest request,
+        CancellationToken cancellationToken)
+        => FromResult(await _authService.UpdateCurrentAvatarAsync(request, cancellationToken));
+
     /// <summary>Đổi mật khẩu, có xác minh mật khẩu hiện tại.</summary>
     /// <remarks>
     /// Đổi thành công sẽ xoay <c>SecurityStamp</c>, nên <b>mọi</b> token đã cấp trước đó mất hiệu lực

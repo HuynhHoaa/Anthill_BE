@@ -8,7 +8,7 @@ using Microsoft.AspNetCore.Mvc;
 namespace Anthill.Api.Controllers;
 
 /// <summary>
-/// Bốn endpoint giao bài của §4.6, lồng dưới đường dẫn của đề.
+/// Các endpoint giao bài theo lớp của §4.6, lồng dưới đường dẫn của đề.
 /// </summary>
 /// <remarks>
 /// Tách khỏi <see cref="ExamsController"/> vì đây là một nghiệp vụ khác: kia quản lý <i>cấu hình</i>
@@ -41,11 +41,15 @@ public sealed class ExamAssignmentsController : ApiControllerBase
     public async Task<IActionResult> List(int examId, CancellationToken cancellationToken)
         => FromResult(await _assignmentService.ListAsync(examId, cancellationToken));
 
-    /// <summary>Giao bài cho học sinh lẻ và/hoặc cả nhóm lớp.</summary>
+    /// <summary>Giao bài cho một hay nhiều lớp.</summary>
     /// <remarks>
     /// <para>
+    /// Chỉ giao theo lớp: request mang danh sách học sinh (<c>studentIds</c>) trả <b>400</b>, vì bài kiểm
+    /// tra không giao riêng từng học sinh.
+    /// </para>
+    /// <para>
     /// <b>Idempotent</b> theo cặp (đề, học sinh): bấm hai lần không tạo hai bài, và không đụng tới
-    /// trạng thái hay điểm của em đã làm rồi.
+    /// trạng thái hay điểm của em đã làm rồi. Em mới vào lớp nhận bài khi gửi lại lớp.
     /// </para>
     /// <para>
     /// Một lô hỏng một phần thì phần còn lại vẫn chạy, nhưng những gì bị bỏ qua đều được đếm và
@@ -80,49 +84,28 @@ public sealed class ExamAssignmentsController : ApiControllerBase
         CancellationToken cancellationToken)
         => FromResult(await _assignmentService.AssignAsync(examId, request, cancellationToken));
 
-    /// <summary>Dời giờ cho một em được chọn đích danh, hoặc đưa em về lịch chung của đề.</summary>
+    /// <summary>Thu hồi bài đã giao cho cả một lớp.</summary>
     /// <remarks>
     /// <para>
-    /// Gửi đủ <c>openAt</c> + <c>closeAt</c> để đặt khung giờ riêng, bỏ trống cả hai để em theo lịch chung.
-    /// Trả về dòng theo dõi của em với khung giờ đã phân giải.
+    /// Gỡ mọi em của lớp chưa bắt đầu làm bài; em đã bắt đầu giữ nguyên bài (gỡ lúc đó là xoá luôn phần bài đã
+    /// làm). Kết quả trả số em đã gỡ (<c>revokedCount</c>) và số em đã bắt đầu nên còn lại
+    /// (<c>keptStartedCount</c>).
     /// </para>
     /// <para>
-    /// <b>409</b> khi em được giao qua lớp (sửa giờ của lớp bằng cách gửi lại lớp), em đã bắt đầu làm bài, hoặc
-    /// khung giờ hiện tại của em đang khoá (còn dưới 120 phút nữa là mở cho tới hết giờ đóng);
-    /// <b>400</b> khi khung giờ ngắn hơn thời lượng làm bài.
+    /// Bổ sung so với frontend: giao nhầm lớp là chuyện thường, mà endpoint giao bài lại cố ý idempotent nên
+    /// không có đường lùi. <b>404</b> khi lớp chưa được giao đề này; <b>409</b> khi mọi em của lớp đã bắt đầu
+    /// làm bài nên không còn gì để gỡ.
     /// </para>
     /// </remarks>
-    [HttpPatch("{assignmentId:int}/schedule")]
+    [HttpDelete("classes/{groupId:int}")]
     [Authorize(Roles = SystemRoles.Teacher)]
-    [ProducesResponseType<ExamAssignmentDto>(StatusCodes.Status200OK)]
-    [ProducesResponseType<ApiErrorResponse>(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType<RevokeClassResponse>(StatusCodes.Status200OK)]
     [ProducesResponseType<ApiErrorResponse>(StatusCodes.Status403Forbidden)]
     [ProducesResponseType<ApiErrorResponse>(StatusCodes.Status404NotFound)]
     [ProducesResponseType<ApiErrorResponse>(StatusCodes.Status409Conflict)]
-    public async Task<IActionResult> Reschedule(
+    public async Task<IActionResult> RevokeClass(
         int examId,
-        int assignmentId,
-        [FromBody] UpdateAssignmentScheduleRequest request,
+        int groupId,
         CancellationToken cancellationToken)
-        => FromResult(await _assignmentService.RescheduleAsync(examId, assignmentId, request, cancellationToken));
-
-    /// <summary>Thu hồi một bài đã giao.</summary>
-    /// <remarks>
-    /// Bổ sung so với frontend: giao nhầm lớp là chuyện thường, mà endpoint giao bài lại cố ý
-    /// idempotent nên không có đường lùi. Trả <b>409</b> khi em đã bắt đầu làm bài — thu hồi lúc
-    /// đó là xoá luôn phần bài em đã làm.
-    /// </remarks>
-    [HttpDelete("{assignmentId:int}")]
-    [Authorize(Roles = SystemRoles.Teacher)]
-    [ProducesResponseType<ApiMessageResponse>(StatusCodes.Status200OK)]
-    [ProducesResponseType<ApiErrorResponse>(StatusCodes.Status403Forbidden)]
-    [ProducesResponseType<ApiErrorResponse>(StatusCodes.Status404NotFound)]
-    [ProducesResponseType<ApiErrorResponse>(StatusCodes.Status409Conflict)]
-    public async Task<IActionResult> Revoke(
-        int examId,
-        int assignmentId,
-        CancellationToken cancellationToken)
-        => FromResult(
-            await _assignmentService.RevokeAsync(examId, assignmentId, cancellationToken),
-            "Đã thu hồi bài kiểm tra của học sinh này.");
+        => FromResult(await _assignmentService.RevokeClassAsync(examId, groupId, cancellationToken));
 }
