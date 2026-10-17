@@ -13,6 +13,12 @@ public class ExamPaper : BaseEntity
     /// <summary>NULL = đề chung cho cả lớp (<c>Exam.RandomizePerStudent = false</c>).</summary>
     public int? AssignmentId { get; set; }
 
+    /// <summary>
+    /// Đề nhỏ (số thứ tự từ 0: 0 = đề A, 1 = đề B…) mà bản đề này chép từ đó, khi <c>Exam.PaperCount &gt; 1</c>.
+    /// NULL với đề không chia. Chỉ giáo viên thấy mã đề; học sinh không cần biết mình cầm đề nào.
+    /// </summary>
+    public int? VariantIndex { get; set; }
+
     public Exam Exam { get; set; } = null!;
 
     public ExamAssignment? Assignment { get; set; }

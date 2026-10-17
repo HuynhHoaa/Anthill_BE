@@ -3,8 +3,14 @@ using Anthill.Domain.Common;
 namespace Anthill.Domain.Entities;
 
 /// <summary>
-/// Bài kiểm tra lưu dưới dạng <b>blueprint</b>, không chứa danh sách câu hỏi cụ thể —
-/// câu hỏi chỉ xuất hiện khi sinh <see cref="ExamPaper"/>.
+/// Bài kiểm tra. Có hai cách hình thành, phân biệt bằng <see cref="UsesQuestionList"/>:
+/// <list type="bullet">
+/// <item><b>Theo ma trận</b> (đề cũ): lưu số câu và tỷ lệ ba mức độ, không chứa câu hỏi cụ thể — câu hỏi
+/// chỉ xuất hiện khi sinh <see cref="ExamPaper"/>.</item>
+/// <item><b>Theo danh sách câu hỏi</b>: giáo viên chọn từng câu và đặt điểm cho từng câu
+/// (<see cref="Questions"/>), duyệt xong mới lưu. Các cột ma trận khi đó chỉ là số liệu dẫn xuất từ danh
+/// sách để màn hình cũ vẫn đọc được.</item>
+/// </list>
 /// </summary>
 public class Exam : BaseEntity
 {
@@ -46,6 +52,19 @@ public class Exam : BaseEntity
         _ => throw new ArgumentOutOfRangeException(nameof(difficulty), difficulty, null)
     };
 
+    /// <summary>
+    /// Đề được soạn bằng danh sách câu hỏi cụ thể (<see cref="Questions"/>) thay vì ma trận. Đặt một lần lúc
+    /// tạo và chỉ đổi khi giáo viên lưu một danh sách lên đề cũ chưa ai làm.
+    /// </summary>
+    public bool UsesQuestionList { get; set; }
+
+    /// <summary>
+    /// Tổng điểm của danh sách câu hỏi, chụp lúc lưu. Chỉ có nghĩa khi <see cref="UsesQuestionList"/>.
+    /// Lưu cứng thay vì cộng lại lúc đọc để mọi chỗ cần "tổng điểm của đề" (danh sách, màn làm bài) không
+    /// phải nạp cả danh sách câu.
+    /// </summary>
+    public decimal ListTotalScore { get; set; }
+
     public bool ShuffleQuestions { get; set; }
 
     public bool ShuffleAnswers { get; set; }
@@ -55,6 +74,26 @@ public class Exam : BaseEntity
     /// Tắt: một đề chung duy nhất cho cả lớp, seed theo examId.
     /// </summary>
     public bool RandomizePerStudent { get; set; }
+
+    /// <summary>
+    /// Số đề nhỏ mà "đề lớn" (danh sách câu hỏi) được chia ra cho mỗi lớp. 1 = một bản đề chung như trước.
+    /// Từ 2 trở lên chỉ có với đề theo danh sách: khi đó <see cref="TotalQuestions"/> và ba tỷ lệ là cấu hình của
+    /// <b>một đề nhỏ</b> (số câu mỗi đề, tỷ lệ Dễ/Trung bình/Khó), không còn là số liệu dẫn xuất từ cả danh sách.
+    /// </summary>
+    public int PaperCount { get; set; } = 1;
+
+    /// <summary>
+    /// Số đơn vị 0,01 điểm cộng thêm cho các câu mức cao nhất của <b>mỗi</b> đề nhỏ, để đề nhỏ cộng đúng 10 khi điểm theo mức
+    /// (hai chữ số thập phân, cùng mức cùng điểm) không chia ra đúng. 0 với đề một đề. Xem <c>PaperBonus</c>.
+    /// </summary>
+    public int PaperBonusUnits { get; set; }
+
+    /// <summary>
+    /// Mỗi lượt giao có bản đề riêng (<c>ExamPaper.AssignmentId</c> khác NULL) hay cả đề dùng một bản chung. Bật
+    /// <see cref="RandomizePerStudent"/> (mỗi em bốc một đề từ ngân hàng) hoặc chia thành nhiều đề
+    /// (<see cref="PaperCount"/> &gt; 1, bản của mỗi em chép từ đề nhỏ em được phát) đều cho bản đề riêng.
+    /// </summary>
+    public bool UsesPerAssignmentPapers => RandomizePerStudent || PaperCount > 1;
 
     public bool ShowResultAfterSubmit { get; set; }
 
@@ -82,6 +121,9 @@ public class Exam : BaseEntity
     public int CreatedByUserId { get; set; }
 
     public User CreatedBy { get; set; } = null!;
+
+    /// <summary>Danh sách câu hỏi của đề, rỗng với đề theo ma trận.</summary>
+    public ICollection<ExamQuestion> Questions { get; set; } = new List<ExamQuestion>();
 
     public ICollection<ExamAssignment> Assignments { get; set; } = new List<ExamAssignment>();
 

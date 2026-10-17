@@ -16,7 +16,8 @@ public class ExamAssignment : BaseEntity
     public DateTime AssignedAt { get; set; }
 
     /// <summary>
-    /// Lớp mà em này được giao bài qua đó. NULL khi giáo viên chọn đích danh từng em.
+    /// Lớp mà em này được giao bài qua đó. Lượt giao mới luôn có giá trị; NULL chỉ còn ở dữ liệu cũ, từ thời
+    /// giáo viên còn chọn đích danh từng em.
     /// </summary>
     /// <remarks>
     /// Ghi lại tại thời điểm giao chứ không tra ngược qua <c>User.GroupId</c>: học sinh chuyển lớp
