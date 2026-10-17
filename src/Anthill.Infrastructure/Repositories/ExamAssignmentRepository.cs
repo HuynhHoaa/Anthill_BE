@@ -23,6 +23,8 @@ public class ExamAssignmentRepository : GenericRepository<ExamAssignment>, IExam
             .Include(a => a.Student)
                 .ThenInclude(s => s.Group)
             .Include(a => a.Attempt)
+            // Chỉ hàng bản đề (không nạp câu hỏi): để biết mã đề của từng em khi đề được chia thành nhiều đề.
+            .Include(a => a.Paper)
             .Where(a => a.ExamId == examId)
             .OrderBy(a => a.Student.Code)
             .ThenBy(a => a.Id)

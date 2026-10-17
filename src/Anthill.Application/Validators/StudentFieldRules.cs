@@ -107,6 +107,16 @@ internal static class StudentFieldRules
     /// Trạng thái là tuỳ chọn ở cả hai request, nhưng giá trị lạ phải bị từ chối — bỏ qua âm thầm
     /// nghĩa là gửi <c>"khoa"</c> thì tài khoản vẫn mở, và không ai biết lệnh khoá đã rơi mất.
     /// </summary>
+    /// <summary>Số điện thoại tuỳ chọn: chuỗi rỗng là bỏ trống, chỉ kiểm định dạng khi thật sự có nhập.</summary>
+    public static void ApplyOptionalPhone<T>(AbstractValidator<T> validator, Func<T, string?> selector)
+    {
+        validator.RuleFor(request => selector(request))
+            .Must(value => ValidationPatterns.Phone.IsMatch(value!.Trim()))
+            .WithName(StudentFieldNames.Phone)
+            .WithMessage("Số điện thoại không hợp lệ.")
+            .When(request => !string.IsNullOrWhiteSpace(selector(request)));
+    }
+
     public static void ApplyOptionalStatus<T>(AbstractValidator<T> validator, Func<T, string?> selector)
     {
         validator.RuleFor(request => selector(request))
@@ -128,5 +138,6 @@ internal static class StudentFieldRules
         public const string Username = nameof(Username);
         public const string Code = nameof(Code);
         public const string Status = nameof(Status);
+        public const string Phone = nameof(Phone);
     }
 }

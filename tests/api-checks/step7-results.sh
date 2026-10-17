@@ -91,7 +91,9 @@ exam_body() {
   "easyPercentage": 45,
   "mediumPercentage": 33,
   "hardPercentage": 22,
-  "pointPerQuestion": 1,
+  "pointEasy": ${POINTS_E:-10},
+  "pointMedium": ${POINTS_M:-10},
+  "pointHard": ${POINTS_H:-15},
   "openAt": "2020-01-01T00:00:00Z",
   "closeAt": "2035-01-01T00:00:00Z",
   "shuffleQuestions": true,
@@ -186,14 +188,14 @@ expect_status "A xem bai cua chinh minh, de mo → 200" 200 "$(call GET "/api/re
 expect_json   "  canSeeAnswers = false (de chua dong)" canSeeAnswers false
 expect_status "  co score"             present "$(has_field score)"
 expect_status "  co correctCount"      present "$(has_field correctCount)"
-expect_status "  cau dau KHONG co correctAnswerId" absent "$(q0_has correctAnswerId)"
+expect_status "  cau dau KHONG co correctAnswerIds" absent "$(q0_has correctAnswerIds)"
 expect_status "  cau dau KHONG co isCorrect"       absent "$(q0_has isCorrect)"
 expect_json   "  answersVisibleAt = gio dong de" answersVisibleAt 2035-01-01T00:00:00Z
 
 # Giao vien so huu de thi luon thay dap an, va khong co moc hen nao.
 expect_status "giao vien xem bai do → 200" 200 "$(call GET "/api/results/$ATTEMPT_A_OPEN" "$TEACHER")"
 expect_json   "  canSeeAnswers = true voi giao vien" canSeeAnswers true
-expect_status "  cau dau co correctAnswerId" present "$(q0_has correctAnswerId)"
+expect_status "  cau dau co correctAnswerIds" present "$(q0_has correctAnswerIds)"
 expect_status "  answersVisibleAt vang mat"  absent  "$(has_field answersVisibleAt)"
 
 # De KIN: cung mot hoc sinh, cung mot endpoint, nhung khong duoc xem gi.
@@ -203,8 +205,8 @@ expect_status "  score VANG MAT khoi JSON"        absent "$(has_field score)"
 expect_status "  correctCount VANG MAT"           absent "$(has_field correctCount)"
 # De kin thi dap an khong tu mo vao luc nao ca, nen cung khong hua mot moc gio.
 expect_status "  answersVisibleAt VANG MAT"       absent "$(has_field answersVisibleAt)"
-expect_status "  cau dau KHONG co correctAnswerId" absent \
-  "$(body | python -c "import json,sys;print('present' if 'correctAnswerId' in json.load(sys.stdin)['questions'][0] else 'absent')")"
+expect_status "  cau dau KHONG co correctAnswerIds" absent \
+  "$(body | python -c "import json,sys;print('present' if 'correctAnswerIds' in json.load(sys.stdin)['questions'][0] else 'absent')")"
 expect_status "  cau dau KHONG co isCorrect" absent \
   "$(body | python -c "import json,sys;print('present' if 'isCorrect' in json.load(sys.stdin)['questions'][0] else 'absent')")"
 # Tung phuong an tra loi cung khong duoc mang co dap an dung.
@@ -312,11 +314,11 @@ expect_status "  ty le tinh tren dung tap da loc, khong phai toan he thong" 100.
 
 # 7) Hai o diem canh nhau phai cung dinh dang.
 expect_status "stats khong loc → 200" 200 "$(call GET "/api/results/stats" "$TEACHER")"
-expect_status "  highestScore lam tron 1 chu so nhu averageScore" true   "$(body | python -c "
+expect_status "  highestScore lam tron 2 chu so nhu averageScore" true   "$(body | python -c "
 import json,sys
 d = json.load(sys.stdin)
 h = d.get('highestScore')
-print(str(h is None or round(float(h), 1) == float(h)).lower())")"
+print(str(h is None or round(float(h), 2) == float(h)).lower())")"
 
 # 2) Cot nhom lop trong ban tom tat khong duoc rong khi hoc sinh CO thuoc nhom.
 expect_status "tom tat co ten nhom lop" 200 "$(call GET "/api/results/$ATTEMPT_A_OPEN/summary" "$TEACHER")"
@@ -360,5 +362,18 @@ expect_json   "  inProgressCount = 1" inProgressCount 1
 expect_json   "  gradedCount = 2" gradedCount 2
 expect_status "loc trang thai=inprogress → 200" 200 "$(call GET "/api/results?status=inprogress&examId=$OPEN_EXAM" "$TEACHER")"
 expect_json   "  dung 1 luot" total 1
+
+section "Diem tong hop quy ve thang 10, khong cong tho giua cac de khac tong diem"
+
+# De thu ba chi 50 diem (5 / 5 / 7.5 nhan 4 / 3 / 2 cau). A lam dung het nen duoc 50/50. Trung binh THO
+# cua A tren hai de mo la (100 + 50) / 2 = 75 va cao nhat tho la 100; quy ve thang 10 theo diem toi da
+# cua tung de thi ca hai deu la 10. Con so do dung phai la 10, khong phai 75.
+POINTS_E=5 POINTS_M=5 POINTS_H=7.5 new_exam true " nua"; HALF_EXAM=$NEW_EXAM_ID
+ATTEMPT_A_HALF=$(take_exam "$STUDENT_A" "$HALF_EXAM" dung)
+expect_status "A xem de 50 diem cua minh → 200" 200 "$(call GET "/api/results/$ATTEMPT_A_HALF" "$STUDENT_A")"
+expect_status "  maxScore = 50" 50.0 "$(body | python -c 'import json,sys;print(float(json.load(sys.stdin)["maxScore"]))')"
+expect_status "dashboard hoc sinh → 200" 200 "$(call GET "/api/dashboard/student" "$STUDENT_A")"
+expect_status "  averageScore quy ve thang 10 (khong phai 75)" 10.0   "$(body | python -c 'import json,sys;print(float(json.load(sys.stdin)["stats"]["averageScore"]))')"
+expect_status "  highestScore = 10" 10.0   "$(body | python -c 'import json,sys;print(float(json.load(sys.stdin)["stats"]["highestScore"]))')"
 
 summary

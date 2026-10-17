@@ -51,6 +51,15 @@ public interface IExamRepository : IGenericRepository<Exam>
     /// <summary>Đề chung của cả lớp (<c>AssignmentId = NULL</c>), chỉ có khi tắt randomizePerStudent.</summary>
     Task<ExamPaper?> GetSharedPaperAsync(int examId, CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// Mã các câu hỏi mà học sinh của những lớp này đã <b>nhận</b> trong các bản đề đã sinh khi giao bài qua lớp: bản riêng của từng
+    /// em, cộng bản chung của các đề giao cho lớp. Đề lớn chia nhiều đề chỉ tính các câu thực sự rơi vào đề của lớp, không tính
+    /// những câu đề lớn có mà lớp không nhận.
+    /// </summary>
+    Task<IReadOnlyCollection<int>> GetQuestionIdsDeliveredToGroupsAsync(
+        IReadOnlyCollection<int> groupIds,
+        CancellationToken cancellationToken = default);
+
     /// <summary>Đề riêng của một học sinh, có khi bật randomizePerStudent.</summary>
     Task<ExamPaper?> GetPaperByAssignmentAsync(int assignmentId, CancellationToken cancellationToken = default);
 
@@ -59,8 +68,33 @@ public interface IExamRepository : IGenericRepository<Exam>
 
     Task AddPaperAsync(ExamPaper paper, CancellationToken cancellationToken = default);
 
-    /// <summary>Xoá đề kéo theo mọi bản đề đã sinh — nằm trong cùng transaction với xoá assignment (§5).</summary>
+    /// <summary>
+    /// Xoá đề kéo theo mọi bản đề đã sinh — nằm trong cùng transaction với xoá assignment (§5). Cũng xoá cách chia đề nhỏ
+    /// của đề (<see cref="GetVariantsAsync"/>), để lần giao sau chia lại theo cấu hình mới.
+    /// </summary>
     Task RemovePapersAsync(int examId, CancellationToken cancellationToken = default);
+
+    /// <summary>Bộ đề nhỏ đã chia cho một lớp trên một đề được chia thành nhiều đề; rỗng khi chưa chia. Theo dõi thay đổi.</summary>
+    Task<IReadOnlyList<ExamPaperVariant>> GetVariantsAsync(
+        int examId,
+        int? groupId,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>Mọi đề nhỏ của đề, kèm tên lớp, không theo dõi thay đổi — cho màn hình xem cách chia.</summary>
+    Task<IReadOnlyList<ExamPaperVariant>> GetAllVariantsAsync(int examId, CancellationToken cancellationToken = default);
+
+    Task AddVariantsAsync(IEnumerable<ExamPaperVariant> variants, CancellationToken cancellationToken = default);
+
+    /// <summary>Số em đang cầm từng đề nhỏ của một lớp (khoá là số thứ tự đề); đề chưa em nào cầm không có mặt.</summary>
+    Task<IReadOnlyDictionary<int, int>> GetVariantUsageAsync(
+        int examId,
+        int? groupId,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>Như trên cho mọi lớp của đề: (lớp, số thứ tự đề, số em).</summary>
+    Task<IReadOnlyList<(int? GroupId, int VariantIndex, int Students)>> GetVariantUsageByExamAsync(
+        int examId,
+        CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Id các đề mà bản đề ĐÃ SINH hiện có chứa câu hỏi này (H9) — để <c>QuestionService</c> biết cần
@@ -70,6 +104,22 @@ public interface IExamRepository : IGenericRepository<Exam>
     Task<IReadOnlyList<int>> GetExamIdsUsingQuestionAsync(
         int questionId,
         CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Các dòng danh sách câu hỏi của đề, theo thứ tự, <b>đang được theo dõi</b> — để xoá và thay bằng danh
+    /// sách mới khi giáo viên lưu. Rỗng với đề theo ma trận.
+    /// </summary>
+    Task<IReadOnlyList<ExamQuestion>> GetQuestionRowsAsync(int examId, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Danh sách câu hỏi của đề kèm câu hỏi đầy đủ (đáp án, người soạn), theo thứ tự, không theo dõi thay đổi.
+    /// Dùng cho màn hình duyệt đề và cho bộ sinh đề.
+    /// </summary>
+    Task<IReadOnlyList<ExamQuestion>> GetQuestionListAsync(int examId, CancellationToken cancellationToken = default);
+
+    void RemoveQuestionRows(IEnumerable<ExamQuestion> rows);
+
+    Task AddQuestionRowsAsync(IEnumerable<ExamQuestion> rows, CancellationToken cancellationToken = default);
 
     /// <summary>Số đề đã giao cho ít nhất một học sinh — khác với tổng số đề đã tạo.</summary>
     /// <remarks>

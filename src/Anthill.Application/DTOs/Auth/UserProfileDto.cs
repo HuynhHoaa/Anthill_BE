@@ -40,6 +40,9 @@ public sealed record UserProfileDto
 
     public required string AvatarColor { get; init; }
 
+    /// <summary>Đường dẫn ảnh đại diện đã tải lên; NULL khi chưa có (giao diện vẽ chữ cái đầu trên nền <c>AvatarColor</c>).</summary>
+    public string? AvatarUrl { get; init; }
+
     /// <summary>ISO 8601 UTC khi serialize, đúng quy ước §1.</summary>
     public required DateTime JoinedAt { get; init; }
 }

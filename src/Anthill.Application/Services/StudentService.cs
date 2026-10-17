@@ -158,6 +158,7 @@ public sealed class StudentService : IStudentService
             Email = fields.Email,
             Username = fields.Username,
             Code = fields.Code,
+            Phone = Normalize(request.Phone),
             PasswordHash = _passwordHasher.Hash(request.Password),
             SecurityStamp = NewSecurityStamp(),
             Role = UserRole.Student,
@@ -180,7 +181,8 @@ public sealed class StudentService : IStudentService
         return Result.Success(student.ToStudentDto(
             completedExams: 0,
             averageScore: 0m,
-            groupName: await ReadGroupNameAsync(student.GroupId, cancellationToken)));
+            groupName: await ReadGroupNameAsync(student.GroupId, cancellationToken),
+            includePhone: true));
     }
 
     /// <inheritdoc />
@@ -239,6 +241,11 @@ public sealed class StudentService : IStudentService
         account.Email = fields.Email;
         account.Username = fields.Username;
         account.Code = fields.Code;
+        // Không gửi Phone thì giữ nguyên số đang có (client cũ chưa biết trường này); chuỗi rỗng là xoá trắng.
+        if (request.Phone is not null)
+        {
+            account.Phone = Normalize(request.Phone);
+        }
         account.GroupId = groupResult.Value;
         account.UpdatedAt = DateTime.UtcNow;
 
@@ -717,7 +724,7 @@ public sealed class StudentService : IStudentService
         return ToDto(student, stats, groupName);
     }
 
-    private static StudentDto ToDto(
+    private StudentDto ToDto(
         User student,
         IReadOnlyDictionary<int, (int Completed, decimal AverageScore)> stats,
         string? groupName = null)
@@ -726,7 +733,9 @@ public sealed class StudentService : IStudentService
         // không phải lỗi.
         var (completed, averageScore) = stats.TryGetValue(student.Id, out var row) ? row : (0, 0m);
 
-        return student.ToStudentDto(completed, averageScore, groupName);
+        // Số điện thoại do nhà trường quản lý: chỉ quản trị viên nhận trường này.
+        return student.ToStudentDto(
+            completed, averageScore, groupName, includePhone: _currentUser.IsInRole(UserRole.Admin));
     }
 
     private async Task<string?> ReadGroupNameAsync(int? groupId, CancellationToken cancellationToken) =>

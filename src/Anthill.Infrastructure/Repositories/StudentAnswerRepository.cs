@@ -38,17 +38,19 @@ public class StudentAnswerRepository : GenericRepository<StudentAnswer>, IStuden
             .ToListAsync(cancellationToken);
     }
 
-    public async Task<IReadOnlyDictionary<int, int?>> GetSelectionMapAsync(
+    public async Task<IReadOnlyDictionary<int, IReadOnlyList<int>>> GetSelectionMapAsync(
         int attemptId,
         CancellationToken cancellationToken = default)
     {
         var rows = await DbSet
             .AsNoTracking()
             .Where(s => s.AttemptId == attemptId)
-            .Select(s => new { s.ExamPaperQuestionId, s.SelectedAnswerId })
+            .Select(s => new { s.ExamPaperQuestionId, s.SelectedAnswerIds })
             .ToListAsync(cancellationToken);
 
-        return rows.ToDictionary(row => row.ExamPaperQuestionId, row => row.SelectedAnswerId);
+        return rows.ToDictionary(
+            row => row.ExamPaperQuestionId,
+            row => (IReadOnlyList<int>)row.SelectedAnswerIds);
     }
 
     public async Task RemoveByAttemptAsync(int attemptId, CancellationToken cancellationToken = default)

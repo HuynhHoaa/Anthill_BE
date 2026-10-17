@@ -35,10 +35,11 @@ public sealed record StudentExamItemDto
     public required int TotalQuestions { get; init; }
 
     /// <summary>
-    /// Điểm mỗi câu. Không phải blueprint (tỷ lệ ba mức độ) mà chỉ là con số hiển thị ở màn giới
-    /// thiệu để em tính được thang điểm — an toàn, không lộ cấu trúc đề.
+    /// Tổng điểm tối đa của đề (số câu mỗi mức × điểm mức đó), hiển thị ở màn giới thiệu. Thẻ bài không
+    /// mang điểm từng mức. Điểm của từng câu trong bản đề (<c>AttemptQuestionDto.Point</c>) thì có chủ ý
+    /// hiện lúc làm bài và ở kết quả, để học sinh biết câu nào nặng hơn.
     /// </summary>
-    public required decimal PointPerQuestion { get; init; }
+    public required decimal TotalScore { get; init; }
 
     /// <summary>Đề có xáo thứ tự câu hỏi giữa các lượt làm hay không — chỉ để hiển thị, không phải blueprint.</summary>
     public required bool ShuffleQuestions { get; init; }

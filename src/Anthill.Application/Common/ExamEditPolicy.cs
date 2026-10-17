@@ -69,11 +69,17 @@ public static class ExamEditPolicy
     /// thì là <c>false</c>, dù bản đề chung của lần giao cũ có thể vẫn còn.
     /// </param>
     /// <param name="hasStartedAttempts">Đã có ít nhất một em bắt đầu làm bài.</param>
+    /// <param name="questionListChanged">
+    /// Danh sách câu hỏi trong request khác danh sách đang lưu (đổi câu, thứ tự hay điểm), hoặc đề cũ theo
+    /// ma trận đang được chuyển sang danh sách. Chỉ có nghĩa với đề theo danh sách; service tự so vì danh
+    /// sách nằm trong database chứ không trên <paramref name="exam"/>.
+    /// </param>
     public static ExamEditPlan Decide(
         Exam exam,
         SaveExamRequest request,
         bool hasAssignments,
-        bool hasStartedAttempts)
+        bool hasStartedAttempts,
+        bool questionListChanged = false)
     {
         ArgumentNullException.ThrowIfNull(exam);
         ArgumentNullException.ThrowIfNull(request);
@@ -87,14 +93,14 @@ public static class ExamEditPolicy
                 return new ExamEditPlan(ExamEditDecision.RejectBackToDraft, []);
             }
 
-            var frozen = ChangedFrozenFields(exam, request);
+            var frozen = ChangedFrozenFields(exam, request, questionListChanged);
 
             return frozen.Count > 0
                 ? new ExamEditPlan(ExamEditDecision.RejectFrozen, frozen)
                 : new ExamEditPlan(ExamEditDecision.Apply, []);
         }
 
-        if (!ChangesGeneratedPaper(exam, request))
+        if (!ChangesGeneratedPaper(exam, request, questionListChanged))
         {
             return new ExamEditPlan(ExamEditDecision.Apply, []);
         }
@@ -115,14 +121,32 @@ public static class ExamEditPolicy
     /// <c>randomizePerStudent</c> không nằm trong request này nên không có mặt ở đây; cờ đó đã bị khoá từ
     /// lúc giao bài, ở endpoint giao bài.
     /// </remarks>
-    public static IReadOnlyList<string> ChangedFrozenFields(Exam exam, SaveExamRequest request)
+    public static IReadOnlyList<string> ChangedFrozenFields(
+        Exam exam,
+        SaveExamRequest request,
+        bool questionListChanged = false)
     {
         ArgumentNullException.ThrowIfNull(exam);
         ArgumentNullException.ThrowIfNull(request);
 
         var changed = new List<string>();
 
-        if (exam.TotalQuestions != request.TotalQuestions)
+        // Request mang danh sách câu hỏi thì số câu, tỷ lệ và điểm theo mức là số liệu server dẫn xuất từ danh
+        // sách, không phải thứ giáo viên nhập: so chúng chỉ sinh ra những cái tên trường mà form không có.
+        // Đề chia nhiều đề thì số câu mỗi đề và tỷ lệ cũng là thứ giáo viên nhập, nên đổi chúng bị khoá như đề ma trận.
+        var matrixIsInput = request.Questions is null || request.PaperCount > 1;
+
+        if (exam.PaperCount != request.PaperCount)
+        {
+            changed.Add("số đề");
+        }
+
+        if (exam.PaperBonusUnits != request.PaperBonusUnits)
+        {
+            changed.Add("điểm cộng thêm của đề nhỏ");
+        }
+
+        if (matrixIsInput && exam.TotalQuestions != request.TotalQuestions)
         {
             changed.Add("số câu hỏi");
         }
@@ -132,27 +156,37 @@ public static class ExamEditPolicy
             changed.Add("thời gian làm bài");
         }
 
-        if (exam.PointPerQuestion != request.PointPerQuestion)
+        if (matrixIsInput && exam.PointEasy != request.PointEasy)
         {
-            changed.Add("điểm mỗi câu");
+            changed.Add("điểm mỗi câu Dễ");
         }
 
-        if (!SameTopic(exam, request))
+        if (matrixIsInput && exam.PointMedium != request.PointMedium)
+        {
+            changed.Add("điểm mỗi câu Trung bình");
+        }
+
+        if (matrixIsInput && exam.PointHard != request.PointHard)
+        {
+            changed.Add("điểm mỗi câu Khó");
+        }
+
+        if (matrixIsInput && !SameTopic(exam, request))
         {
             changed.Add("chủ đề");
         }
 
-        if (exam.EasyPercentage != request.EasyPercentage)
+        if (matrixIsInput && exam.EasyPercentage != request.EasyPercentage)
         {
             changed.Add("tỷ lệ câu Dễ");
         }
 
-        if (exam.MediumPercentage != request.MediumPercentage)
+        if (matrixIsInput && exam.MediumPercentage != request.MediumPercentage)
         {
             changed.Add("tỷ lệ câu Trung bình");
         }
 
-        if (exam.HardPercentage != request.HardPercentage)
+        if (matrixIsInput && exam.HardPercentage != request.HardPercentage)
         {
             changed.Add("tỷ lệ câu Khó");
         }
@@ -165,6 +199,13 @@ public static class ExamEditPolicy
         if (exam.ShuffleAnswers != request.ShuffleAnswers)
         {
             changed.Add("trộn thứ tự đáp án");
+        }
+
+        // Đề theo danh sách: các cột ma trận ở trên chỉ là số liệu dẫn xuất nên không bắt được việc thay một
+        // câu bằng một câu khác cùng mức. Danh sách là nguồn thật.
+        if (questionListChanged)
+        {
+            changed.Add("danh sách câu hỏi và điểm từng câu");
         }
 
         return changed;
@@ -182,19 +223,39 @@ public static class ExamEditPolicy
     /// Tỷ lệ Khó có mặt dù bộ sinh đề chỉ đọc Dễ và Trung bình (Khó nhận phần dư): đổi riêng nó mà giữ
     /// hai tỷ lệ kia là một cấu hình có tổng khác 100, và phép kiểm blueprint phía sau sẽ chặn nó.
     /// </remarks>
-    public static bool ChangesGeneratedPaper(Exam exam, SaveExamRequest request)
+    public static bool ChangesGeneratedPaper(Exam exam, SaveExamRequest request, bool questionListChanged = false)
     {
         ArgumentNullException.ThrowIfNull(exam);
         ArgumentNullException.ThrowIfNull(request);
+
+        if (questionListChanged
+            || exam.ShuffleQuestions != request.ShuffleQuestions
+            || exam.ShuffleAnswers != request.ShuffleAnswers)
+        {
+            return true;
+        }
+
+        // Đổi số đề là đổi cách chia: các đề nhỏ phải chia và phát lại. Đổi điểm cộng thêm là đổi điểm từng câu của bản đề.
+        if (exam.PaperCount != request.PaperCount || exam.PaperBonusUnits != request.PaperBonusUnits)
+        {
+            return true;
+        }
+
+        // Đề theo danh sách một đề: chỉ danh sách và hai cờ trộn quyết định bản đề; các cột ma trận là dẫn xuất. Đề chia
+        // nhiều đề thì số câu mỗi đề và tỷ lệ là đầu vào, nên rơi xuống phép so bên dưới như đề ma trận.
+        if (request.Questions is not null && request.PaperCount <= 1)
+        {
+            return false;
+        }
 
         return exam.TotalQuestions != request.TotalQuestions
                || exam.EasyPercentage != request.EasyPercentage
                || exam.MediumPercentage != request.MediumPercentage
                || exam.HardPercentage != request.HardPercentage
-               || exam.PointPerQuestion != request.PointPerQuestion
-               || !SameTopic(exam, request)
-               || exam.ShuffleQuestions != request.ShuffleQuestions
-               || exam.ShuffleAnswers != request.ShuffleAnswers;
+               || exam.PointEasy != request.PointEasy
+               || exam.PointMedium != request.PointMedium
+               || exam.PointHard != request.PointHard
+               || !SameTopic(exam, request);
     }
 
     /// <summary>So chủ đề sau khi quy chuẩn cả hai vế: <c>""</c>, <c>"all"</c> và NULL là cùng một ý.</summary>

@@ -29,5 +29,11 @@ public sealed record AttemptQuestionDto
     /// <summary>Điểm của câu, chốt lúc sinh đề — hiện lên để học sinh biết câu nào nặng hơn.</summary>
     public required decimal Point { get; init; }
 
+    /// <summary>
+    /// Câu cho chọn nhiều đáp án: màn hình làm bài vẽ ô tích thay cho ô chọn một, và học sinh phải chọn đúng
+    /// và đủ mới được điểm. Chỉ nói "được chọn nhiều ô" chứ không nói có bao nhiêu ô đúng.
+    /// </summary>
+    public required bool AllowMultiple { get; init; }
+
     public required IReadOnlyList<AttemptAnswerOptionDto> Answers { get; init; }
 }

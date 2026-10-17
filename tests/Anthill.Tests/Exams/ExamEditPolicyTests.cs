@@ -28,7 +28,9 @@ public class ExamEditPolicyTests
         EasyPercentage = 50,
         MediumPercentage = 30,
         HardPercentage = 20,
-        PointPerQuestion = 1m,
+        PointEasy = 1m,
+        PointMedium = 1m,
+        PointHard = 1m,
         ShuffleQuestions = true,
         ShuffleAnswers = false,
         ShowResultAfterSubmit = true,
@@ -48,7 +50,9 @@ public class ExamEditPolicyTests
         EasyPercentage = exam.EasyPercentage,
         MediumPercentage = exam.MediumPercentage,
         HardPercentage = exam.HardPercentage,
-        PointPerQuestion = exam.PointPerQuestion,
+        PointEasy = exam.PointEasy,
+        PointMedium = exam.PointMedium,
+        PointHard = exam.PointHard,
         ShuffleQuestions = exam.ShuffleQuestions,
         ShuffleAnswers = exam.ShuffleAnswers,
         ShowResultAfterSubmit = exam.ShowResultAfterSubmit,
@@ -60,7 +64,9 @@ public class ExamEditPolicyTests
     public static TheoryData<string, Func<SaveExamRequest, SaveExamRequest>> PaperFieldChanges => new()
     {
         { "số câu hỏi", r => r with { TotalQuestions = 20 } },
-        { "điểm mỗi câu", r => r with { PointPerQuestion = 0.5m } },
+        { "điểm mỗi câu Dễ", r => r with { PointEasy = 0.5m } },
+        { "điểm mỗi câu Trung bình", r => r with { PointMedium = 0.5m } },
+        { "điểm mỗi câu Khó", r => r with { PointHard = 0.5m } },
         { "chủ đề", r => r with { Topic = "Quang học" } },
         { "tỷ lệ câu Dễ", r => r with { EasyPercentage = 40, HardPercentage = 30 } },
         { "tỷ lệ câu Trung bình", r => r with { MediumPercentage = 40, HardPercentage = 10 } },
@@ -216,11 +222,11 @@ public class ExamEditPolicyTests
         {
             ShuffleAnswers = true,
             TotalQuestions = 12,
-            PointPerQuestion = 2m
+            PointMedium = 2m
         };
 
         ExamEditPolicy.Decide(exam, request, hasAssignments: true, hasStartedAttempts: true)
-            .FrozenFieldsChanged.Should().Equal("số câu hỏi", "điểm mỗi câu", "trộn thứ tự đáp án");
+            .FrozenFieldsChanged.Should().Equal("số câu hỏi", "điểm mỗi câu Trung bình", "trộn thứ tự đáp án");
     }
 
     [Theory]

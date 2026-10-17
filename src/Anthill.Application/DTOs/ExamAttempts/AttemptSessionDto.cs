@@ -43,20 +43,20 @@ public sealed record AttemptSessionDto
 
     public required int TotalQuestions { get; init; }
 
-    /// <summary>Tổng điểm của bản đề, để màn hình hiện "x/10" ngay từ lúc bắt đầu.</summary>
+    /// <summary>Tổng điểm của bản đề, để màn hình hiện "x/100" ngay từ lúc bắt đầu.</summary>
     public required decimal MaxScore { get; init; }
 
     public required IReadOnlyList<AttemptQuestionDto> Questions { get; init; }
 
     /// <summary>
-    /// Những lựa chọn đã lưu: khoá là <c>questionId</c>, giá trị là <c>answerId</c>.
+    /// Những lựa chọn đã lưu: khoá là <c>questionId</c>, giá trị là các <c>answerId</c> đã chọn.
     /// </summary>
     /// <remarks>
-    /// Câu chưa chọn thì <b>vắng mặt</b> khỏi từ điển chứ không mang giá trị null — trạng thái
-    /// "chưa trả lời" và "đã xoá lựa chọn" là một, và một khoá có giá trị null chỉ khiến client phải
-    /// viết thêm nhánh kiểm tra cho đúng cái tình huống đó.
+    /// Câu chưa chọn thì <b>vắng mặt</b> khỏi từ điển chứ không mang mảng rỗng — trạng thái
+    /// "chưa trả lời" và "đã xoá lựa chọn" là một, và một khoá có giá trị rỗng chỉ khiến client phải
+    /// viết thêm nhánh kiểm tra cho đúng cái tình huống đó. Câu một đáp án đúng có đúng một phần tử.
     /// </remarks>
-    public required IReadOnlyDictionary<int, int> SavedAnswers { get; init; }
+    public required IReadOnlyDictionary<int, IReadOnlyList<int>> SavedAnswers { get; init; }
 
     /// <summary>
     /// Số thứ tự gói lưu nháp cuối cùng đã được áp dụng.

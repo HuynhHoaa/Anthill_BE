@@ -84,7 +84,8 @@ public static class ExamAssignmentMappingExtensions
             CloseAt = closeAt.ToUtc(),
             HasScheduleOverride = AssignmentSchedule.HasOverride(assignment),
             ScheduleLocked = AssignmentSchedule.IsScheduleLocked(openAt, closeAt, asOfUtc),
-            AssignedViaGroupId = assignment.AssignedViaGroupId
+            AssignedViaGroupId = assignment.AssignedViaGroupId,
+            PaperLabel = assignment.Paper?.VariantIndex is { } variant ? PaperLabels.Of(variant) : null
         };
     }
 

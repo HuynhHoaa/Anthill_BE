@@ -44,7 +44,7 @@ public sealed class ExamService : IExamService
 
     /// <summary>
     /// Câu từ chối khi xoá một đề đã có em bắt đầu làm — <b>đang làm dở hay đã nộp đều chặn như nhau</b>,
-    /// cùng cách nói với <see cref="ExamAssignmentService.RevokeAsync"/> (§4.6, H8): xoá đề lúc này cascade
+    /// cùng cách nói với <see cref="ExamAssignmentService.RevokeClassAsync"/> (§4.6, H8): xoá đề lúc này cascade
     /// luôn assignment/attempt/answers, nên với em đang làm dở đó là xoá bài giữa chừng, còn với em đã nộp
     /// đó là mất kết quả đã có. Không tách hai thông điệp vì hành động cần làm là một: đừng xoá, để đề tự
     /// đóng theo lịch.
@@ -152,33 +152,68 @@ public sealed class ExamService : IExamService
 
         var isDraft = IsDraftRequest(request);
 
-        var check = await ValidateBlueprintAsync(
-            request.TotalQuestions,
-            request.EasyPercentage,
-            request.MediumPercentage,
-            request.HardPercentage,
-            request.Topic,
-            scope.ValueOrThrow,
-            isDraft,
-            cancellationToken);
+        // Đề theo danh sách: giáo viên đã chọn từng câu, nên không có ma trận để đối chiếu với ngân hàng. Thay
+        // vào đó kiểm từng câu (còn trong ngân hàng của mình, và — khi xuất bản — đang bật).
+        QuestionListPlan? listPlan = null;
 
-        if (check.IsFailure)
+        if (request.Questions is not null)
         {
-            return Result.Failure<ExamDto>(check.Error!, check.ErrorCode);
+            var loaded = await LoadQuestionListAsync(request.Questions, cancellationToken);
+            if (loaded.IsFailure)
+            {
+                return Result.Failure<ExamDto>(loaded.Error!, loaded.ErrorCode);
+            }
+
+            listPlan = loaded.ValueOrThrow;
+
+            if (!isDraft)
+            {
+                var publishable = CheckListPublishable(listPlan, PaperSettings.Of(request));
+                if (publishable.IsFailure)
+                {
+                    return Result.Failure<ExamDto>(publishable.Error!, publishable.ErrorCode);
+                }
+            }
         }
+        else
+        {
+            var check = await ValidateBlueprintAsync(
+                request.TotalQuestions,
+                request.EasyPercentage,
+                request.MediumPercentage,
+                request.HardPercentage,
+                request.Topic,
+                scope.ValueOrThrow,
+                isDraft,
+                cancellationToken);
+
+            if (check.IsFailure)
+            {
+                return Result.Failure<ExamDto>(check.Error!, check.ErrorCode);
+            }
+        }
+
+        // Từ đây đọc cấu hình ma trận từ `effective`: với đề theo danh sách đó là số liệu dẫn xuất từ danh sách.
+        var effective = listPlan is null ? request : WithDerivedMatrix(request, listPlan.Derived);
 
         var now = DateTime.UtcNow;
         var exam = new Exam
         {
             Title = request.Title.Trim(),
             Description = Normalize(request.Description),
-            Topic = ExamMappingExtensions.NormalizeTopic(request.Topic),
+            Topic = listPlan is null ? ExamMappingExtensions.NormalizeTopic(request.Topic) : null,
             DurationMinutes = request.DurationMinutes,
-            TotalQuestions = request.TotalQuestions,
-            EasyPercentage = request.EasyPercentage,
-            MediumPercentage = request.MediumPercentage,
-            HardPercentage = request.HardPercentage,
-            PointPerQuestion = request.PointPerQuestion,
+            TotalQuestions = effective.TotalQuestions,
+            EasyPercentage = effective.EasyPercentage,
+            MediumPercentage = effective.MediumPercentage,
+            HardPercentage = effective.HardPercentage,
+            PointEasy = effective.PointEasy,
+            PointMedium = effective.PointMedium,
+            PointHard = effective.PointHard,
+            UsesQuestionList = listPlan is not null,
+            ListTotalScore = listPlan is null ? 0m : ListScoreOf(listPlan, effective),
+            PaperCount = listPlan is null ? 1 : request.PaperCount,
+            PaperBonusUnits = listPlan is null ? 0 : request.PaperBonusUnits,
             ShuffleQuestions = request.ShuffleQuestions,
             ShuffleAnswers = request.ShuffleAnswers,
             ShowResultAfterSubmit = request.ShowResultAfterSubmit,
@@ -193,6 +228,14 @@ public sealed class ExamService : IExamService
             CreatedByUserId = CurrentUserId,
             CreatedAt = now
         };
+
+        if (listPlan is not null)
+        {
+            foreach (var row in BuildQuestionRows(listPlan, now))
+            {
+                exam.Questions.Add(row);
+            }
+        }
 
         await _unitOfWork.Exams.AddAsync(exam, cancellationToken);
         await _unitOfWork.SaveChangesAsync(cancellationToken);
@@ -243,11 +286,49 @@ public sealed class ExamService : IExamService
             ? 0
             : await _unitOfWork.ExamAssignments.CountStartedByExamAsync(exam.Id, cancellationToken);
 
+        // Đề đã soạn theo danh sách thì danh sách là một phần của "thay toàn bộ cấu hình". Thiếu nó mà vẫn nhận
+        // thì ma trận trong request (thường là số không) sẽ được hiểu là cấu hình mới của một đề đang có câu.
+        if (exam.UsesQuestionList && request.Questions is null)
+        {
+            return Result.Failure<ExamDto>(
+                "Đề này soạn theo danh sách câu hỏi nên mỗi lần lưu phải gửi kèm danh sách câu hỏi.");
+        }
+
+        QuestionListPlan? listPlan = null;
+        IReadOnlyList<ExamQuestion> currentRows = [];
+        var listChanged = false;
+        var effective = request;
+
+        if (request.Questions is not null)
+        {
+            // Đề cũ theo ma trận được chuyển sang danh sách cũng tính là "danh sách đổi": bản đề đã sinh theo
+            // ma trận không còn đúng với bộ câu giáo viên vừa duyệt.
+            currentRows = await _unitOfWork.Exams.GetQuestionRowsAsync(exam.Id, cancellationToken);
+            listChanged = !exam.UsesQuestionList || ExamQuestionList.Differs(currentRows, request.Questions);
+
+            // Danh sách giữ nguyên thì lấy câu từ chính các dòng đang lưu, không đọc lại theo phạm vi ngân hàng
+            // của người sửa. Một đồng nghiệp chuyển câu của họ sang Private (hay admin đổi môn của giáo viên)
+            // không được làm đề đã khoá hết cả sửa tên hay mô tả, mà danh sách thì không gỡ câu ra được nữa.
+            var loaded = listChanged
+                ? await LoadQuestionListAsync(request.Questions, cancellationToken)
+                : Result.Success(PlanFromRows(
+                    await _unitOfWork.Exams.GetQuestionListAsync(exam.Id, cancellationToken)));
+
+            if (loaded.IsFailure)
+            {
+                return Result.Failure<ExamDto>(loaded.Error!, loaded.ErrorCode);
+            }
+
+            listPlan = loaded.ValueOrThrow;
+            effective = WithDerivedMatrix(request, listPlan.Derived);
+        }
+
         var plan = ExamEditPolicy.Decide(
             exam,
-            request,
+            effective,
             hasAssignments: assignments.Count > 0,
-            hasStartedAttempts: startedCount > 0);
+            hasStartedAttempts: startedCount > 0,
+            questionListChanged: listChanged);
 
         switch (plan.Decision)
         {
@@ -276,17 +357,25 @@ public sealed class ExamService : IExamService
         //  - Đề đã xuất bản mà cấu hình đề không đổi. Không có miễn trừ này thì chỉ cần đồng nghiệp ẩn bớt
         //    câu hỏi là giáo viên hết cả sửa tên hay mô tả — đúng những thứ luật khoá hứa vẫn sửa được.
         var skipBankCheck = (isDraft && !regenerate)
-                            || (!exam.IsDraft && !ExamEditPolicy.ChangesGeneratedPaper(exam, request));
+                            || (!exam.IsDraft && !ExamEditPolicy.ChangesGeneratedPaper(exam, effective, listChanged));
 
-        var check = await ValidateBlueprintAsync(
-            request.TotalQuestions,
-            request.EasyPercentage,
-            request.MediumPercentage,
-            request.HardPercentage,
-            request.Topic,
-            exam.CreatedByUserId,
-            skipBankCheck,
-            cancellationToken);
+        Result check;
+        if (listPlan is not null)
+        {
+            check = skipBankCheck ? Result.Success() : CheckListPublishable(listPlan, PaperSettings.Of(request));
+        }
+        else
+        {
+            check = await ValidateBlueprintAsync(
+                request.TotalQuestions,
+                request.EasyPercentage,
+                request.MediumPercentage,
+                request.HardPercentage,
+                request.Topic,
+                exam.CreatedByUserId,
+                skipBankCheck,
+                cancellationToken);
+        }
 
         if (check.IsFailure)
         {
@@ -306,13 +395,15 @@ public sealed class ExamService : IExamService
 
         exam.Title = request.Title.Trim();
         exam.Description = Normalize(request.Description);
-        exam.Topic = ExamMappingExtensions.NormalizeTopic(request.Topic);
+        exam.Topic = listPlan is null ? ExamMappingExtensions.NormalizeTopic(request.Topic) : null;
         exam.DurationMinutes = request.DurationMinutes;
-        exam.TotalQuestions = request.TotalQuestions;
-        exam.EasyPercentage = request.EasyPercentage;
-        exam.MediumPercentage = request.MediumPercentage;
-        exam.HardPercentage = request.HardPercentage;
-        exam.PointPerQuestion = request.PointPerQuestion;
+        exam.TotalQuestions = effective.TotalQuestions;
+        exam.EasyPercentage = effective.EasyPercentage;
+        exam.MediumPercentage = effective.MediumPercentage;
+        exam.HardPercentage = effective.HardPercentage;
+        exam.PointEasy = effective.PointEasy;
+        exam.PointMedium = effective.PointMedium;
+        exam.PointHard = effective.PointHard;
         exam.ShuffleQuestions = request.ShuffleQuestions;
         exam.ShuffleAnswers = request.ShuffleAnswers;
         exam.ShowResultAfterSubmit = request.ShowResultAfterSubmit;
@@ -320,6 +411,26 @@ public sealed class ExamService : IExamService
         exam.CloseAt = request.CloseAt.ToUtc();
         exam.IsDraft = isDraft;
         exam.UpdatedAt = now;
+
+        if (listPlan is not null)
+        {
+            exam.UsesQuestionList = true;
+            exam.ListTotalScore = ListScoreOf(listPlan, effective);
+            exam.PaperCount = request.PaperCount;
+            exam.PaperBonusUnits = request.PaperBonusUnits;
+
+            // Đề theo danh sách không có bản đề riêng cho từng em; đề cũ chuyển sang phải bỏ cờ này đi.
+            exam.RandomizePerStudent = false;
+
+            if (listChanged)
+            {
+                // Xoá trước, ghi, rồi mới thêm: chỉ mục duy nhất (đề, câu hỏi) không cho một câu nằm hai lần,
+                // mà lần lưu này có thể xếp lại đúng những câu đang có.
+                _unitOfWork.Exams.RemoveQuestionRows(currentRows);
+                await _unitOfWork.SaveChangesAsync(cancellationToken);
+                await _unitOfWork.Exams.AddQuestionRowsAsync(BuildQuestionRows(listPlan, now, exam.Id), cancellationToken);
+            }
+        }
 
         // Xuất bản lần đầu thì ghi mốc; đã xuất bản rồi thì giữ nguyên mốc cũ, vì "lần đầu công bố"
         // là một sự kiện chứ không phải một thuộc tính cập nhật theo mỗi lần sửa.
@@ -498,7 +609,7 @@ public sealed class ExamService : IExamService
         await _unitOfWork.ExamAssignments.LockByExamAsync(exam.Id, cancellationToken);
 
         // startedCount, không phải submittedCount: đề đang có em làm dở (InProgress, chưa nộp) trước đây
-        // vẫn xoá được vô điều kiện, trong khi RevokeAsync đã từ chối chính ca đó ở cấp một học sinh. Gộp
+        // vẫn xoá được vô điều kiện, trong khi RevokeClassAsync đã giữ lại chính những em đó khi thu hồi lớp. Gộp
         // về startedCount thay vì giữ hai phép đếm cho hai cách chặn nửa vời.
         var startedCount = await _unitOfWork.ExamAssignments.CountStartedByExamAsync(exam.Id, cancellationToken);
         if (startedCount > 0)
@@ -552,6 +663,15 @@ public sealed class ExamService : IExamService
 
         var exam = found.ValueOrThrow;
 
+        // Đề theo danh sách không có "cần bao nhiêu câu mỗi mức rút từ ngân hàng": cần chính là các câu đã chọn,
+        // và điều đáng báo là bao nhiêu câu trong số đó đang bị ẩn. Các cột tỷ lệ chỉ là số liệu dẫn xuất đã
+        // làm tròn, đối chiếu chúng với cả ngân hàng cho ra kết quả sai nghĩa.
+        if (exam.UsesQuestionList)
+        {
+            var rows = await _unitOfWork.Exams.GetQuestionListAsync(exam.Id, cancellationToken);
+            return Result.Success(BuildListPreview(rows));
+        }
+
         // Đối chiếu với tồn kho *hiện tại*, không phải tồn kho lúc lưu đề: một đề hợp lệ tuần trước
         // có thể không sinh nổi hôm nay vì đồng nghiệp vừa ẩn bớt câu hỏi. Đó chính là điều giáo
         // viên cần biết trước khi bấm giao bài.
@@ -563,6 +683,128 @@ public sealed class ExamService : IExamService
             exam.Topic,
             exam.CreatedByUserId,
             cancellationToken));
+    }
+
+    /// <inheritdoc />
+    public async Task<Result<ExamPapersDto>> GetPapersAsync(int id, CancellationToken cancellationToken = default)
+    {
+        var found = await FindReadableAsync(id, cancellationToken);
+        if (found.IsFailure)
+        {
+            return Result.Failure<ExamPapersDto>(found.Error!, found.ErrorCode);
+        }
+
+        var exam = found.ValueOrThrow;
+
+        if (!exam.UsesQuestionList || exam.PaperCount <= 1)
+        {
+            return Result.Success(new ExamPapersDto { PaperCount = 1, Levels = [], Classes = [] });
+        }
+
+        var rows = await _unitOfWork.Exams.GetQuestionListAsync(exam.Id, cancellationToken);
+        var difficultyOf = rows.ToDictionary(row => row.QuestionId, row => row.Question.Difficulty);
+
+        var perPaper = BlueprintCalculator.CalculateRequiredCounts(
+            exam.TotalQuestions, exam.EasyPercentage, exam.MediumPercentage);
+        var pool = Difficulties.ToDictionary(
+            level => level,
+            level => rows.Count(row => row.Question.Difficulty == level));
+        var plan = PaperPlanner.Evaluate(pool, perPaper, exam.PaperCount);
+
+        var variants = await _unitOfWork.Exams.GetAllVariantsAsync(exam.Id, cancellationToken);
+        var usage = (await _unitOfWork.Exams.GetVariantUsageByExamAsync(exam.Id, cancellationToken))
+            .ToDictionary(row => (row.GroupId, row.VariantIndex), row => row.Students);
+
+        var classes = variants
+            .GroupBy(variant => variant.GroupId)
+            .Select(group =>
+            {
+                var papers = group
+                    .OrderBy(variant => variant.VariantIndex)
+                    .Select(variant => new ExamPaperVariantDto
+                    {
+                        VariantIndex = variant.VariantIndex,
+                        Label = PaperLabels.Of(variant.VariantIndex),
+                        Students = usage.GetValueOrDefault((variant.GroupId, variant.VariantIndex)),
+                        QuestionCount = variant.QuestionIds.Count,
+                        Easy = variant.QuestionIds.Count(questionId => difficultyOf.GetValueOrDefault(questionId) == QuestionDifficulty.Easy),
+                        Medium = variant.QuestionIds.Count(questionId => difficultyOf.GetValueOrDefault(questionId) == QuestionDifficulty.Medium),
+                        Hard = variant.QuestionIds.Count(questionId => difficultyOf.GetValueOrDefault(questionId) == QuestionDifficulty.Hard),
+                        QuestionIds = variant.QuestionIds
+                    })
+                    .ToList();
+
+                return new ExamPaperClassDto
+                {
+                    GroupId = group.Key,
+                    GroupName = group.First().Group?.Name ?? string.Empty,
+                    Students = papers.Sum(paper => paper.Students),
+                    Papers = papers
+                };
+            })
+            .ToList();
+
+        return Result.Success(new ExamPapersDto
+        {
+            PaperCount = exam.PaperCount,
+            Levels = plan.Levels
+                .Select(level => new ExamPaperLevelPlanDto
+                {
+                    Level = level.Level.ToDifficultyKey(),
+                    PoolSize = level.PoolSize,
+                    PerPaper = level.PerPaper,
+                    Sufficient = level.Sufficient,
+                    SharedQuestions = level.SharedQuestions,
+                    UnusedQuestions = level.UnusedQuestions
+                })
+                .ToList(),
+            Classes = classes
+        });
+    }
+
+    /// <inheritdoc />
+    public async Task<Result<ExamDto>> ReleaseAnswersAsync(int id, CancellationToken cancellationToken = default)
+    {
+        var found = await FindOwnedAsync(id, cancellationToken);
+        if (found.IsFailure)
+        {
+            return Result.Failure<ExamDto>(found.Error!, found.ErrorCode);
+        }
+
+        var exam = found.ValueOrThrow;
+
+        // Giờ đóng muộn nhất trong mọi lượt giao (kể cả lượt đang chạy). Đọc ở server chứ không tin giao diện:
+        // nút bị khoá ở màn hình chỉ là gợi ý, còn luật "chỉ mở khi hết giờ" phải đứng được khi gọi thẳng API.
+        var latestClose = await _unitOfWork.ExamAssignments.GetAnswersReleaseAtAsync(exam.Id, cancellationToken);
+        var now = DateTime.UtcNow;
+
+        switch (AnswersReleaseGate.Evaluate(latestClose, now))
+        {
+            case AnswersReleaseGateState.NoAssignments:
+                return Result.Conflict<ExamDto>(
+                    "Bài kiểm tra chưa giao cho lớp nào nên chưa có đáp án để mở.");
+
+            case AnswersReleaseGateState.StillRunning:
+                return Result.Conflict<ExamDto>(
+                    "Chưa hết giờ: vẫn còn lớp đang làm bài hoặc chưa tới giờ làm bài. "
+                    + "Hết giờ của lớp cuối cùng rồi mới mở được đáp án.");
+        }
+
+        // Đã bật thì không còn gì để làm; gọi lại là an toàn.
+        if (exam.ShowResultAfterSubmit)
+        {
+            return Result.Success(await ToDtoAsync(exam, now, cancellationToken));
+        }
+
+        // Học sinh xem điểm và đáp án qua cùng một cờ: mở đáp án là bật nó. Cờ này được sửa kể cả khi cấu hình đề
+        // đã khoá (ExamEditPolicy), nên đi lối riêng ở đây không vòng qua luật nào.
+        exam.ShowResultAfterSubmit = true;
+        exam.UpdatedAt = now;
+
+        _unitOfWork.Exams.Update(exam);
+        await _unitOfWork.SaveChangesAsync(cancellationToken);
+
+        return Result.Success(await ToDtoAsync(exam, now, cancellationToken));
     }
 
     /// <inheritdoc />
@@ -582,15 +824,24 @@ public sealed class ExamService : IExamService
         }
 
         // Rời khỏi trạng thái nháp là lúc hai điều kiện được miễn lúc lưu nháp phải trả lại đủ.
-        var check = await ValidateBlueprintAsync(
-            exam.TotalQuestions,
-            exam.EasyPercentage,
-            exam.MediumPercentage,
-            exam.HardPercentage,
-            exam.Topic,
-            exam.CreatedByUserId,
-            isDraft: false,
-            cancellationToken);
+        Result check;
+        if (exam.UsesQuestionList)
+        {
+            var rows = await _unitOfWork.Exams.GetQuestionListAsync(exam.Id, cancellationToken);
+            check = CheckListPublishable(PlanFromRows(rows), PaperSettings.Of(exam));
+        }
+        else
+        {
+            check = await ValidateBlueprintAsync(
+                exam.TotalQuestions,
+                exam.EasyPercentage,
+                exam.MediumPercentage,
+                exam.HardPercentage,
+                exam.Topic,
+                exam.CreatedByUserId,
+                isDraft: false,
+                cancellationToken);
+        }
 
         if (check.IsFailure)
         {
@@ -654,7 +905,13 @@ public sealed class ExamService : IExamService
             EasyPercentage = source.EasyPercentage,
             MediumPercentage = source.MediumPercentage,
             HardPercentage = source.HardPercentage,
-            PointPerQuestion = source.PointPerQuestion,
+            PointEasy = source.PointEasy,
+            PointMedium = source.PointMedium,
+            PointHard = source.PointHard,
+            UsesQuestionList = source.UsesQuestionList,
+            ListTotalScore = source.ListTotalScore,
+            PaperCount = source.PaperCount,
+            PaperBonusUnits = source.PaperBonusUnits,
             ShuffleQuestions = source.ShuffleQuestions,
             ShuffleAnswers = source.ShuffleAnswers,
             ShowResultAfterSubmit = source.ShowResultAfterSubmit,
@@ -670,6 +927,21 @@ public sealed class ExamService : IExamService
             CreatedByUserId = source.CreatedByUserId,
             CreatedAt = now
         };
+
+        if (source.UsesQuestionList)
+        {
+            var sourceRows = await _unitOfWork.Exams.GetQuestionRowsAsync(source.Id, cancellationToken);
+            foreach (var row in sourceRows)
+            {
+                copy.Questions.Add(new ExamQuestion
+                {
+                    QuestionId = row.QuestionId,
+                    Ordinal = row.Ordinal,
+                    Point = row.Point,
+                    CreatedAt = now
+                });
+            }
+        }
 
         await _unitOfWork.Exams.AddAsync(copy, cancellationToken);
         await _unitOfWork.SaveChangesAsync(cancellationToken);
@@ -693,6 +965,315 @@ public sealed class ExamService : IExamService
         var cut = char.IsHighSurrogate(title[room - 1]) ? room - 1 : room;
         return title[..cut].TrimEnd() + CopyTitleSuffix;
     }
+
+    /// <inheritdoc />
+    public async Task<Result<IReadOnlyList<ExamQuestionDto>>> GetQuestionsAsync(
+        int id,
+        CancellationToken cancellationToken = default)
+    {
+        var found = await FindReadableAsync(id, cancellationToken);
+        if (found.IsFailure)
+        {
+            return Result.Failure<IReadOnlyList<ExamQuestionDto>>(found.Error!, found.ErrorCode);
+        }
+
+        var exam = found.ValueOrThrow;
+        if (!exam.UsesQuestionList)
+        {
+            return Result.Success<IReadOnlyList<ExamQuestionDto>>([]);
+        }
+
+        var rows = await _unitOfWork.Exams.GetQuestionListAsync(exam.Id, cancellationToken);
+
+        IReadOnlyList<ExamQuestionDto> items = rows
+            .Select(row => new ExamQuestionDto
+            {
+                Ordinal = row.Ordinal,
+                Point = row.Point,
+                Question = row.Question.ToDto(CanEditQuestion(row.Question))
+            })
+            .ToList();
+
+        return Result.Success(items);
+    }
+
+    /// <inheritdoc />
+    /// <remarks>
+    /// Mỗi mức xáo cả tập ứng viên (đã trừ các câu loại trừ) bằng một hạt giống ngẫu nhiên rồi lấy phần đầu.
+    /// Hạt giống ngẫu nhiên chứ không cố định: bấm lại phải ra một bộ khác, đó là lý do giáo viên bấm lại.
+    /// Thiếu câu không phải lỗi — trả những gì có và báo mức nào còn thiếu bao nhiêu.
+    /// Có thể loại thêm những câu mà các lớp được chọn đã nhận ở các đề trước (<c>ExcludeAssignedToGroupIds</c>).
+    /// </remarks>
+    public async Task<Result<ComposeQuestionsResultDto>> ComposeQuestionsAsync(
+        ComposeQuestionsRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+
+        var scope = ResolveWriteScope();
+        if (scope.IsFailure)
+        {
+            return Result.Failure<ComposeQuestionsResultDto>(scope.Error!, scope.ErrorCode);
+        }
+
+        var subjectId = _currentUser.SubjectId!.Value;
+        var topic = ExamMappingExtensions.NormalizeTopic(request.Topic);
+        var exclude = (request.ExcludeQuestionIds ?? []).ToHashSet();
+        var seed = (uint)Random.Shared.Next(1, int.MaxValue);
+
+        // Lọc theo lịch sử giao bài của lớp: chỉ nhận lớp giáo viên được phân công và đã công bố — id lạ hay lớp người khác bị từ
+        // chối chứ không âm thầm bỏ qua, vì bỏ qua nghĩa là giáo viên tưởng đã lọc mà thực ra không.
+        HashSet<int> alreadyAssigned = [];
+        var filterGroupIds = (request.ExcludeAssignedToGroupIds ?? []).Distinct().ToList();
+        if (filterGroupIds.Count > 0)
+        {
+            var teachable = await _unitOfWork.StudentGroups.GetTeachableByIdsAsync(
+                filterGroupIds, CurrentUserId, cancellationToken);
+            if (teachable.Count != filterGroupIds.Count)
+            {
+                return Result.Failure<ComposeQuestionsResultDto>(
+                    "Có lớp không thuộc quyền của bạn hoặc chưa công bố nên chưa lọc được theo lớp đó.",
+                    ErrorCode.Validation);
+            }
+
+            alreadyAssigned = (await _unitOfWork.Exams.GetQuestionIdsDeliveredToGroupsAsync(
+                filterGroupIds, cancellationToken)).ToHashSet();
+        }
+
+        var skippedAlreadyAssigned = 0;
+
+        var wanted = new Dictionary<QuestionDifficulty, int>
+        {
+            [QuestionDifficulty.Easy] = request.Easy,
+            [QuestionDifficulty.Medium] = request.Medium,
+            [QuestionDifficulty.Hard] = request.Hard
+        };
+
+        var pickedIds = new List<int>();
+        var missing = new Dictionary<QuestionDifficulty, int>();
+
+        foreach (var difficulty in Difficulties)
+        {
+            var need = wanted[difficulty];
+            if (need == 0)
+            {
+                missing[difficulty] = 0;
+                continue;
+            }
+
+            var candidates = await _unitOfWork.Questions.GetBlueprintCandidatesAsync(
+                subjectId, CurrentUserId, topic, difficulty, cancellationToken);
+
+            var notInExam = candidates.Where(candidate => !exclude.Contains(candidate.Id)).ToList();
+            var pool = notInExam.Where(candidate => !alreadyAssigned.Contains(candidate.Id)).ToList();
+            skippedAlreadyAssigned += notInExam.Count - pool.Count;
+            var taken = DeterministicShuffle
+                .Shuffle(pool, DeterministicShuffle.Seed($"{seed}:{difficulty}"))
+                .Take(need)
+                .Select(candidate => candidate.Id)
+                .ToList();
+
+            pickedIds.AddRange(taken);
+            missing[difficulty] = need - taken.Count;
+        }
+
+        var loaded = await _unitOfWork.Questions.GetInScopeWithAnswersByIdsAsync(
+            subjectId, CurrentUserId, pickedIds, cancellationToken);
+        var byId = loaded.ToDictionary(question => question.Id);
+
+        // Giữ thứ tự Dễ → Trung bình → Khó của lúc rút, thay vì thứ tự tuỳ ý của câu truy vấn.
+        var dtos = pickedIds
+            .Where(byId.ContainsKey)
+            .Select(questionId => byId[questionId].ToDto(CanEditQuestion(byId[questionId])))
+            .ToList();
+
+        return Result.Success(new ComposeQuestionsResultDto
+        {
+            Questions = dtos,
+            Missing = ToKeyedCounts(missing),
+            SkippedAlreadyAssigned = skippedAlreadyAssigned
+        });
+    }
+
+    private bool CanEditQuestion(Question question) => IsAdmin || question.CreatedByUserId == CurrentUserId;
+
+    /// <summary>Danh sách câu hỏi đã được kiểm là có thật và dùng được, cùng số liệu ma trận dẫn xuất.</summary>
+    private sealed record QuestionListPlan(
+        IReadOnlyList<(Question Question, decimal Point)> Items,
+        DerivedBlueprint Derived);
+
+    /// <summary>
+    /// Nạp các câu giáo viên chọn và kiểm hình dạng: câu nào phải còn trong ngân hàng mà họ đọc được. Chưa
+    /// kiểm câu đang bật hay không — bản nháp được giữ cả câu bị ẩn, để lưu dở không mất lựa chọn.
+    /// </summary>
+    private async Task<Result<QuestionListPlan>> LoadQuestionListAsync(
+        IReadOnlyList<ExamQuestionInput> requested,
+        CancellationToken cancellationToken)
+    {
+        // Giáo viên vừa bị gỡ môn vẫn cầm được token cũ; không có môn thì không có ngân hàng nào để đọc.
+        if (_currentUser.SubjectId is not { } subjectId)
+        {
+            return Result.Forbidden<QuestionListPlan>(NoSubjectMessage);
+        }
+
+        var ids = requested.Select(item => item.QuestionId).ToList();
+        var found = await _unitOfWork.Questions.GetInScopeWithAnswersByIdsAsync(
+            subjectId, CurrentUserId, ids, cancellationToken);
+
+        var byId = found.ToDictionary(question => question.Id);
+        var missing = ids.Count(id => !byId.ContainsKey(id));
+
+        if (missing > 0)
+        {
+            return Result.Failure<QuestionListPlan>(
+                $"{missing} câu hỏi trong danh sách không còn trong ngân hàng của bạn (đã bị xoá, hoặc không "
+                + "thuộc môn bạn phụ trách). Hãy bỏ các câu đó khỏi đề.");
+        }
+
+        var items = requested.Select(item => (byId[item.QuestionId], item.Point)).ToList();
+        var derived = ExamQuestionList.Derive(
+            items.Select(item => (item.Item1.Difficulty, item.Point)).ToList());
+
+        return Result.Success(new QuestionListPlan(items, derived));
+    }
+
+    private static QuestionListPlan PlanFromRows(IReadOnlyList<ExamQuestion> rows)
+    {
+        var items = rows.Select(row => (row.Question, row.Point)).ToList();
+        var derived = ExamQuestionList.Derive(
+            items.Select(item => (item.Question.Difficulty, item.Point)).ToList());
+
+        return new QuestionListPlan(items, derived);
+    }
+
+    /// <summary>Cấu hình chia đề lớn thành các đề nhỏ, đọc từ request hay từ đề đang lưu.</summary>
+    private sealed record PaperSettings(
+        int PaperCount, int TotalQuestions, int EasyPercentage, int MediumPercentage, int HardPercentage, int BonusUnits)
+    {
+        public static PaperSettings Of(SaveExamRequest request) => new(
+            request.PaperCount, request.TotalQuestions, request.EasyPercentage, request.MediumPercentage, request.HardPercentage,
+            request.PaperBonusUnits);
+
+        public static PaperSettings Of(Exam exam) => new(
+            exam.PaperCount, exam.TotalQuestions, exam.EasyPercentage, exam.MediumPercentage, exam.HardPercentage,
+            exam.PaperBonusUnits);
+    }
+
+    /// <summary>
+    /// Tổng điểm của đề theo danh sách. Đề chia nhiều đề thì là tổng điểm của MỘT đề nhỏ (số câu mỗi mức × điểm mức đó): mọi
+    /// đề nhỏ cùng số câu từng mức và cùng điểm từng mức nên cùng tổng. Đề một đề thì là tổng điểm cả danh sách.
+    /// </summary>
+    private static decimal ListScoreOf(QuestionListPlan plan, SaveExamRequest effective) =>
+        effective.PaperCount > 1
+            ? ExamScoring.TotalOf(
+                effective.TotalQuestions,
+                effective.EasyPercentage,
+                effective.MediumPercentage,
+                effective.PointEasy,
+                effective.PointMedium,
+                effective.PointHard)
+              + effective.PaperBonusUnits * PaperBonus.Unit
+            : plan.Derived.TotalScore;
+
+    /// <summary>Điều kiện để một danh sách ra khỏi trạng thái nháp — tương ứng phép kiểm ngân hàng của ma trận.</summary>
+    private static Result CheckListPublishable(QuestionListPlan plan, PaperSettings paper)
+    {
+        if (plan.Items.Count == 0)
+        {
+            return Result.Failure("Đề chưa có câu hỏi nào. Hãy thêm câu hỏi vào đề trước khi xuất bản.");
+        }
+
+        var hidden = plan.Items.Count(item => item.Question.Status != QuestionStatus.Active);
+        if (hidden > 0)
+        {
+            return Result.Failure(
+                $"Đề có {hidden} câu hỏi đang bị ẩn khỏi ngân hàng. Hãy thay các câu đó bằng câu khác "
+                + "trước khi xuất bản.");
+        }
+
+        if (plan.Derived.TotalScore <= 0)
+        {
+            return Result.Failure("Tổng điểm của đề phải lớn hơn 0. Hãy đặt điểm cho từng câu hỏi.");
+        }
+
+        return paper.PaperCount > 1 ? CheckPaperPlan(plan, paper) : Result.Success();
+    }
+
+    /// <summary>
+    /// Điều kiện để đề lớn chia được thành <c>PaperCount</c> đề nhỏ: ba tỷ lệ cộng đúng 100, mỗi mức đủ câu cho MỘT đề, và các
+    /// câu cùng mức cùng điểm. Số câu bị trùng giữa các đề không phải lỗi — chỉ là thông tin giao diện hiện cho giáo viên.
+    /// </summary>
+    private static Result CheckPaperPlan(QuestionListPlan plan, PaperSettings paper)
+    {
+        if ((long)paper.EasyPercentage + paper.MediumPercentage + paper.HardPercentage != 100)
+        {
+            return Result.Failure("Ba tỷ lệ Dễ, Trung bình, Khó của mỗi đề phải cộng đúng 100%.");
+        }
+
+        if (paper.TotalQuestions < 1)
+        {
+            return Result.Failure("Mỗi đề phải có ít nhất một câu.");
+        }
+
+        if (paper.BonusUnits > paper.TotalQuestions)
+        {
+            return Result.Failure("Điểm cộng thêm không thể nhiều đơn vị hơn số câu của một đề.");
+        }
+
+        var pointProblems = PaperPlanner.PointProblems(
+            plan.Items.Select(item => (item.Question.Difficulty, item.Point)));
+        if (pointProblems.Count > 0)
+        {
+            return Result.Failure(string.Join(' ', pointProblems));
+        }
+
+        var perPaper = BlueprintCalculator.CalculateRequiredCounts(
+            paper.TotalQuestions, paper.EasyPercentage, paper.MediumPercentage);
+
+        var pool = Difficulties.ToDictionary(
+            level => level,
+            level => plan.Items.Count(item => item.Question.Difficulty == level));
+
+        var evaluation = PaperPlanner.Evaluate(pool, perPaper, paper.PaperCount);
+
+        return evaluation.Feasible
+            ? Result.Success()
+            : Result.Failure(string.Join(' ', PaperPlanner.Problems(evaluation)));
+    }
+
+    /// <summary>Request với các trường ma trận thay bằng số liệu dẫn xuất từ danh sách câu hỏi.</summary>
+    /// <remarks>
+    /// Đề chia thành nhiều đề thì số câu mỗi đề và ba tỷ lệ là cấu hình giáo viên nhập (của một đề nhỏ) nên được giữ nguyên;
+    /// chỉ điểm theo mức vẫn dẫn xuất từ danh sách (các câu cùng mức cùng điểm, đã kiểm ở <see cref="CheckPaperPlan"/>).
+    /// </remarks>
+    private static SaveExamRequest WithDerivedMatrix(SaveExamRequest request, DerivedBlueprint derived) =>
+        request.PaperCount > 1
+            ? request with
+            {
+                PointEasy = derived.PointEasy,
+                PointMedium = derived.PointMedium,
+                PointHard = derived.PointHard
+            }
+            : request with
+            {
+                TotalQuestions = derived.TotalQuestions,
+                EasyPercentage = derived.EasyPercentage,
+                MediumPercentage = derived.MediumPercentage,
+                HardPercentage = derived.HardPercentage,
+                PointEasy = derived.PointEasy,
+                PointMedium = derived.PointMedium,
+                PointHard = derived.PointHard
+            };
+
+    private static IEnumerable<ExamQuestion> BuildQuestionRows(QuestionListPlan plan, DateTime now, int examId = 0) =>
+        plan.Items.Select((item, index) => new ExamQuestion
+        {
+            ExamId = examId,
+            QuestionId = item.Question.Id,
+            Ordinal = index,
+            Point = item.Point,
+            CreatedAt = now
+        });
 
     /// <summary>Đề mà người gọi được <b>đọc</b>: giáo viên đọc đề mình tạo, quản trị viên đọc mọi đề.</summary>
     private async Task<Result<Exam>> FindReadableAsync(int id, CancellationToken cancellationToken)
@@ -830,6 +1411,43 @@ public sealed class ExamService : IExamService
             {
                 errors.Add(
                     $"Không đủ câu {difficulty.ToDifficultyLabel()}: cần {need} nhưng ngân hàng chỉ có {have}.");
+            }
+        }
+
+        return new BlueprintPreviewDto
+        {
+            Required = ToKeyedCounts(required),
+            Available = ToKeyedCounts(available),
+            IsValid = errors.Count == 0,
+            Errors = errors
+        };
+    }
+
+    /// <summary>Đối chiếu của đề theo danh sách: "cần" là các câu đã chọn, "đang có" là số câu trong đó còn bật.</summary>
+    private static BlueprintPreviewDto BuildListPreview(IReadOnlyList<ExamQuestion> rows)
+    {
+        var required = Difficulties.ToDictionary(
+            difficulty => difficulty,
+            difficulty => rows.Count(row => row.Question.Difficulty == difficulty));
+
+        var available = Difficulties.ToDictionary(
+            difficulty => difficulty,
+            difficulty => rows.Count(
+                row => row.Question.Difficulty == difficulty && row.Question.Status == QuestionStatus.Active));
+
+        var errors = new List<string>();
+
+        if (rows.Count == 0)
+        {
+            errors.Add("Đề chưa có câu hỏi nào.");
+        }
+
+        foreach (var difficulty in Difficulties)
+        {
+            var hidden = required[difficulty] - available[difficulty];
+            if (hidden > 0)
+            {
+                errors.Add($"Có {hidden} câu {difficulty.ToDifficultyLabel()} đang bị ẩn khỏi ngân hàng.");
             }
         }
 

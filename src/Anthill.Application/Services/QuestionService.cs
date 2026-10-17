@@ -33,6 +33,8 @@ public sealed class QuestionService : IQuestionService
     private const string NoSubjectMessage =
         "Tài khoản giáo viên chưa được gán môn, nên chưa có ngân hàng câu hỏi nào để mở. "
         + "Liên hệ quản trị viên để gán môn.";
+    /// <summary>Số lớp tối đa trong bộ lọc "câu lớp đã nhận" (cùng trần với soạn tự động).</summary>
+    private const int MaxGroupFilters = 50;
     private const string AdminNeedsSubjectMessage =
         "Quản trị viên phải chọn môn cho câu hỏi bằng trường 'subjectId'.";
     private const string CannotEditMessage =
@@ -74,6 +76,43 @@ public sealed class QuestionService : IQuestionService
                 "Bộ lọc trạng thái chỉ nhận 'active', 'hidden' hoặc 'all'.");
         }
 
+        // Bỏ những câu mà lớp đã chọn đã nhận ở đề trước. Lớp phải thuộc quyền giáo viên: id lạ bị từ chối chứ không âm thầm bỏ qua,
+        // vì bỏ qua nghĩa là giáo viên tưởng đã lọc mà thực ra không.
+        IReadOnlyCollection<int>? alreadyAssigned = null;
+        if (!string.IsNullOrWhiteSpace(query.ExcludeAssignedToGroupIds))
+        {
+            if (_currentUser.IsInRole(UserRole.Admin))
+            {
+                return Result.Failure<PagedResult<QuestionDto>>("Chỉ giáo viên mới lọc theo lớp đã nhận câu hỏi được.");
+            }
+
+            var groupIds = new List<int>();
+            foreach (var part in query.ExcludeAssignedToGroupIds.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+            {
+                if (!int.TryParse(part, out var groupId) || groupId <= 0)
+                {
+                    return Result.Failure<PagedResult<QuestionDto>>("Danh sách lớp cần lọc chỉ gồm các mã số, ngăn cách bằng dấu phẩy.");
+                }
+
+                groupIds.Add(groupId);
+            }
+
+            groupIds = groupIds.Distinct().ToList();
+            if (groupIds.Count > MaxGroupFilters)
+            {
+                return Result.Failure<PagedResult<QuestionDto>>($"Chỉ lọc được tối đa {MaxGroupFilters} lớp một lần.");
+            }
+
+            var teachable = await _unitOfWork.StudentGroups.GetTeachableByIdsAsync(groupIds, CurrentUserId, cancellationToken);
+            if (teachable.Count != groupIds.Count)
+            {
+                return Result.Failure<PagedResult<QuestionDto>>(
+                    "Có lớp không thuộc quyền của bạn hoặc chưa công bố nên chưa lọc được theo lớp đó.");
+            }
+
+            alreadyAssigned = await _unitOfWork.Exams.GetQuestionIdsDeliveredToGroupsAsync(groupIds, cancellationToken);
+        }
+
         var page = await _unitOfWork.Questions.GetPagedAsync(
             scope.ValueOrThrow,
             CurrentUserId,
@@ -82,7 +121,8 @@ public sealed class QuestionService : IQuestionService
             difficulty,
             status,
             query,
-            cancellationToken);
+            cancellationToken,
+            alreadyAssigned);
 
         return Result.Success(page.Map(question => question.ToDto(CanEdit(question))));
     }
@@ -183,10 +223,12 @@ public sealed class QuestionService : IQuestionService
 
         var question = new Question
         {
+            Title = fields.Title,
             Content = fields.Content,
             ImageUrl = fields.ImageUrl,
             Topic = fields.Topic,
             Difficulty = fields.Difficulty,
+            AllowMultiple = request.AllowMultiple,
             DefaultPoint = request.DefaultPoint,
             Status = fields.Status ?? QuestionStatus.Active,
             Visibility = fields.Visibility ?? QuestionVisibility.Shared,
@@ -222,10 +264,12 @@ public sealed class QuestionService : IQuestionService
         var question = load.ValueOrThrow;
         var fields = QuestionFields.From(request);
 
+        question.Title = fields.Title;
         question.Content = fields.Content;
         question.ImageUrl = fields.ImageUrl;
         question.Topic = fields.Topic;
         question.Difficulty = fields.Difficulty;
+        question.AllowMultiple = request.AllowMultiple;
         question.DefaultPoint = request.DefaultPoint;
         question.Status = fields.Status ?? question.Status;
         question.Visibility = fields.Visibility ?? question.Visibility;
@@ -550,6 +594,7 @@ public sealed class QuestionService : IQuestionService
     /// gọi: lúc tạo là "dùng mặc định", lúc sửa là "giữ nguyên giá trị đang có".
     /// </remarks>
     private readonly record struct QuestionFields(
+        string Title,
         string Content,
         string? ImageUrl,
         string Topic,
@@ -564,6 +609,7 @@ public sealed class QuestionService : IQuestionService
             QuestionMappingExtensions.TryParseDifficulty(request.Difficulty, out var difficulty);
 
             return new QuestionFields(
+                QuestionMappingExtensions.NormalizeTitle(request.Title),
                 request.Content?.Trim() ?? string.Empty,
                 NormalizeOptional(request.ImageUrl),
                 request.Topic?.Trim() ?? string.Empty,

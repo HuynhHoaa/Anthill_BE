@@ -99,7 +99,9 @@ exam_body() {
   "easyPercentage": 100,
   "mediumPercentage": 0,
   "hardPercentage": 0,
-  "pointPerQuestion": 1,
+  "pointEasy": 100,
+  "pointMedium": 0,
+  "pointHard": 0,
   "openAt": "$1",
   "closeAt": "$2",
   "shuffleQuestions": false,
@@ -181,21 +183,41 @@ expect_status "goi luu nhap co phan tu null → 400" 400 \
 
 # ── Ho so hoc sinh ───────────────────────────────────────────────────────────────
 
-section "Hoc sinh khong tu doi ho ten va email"
+section "Hoc sinh khong tu doi ho ten, email va so dien thoai (nha truong quan ly)"
 
 expect_status "xem ho so cua chinh minh → 200" 200 "$(call GET /api/auth/me "$STUDENT_A")"
 MY_NAME=$(json_field fullName); MY_EMAIL=$(json_field email)
 
 expect_status "doi ho ten → 400" 400 \
   "$(call PUT /api/auth/me "$STUDENT_A" "{\"fullName\":\"Ten Khac\",\"email\":\"$MY_EMAIL\",\"phone\":\"\"}")"
-expect_json   "  loi gan vao o fullName" errors.fullName.0 "Họ tên và email chỉ quản trị viên mới đổi được."
+expect_json   "  loi gan vao o fullName" errors.fullName.0 "Họ tên, email và số điện thoại chỉ quản trị viên mới đổi được."
 expect_status "doi email → 400" 400 \
   "$(call PUT /api/auth/me "$STUDENT_A" "{\"fullName\":\"$MY_NAME\",\"email\":\"khac$STAMP@kiemthu.vn\",\"phone\":\"\"}")"
-expect_json   "  loi gan vao o email" errors.email.0 "Họ tên và email chỉ quản trị viên mới đổi được."
-expect_status "giu nguyen ho ten va email, sua so dien thoai → 200" 200 \
+expect_json   "  loi gan vao o email" errors.email.0 "Họ tên, email và số điện thoại chỉ quản trị viên mới đổi được."
+expect_status "tu dien so dien thoai → 400" 400 \
   "$(call PUT /api/auth/me "$STUDENT_A" "{\"fullName\":\"$MY_NAME\",\"email\":\"$MY_EMAIL\",\"phone\":\"0912345678\"}")"
-expect_json   "  so dien thoai da luu" phone 0912345678
-expect_json   "  ho ten khong doi" fullName "$MY_NAME"
+expect_json   "  loi gan vao o phone" errors.phone.0 "Họ tên, email và số điện thoại chỉ quản trị viên mới đổi được."
+expect_status "gui lai dung gia tri dang co → 200" 200 \
+  "$(call PUT /api/auth/me "$STUDENT_A" "{\"fullName\":\"$MY_NAME\",\"email\":\"$MY_EMAIL\",\"phone\":\"\"}")"
+
+# Số điện thoại do quản trị viên khai và đổi, không phải học sinh.
+section "Quan tri vien dat so dien thoai cua hoc sinh; giao vien khong thay"
+STUDENT_A_BODY="\"fullName\":\"$MY_NAME\",\"email\":\"$MY_EMAIL\",\"username\":\"hs${STAMP}a\",\"code\":\"RS${STAMP}a\",\"groupId\":$GROUP_ID"
+expect_status "admin dat so dien thoai → 200" 200 \
+  "$(call PUT "/api/students/$STUDENT_A_ID" "$ADMIN" "{$STUDENT_A_BODY,\"phone\":\"0912345678\"}")"
+expect_json   "  phone co trong phan hoi cua admin" phone 0912345678
+expect_status "so dien thoai sai dinh dang → 400" 400 \
+  "$(call PUT "/api/students/$STUDENT_A_ID" "$ADMIN" "{$STUDENT_A_BODY,\"phone\":\"abc\"}")"
+expect_status "khong gui phone thi giu nguyen → 200" 200 \
+  "$(call PUT "/api/students/$STUDENT_A_ID" "$ADMIN" "{$STUDENT_A_BODY}")"
+expect_json   "  van la 0912345678" phone 0912345678
+expect_status "hoc sinh thay so do admin dat → 200" 200 "$(call GET /api/auth/me "$STUDENT_A")"
+expect_json   "  phone cua chinh minh" phone 0912345678
+expect_status "giao vien doc ho so hoc sinh → 200" 200 "$(call GET "/api/students/$STUDENT_A_ID" "$TEACHER")"
+expect_status "  giao vien khong nhan truong phone" "" "$(json_field phone)"
+expect_status "admin xoa trang so dien thoai → 200" 200 \
+  "$(call PUT "/api/students/$STUDENT_A_ID" "$ADMIN" "{$STUDENT_A_BODY,\"phone\":\"\"}")"
+expect_status "  phone bi xoa" "" "$(json_field phone)"
 
 # ── Khoi phuc giu trang thai khoa ────────────────────────────────────────────────
 

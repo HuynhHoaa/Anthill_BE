@@ -30,7 +30,8 @@ public interface IQuestionRepository : IGenericRepository<Question>
         QuestionDifficulty? difficulty,
         QuestionStatus? status,
         PaginationParams pagination,
-        CancellationToken cancellationToken = default);
+        CancellationToken cancellationToken = default,
+        IReadOnlyCollection<int>? excludeQuestionIds = null);
 
     Task<Question?> GetWithAnswersAsync(int questionId, CancellationToken cancellationToken = default);
 
@@ -64,8 +65,19 @@ public interface IQuestionRepository : IGenericRepository<Question>
         CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Câu hỏi đã từng được đưa vào một đề đã sinh. §4.5 bắt buộc kiểm trước khi xoá —
-    /// frontend hiện xoá thẳng, không kiểm gì.
+    /// Các câu có id trong <paramref name="ids"/> mà người gọi đọc được (cùng phạm vi đọc §6), kèm đáp án và
+    /// người soạn. Câu nào ngoài phạm vi, hoặc không tồn tại, đơn giản là vắng mặt trong kết quả — nên
+    /// người gọi so số lượng để biết có câu nào không dùng được.
+    /// </summary>
+    Task<IReadOnlyList<Question>> GetInScopeWithAnswersByIdsAsync(
+        int subjectId,
+        int currentUserId,
+        IReadOnlyCollection<int> ids,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Câu hỏi đã từng được đưa vào một đề đã sinh, hoặc đang nằm trong danh sách câu của một đề. §4.5 bắt
+    /// buộc kiểm trước khi xoá — frontend hiện xoá thẳng, không kiểm gì.
     /// </summary>
     Task<bool> IsUsedInAnyPaperAsync(int questionId, CancellationToken cancellationToken = default);
 

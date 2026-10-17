@@ -23,6 +23,12 @@ public sealed record QuestionDto
 {
     public required int Id { get; init; }
 
+    /// <summary>
+    /// Tên ngắn của câu hỏi, đúng như giáo viên đã đặt. <b>Có thể rỗng</b> — câu hỏi cũ và câu chưa được đặt
+    /// tên — và khi đó nơi hiển thị dùng phần đầu của <see cref="Content"/>.
+    /// </summary>
+    public required string Title { get; init; }
+
     public required string Content { get; init; }
 
     public string? ImageUrl { get; init; }
@@ -31,6 +37,11 @@ public sealed record QuestionDto
 
     /// <summary>Chữ thường: <c>"easy" | "medium" | "hard"</c>, khớp union <c>DifficultyLevel</c>.</summary>
     public required string Difficulty { get; init; }
+
+    /// <summary>
+    /// Câu cho chọn nhiều đáp án (có thể có nhiều hơn một đáp án đúng); học sinh phải chọn đúng và đủ.
+    /// </summary>
+    public required bool AllowMultiple { get; init; }
 
     public required decimal DefaultPoint { get; init; }
 

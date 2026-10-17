@@ -27,6 +27,20 @@ public interface IExamService
     /// <summary>Chi tiết một đề. Đề của giáo viên khác trả <b>404</b>, không phải 403 (§4.2).</summary>
     Task<Result<ExamDto>> GetAsync(int id, CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// Danh sách câu hỏi của một đề soạn theo danh sách, theo thứ tự, kèm đáp án đúng và điểm từng câu.
+    /// Rỗng với đề theo ma trận. Cùng phạm vi đọc với <see cref="GetAsync"/>.
+    /// </summary>
+    Task<Result<IReadOnlyList<ExamQuestionDto>>> GetQuestionsAsync(int id, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// "Soạn tự động": rút ngẫu nhiên câu hỏi từ ngân hàng theo số câu từng mức, loại các câu đã có. Chỉ trả
+    /// gợi ý, không ghi gì — đề chỉ đổi khi giáo viên lưu.
+    /// </summary>
+    Task<Result<ComposeQuestionsResultDto>> ComposeQuestionsAsync(
+        ComposeQuestionsRequest request,
+        CancellationToken cancellationToken = default);
+
     Task<Result<ExamDto>> CreateAsync(
         SaveExamRequest request,
         CancellationToken cancellationToken = default);
@@ -66,6 +80,12 @@ public interface IExamService
     Task<Result<BlueprintPreviewDto>> GetBlueprintAsync(int id, CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// <c>GET /api/exams/{id}/papers</c>. Cách đề được chia thành các đề nhỏ: số câu mỗi mức, bao nhiêu câu trùng hay dư, và đề
+    /// nhỏ nào đã phát cho em nào của lớp nào. Đề không chia trả <c>paperCount = 1</c> và không có lớp nào.
+    /// </summary>
+    Task<Result<ExamPapersDto>> GetPapersAsync(int id, CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// Chuyển nháp sang xuất bản. Bổ sung so với frontend, vốn làm việc này bằng cách gửi PUT
     /// với <c>lifecycle</c> bỏ trống (§4.6).
     /// </summary>
@@ -76,4 +96,11 @@ public interface IExamService
     /// " (bản sao)", chưa giao cho ai. Đề của giáo viên khác trả <b>404</b> (§4.2).
     /// </summary>
     Task<Result<ExamDto>> DuplicateAsync(int id, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Mở điểm và đáp án từng câu cho học sinh: bật <c>showResultAfterSubmit</c> của đề. Chỉ làm được khi
+    /// <b>hết giờ</b> — lớp đóng bài muộn nhất đã qua giờ đóng (<b>409</b> nếu còn lớp đang làm hay chưa tới giờ
+    /// làm, hoặc đề chưa giao cho ai). Đã bật rồi thì trả 200 không đổi gì. Chỉ chủ đề.
+    /// </summary>
+    Task<Result<ExamDto>> ReleaseAnswersAsync(int id, CancellationToken cancellationToken = default);
 }

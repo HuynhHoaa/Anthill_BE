@@ -10,9 +10,9 @@ namespace Anthill.Application.Validators;
 /// có thuộc lớp mình không, tài khoản có bị khoá không — đều cần đọc database nên thuộc về service.
 /// </para>
 /// <para>
-/// Hai danh sách phải được <b>null-guard</b>. DTO khai giá trị mặc định là mảng rỗng, nhưng
+/// Các danh sách phải được <b>null-guard</b>. DTO khai giá trị mặc định là mảng rỗng, nhưng
 /// <c>System.Text.Json</c> ghi đè giá trị đó bằng <c>null</c> khi client gửi thẳng
-/// <c>"studentIds": null</c> — và một quy tắc đọc <c>.Count</c> trên đó sẽ ném
+/// <c>"groupIds": null</c> — và một quy tắc đọc <c>.Count</c> trên đó sẽ ném
 /// <see cref="NullReferenceException"/>, biến một request sai định dạng thành lỗi 500. Cùng khuôn
 /// với <see cref="AddMembersRequestValidator"/>.
 /// </para>
@@ -20,7 +20,7 @@ namespace Anthill.Application.Validators;
 public sealed class AssignExamRequestValidator : AbstractValidator<AssignExamRequest>
 {
     /// <summary>
-    /// Trần cho <b>tổng số học sinh</b> của một lần gọi, tính sau khi đã bung các nhóm ra.
+    /// Trần cho <b>tổng số học sinh</b> của một lần gọi, tính sau khi đã bung các lớp ra.
     /// </summary>
     /// <remarks>
     /// Đặt trần trên từng danh sách riêng là hàng rào hở: 500 nhóm mỗi nhóm 40 em vẫn lọt qua, rồi
@@ -34,12 +34,17 @@ public sealed class AssignExamRequestValidator : AbstractValidator<AssignExamReq
 
     public AssignExamRequestValidator()
     {
-        RuleFor(request => request)
-            .Must(request => request.StudentIds is { Count: > 0 }
-                             || request.GroupIds is { Count: > 0 }
-                             || request.Classes is { Count: > 0 })
+        // Bài kiểm tra chỉ giao theo lớp. Từ chối rõ ràng chứ không lặng lẽ bỏ qua: một client cũ gửi danh sách
+        // em kèm một lớp sẽ nhận "đã giao" trong khi danh sách em bị vứt đi.
+        RuleFor(request => request.StudentIds)
+            .Must(ids => ids is null or { Count: 0 })
             .WithName(nameof(AssignExamRequest.StudentIds))
-            .WithMessage("Hãy chọn ít nhất một học sinh hoặc một nhóm lớp.");
+            .WithMessage("Bài kiểm tra chỉ giao theo lớp, không giao riêng từng học sinh. Hãy chọn lớp.");
+
+        RuleFor(request => request)
+            .Must(request => request.GroupIds is { Count: > 0 } || request.Classes is { Count: > 0 })
+            .WithName(nameof(AssignExamRequest.Classes))
+            .WithMessage("Hãy chọn ít nhất một lớp.");
 
         // Một lớp chỉ được nói tới một lần. Nằm ở cả GroupIds lẫn Classes, hay hai lần trong Classes với hai
         // khung giờ, là hai câu trả lời cho cùng một câu hỏi "lớp này làm lúc nào" — chọn lặng lẽ một bên
@@ -91,16 +96,6 @@ public sealed class AssignExamRequestValidator : AbstractValidator<AssignExamReq
             .WithName(nameof(AssignExamRequest.CloseAt))
             .WithMessage("Giờ đóng bài phải sau giờ mở bài.")
             .When(request => request.OpenAt.HasValue && request.CloseAt.HasValue);
-
-        RuleFor(request => request.StudentIds)
-            .Must(ids => ids!.Count <= MaxTargetsPerRequest)
-            .WithMessage($"Mỗi lần chỉ chọn được tối đa {MaxTargetsPerRequest} học sinh.")
-            .When(request => request.StudentIds is { Count: > 0 });
-
-        RuleFor(request => request.StudentIds)
-            .Must(ids => ids!.All(id => id > 0))
-            .WithMessage("Danh sách học sinh chứa mã không hợp lệ.")
-            .When(request => request.StudentIds is { Count: > 0 });
 
         RuleFor(request => request.GroupIds)
             .Must(ids => ids!.All(id => id > 0))

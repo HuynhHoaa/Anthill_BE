@@ -17,9 +17,8 @@ namespace Anthill.Application.DTOs.Students;
 /// nhập đầu tiên.
 /// </para>
 /// <para>
-/// Cố ý không có <c>Phone</c> hay <c>AvatarColor</c>: đó là thông tin học sinh tự điền qua
-/// <c>PUT /api/auth/me</c>, không phải thứ quản trị viên khai hộ lúc mở tài khoản.
-/// Cũng không có <c>Role</c> — endpoint này chỉ tạo được học sinh, và <c>CreatedAt</c> do server
+/// Số điện thoại và email do quản trị viên (nhà trường) khai và đổi; học sinh không tự sửa được qua
+/// <c>PUT /api/auth/me</c>. Cố ý không có <c>AvatarColor</c> hay <c>Role</c> — endpoint này chỉ tạo được học sinh, và <c>CreatedAt</c> do server
 /// đặt bằng <c>DateTime.UtcNow</c> (§5).
 /// </para>
 /// </remarks>
@@ -36,6 +35,9 @@ public sealed record CreateStudentRequest
 
     /// <summary>Mật khẩu ban đầu. Học sinh bị ép đổi ở lần đăng nhập đầu tiên.</summary>
     public required string Password { get; init; }
+
+    /// <summary>Tuỳ chọn. Bỏ trống thì tài khoản chưa có số điện thoại.</summary>
+    public string? Phone { get; init; }
 
     /// <summary>Bỏ trống hoặc 0 nghĩa là chưa xếp nhóm — tài khoản vẫn tạo được bình thường.</summary>
     public int? GroupId { get; init; }

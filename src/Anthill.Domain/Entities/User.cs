@@ -40,6 +40,12 @@ public class User : BaseEntity
 
     public required string AvatarColor { get; set; }
 
+    /// <summary>
+    /// Ảnh đại diện do giáo viên hay quản trị viên tự tải lên: đường dẫn tương đối do <c>/api/uploads/images</c> cấp.
+    /// NULL là chưa có ảnh — giao diện khi đó vẽ chữ cái đầu trên nền <see cref="AvatarColor"/>.
+    /// </summary>
+    public string? AvatarUrl { get; set; }
+
     /// <summary>Bật khi admin cấp/reset mật khẩu; ép đổi ở lần đăng nhập kế tiếp.</summary>
     public bool MustChangePassword { get; set; }
 

@@ -330,14 +330,14 @@ public static class AssignmentSchedule
     }
 
     /// <summary>Cặp giờ thô cho một bản ghi giao bài sắp được tạo.</summary>
-    /// <param name="viaGroupId">Lớp mà em được giao qua; NULL khi giáo viên chọn đích danh em.</param>
+    /// <param name="viaGroupId">Lớp mà em được giao qua; bài chỉ giao theo lớp nên luôn có giá trị, NULL chỉ để hàm thuần này còn xử lý được dữ liệu cũ.</param>
     /// <param name="requestWindow">Cặp giờ chung của request (NULL cả hai = không kèm giờ).</param>
     /// <param name="classWindows">Khung giờ riêng của từng lớp trong request, NULL cả hai = theo lịch đề.</param>
     /// <param name="inheritedWindows">Khung giờ đại diện của các lớp đã có bài từ trước.</param>
     /// <remarks>
     /// Thứ tự ưu tiên: khung giờ khai riêng cho lớp → cặp giờ chung của request → khung giờ lớp đang theo
     /// → lịch đề. Vế thứ ba là để em mới xếp vào lớp làm bài cùng giờ với cả lớp khi giáo viên chỉ gửi lại
-    /// lớp để giao bổ sung. Em chọn đích danh không có lớp nào để kế thừa, nên chỉ theo request.
+    /// lớp để giao bổ sung. Không có lớp (dữ liệu cũ) thì không có gì để kế thừa, nên chỉ theo request.
     /// </remarks>
     public static (DateTime? OpenAt, DateTime? CloseAt) WindowForNewAssignment(
         int? viaGroupId,

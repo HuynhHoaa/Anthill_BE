@@ -36,6 +36,14 @@ public interface IAuthService
         CancellationToken cancellationToken = default);
 
     /// <summary>
+    /// <c>PUT /api/auth/me/avatar</c>. Đặt hay gỡ ảnh đại diện của chính mình; chỉ quản trị viên và giáo viên
+    /// (<see cref="AvatarPolicy"/>), học sinh nhận <see cref="ErrorCode.Forbidden"/>.
+    /// </summary>
+    Task<Result<UserProfileDto>> UpdateCurrentAvatarAsync(
+        UpdateAvatarRequest request,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
     /// <c>POST /api/auth/change-password</c>. Đổi mật khẩu thành công phải sinh
     /// <c>SecurityStamp</c> mới và tắt cờ <c>MustChangePassword</c>.
     /// Sai mật khẩu hiện tại là <see cref="ErrorCode.Validation"/> kèm lỗi của trường

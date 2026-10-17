@@ -34,6 +34,7 @@ public static class ExamAttemptMappingExtensions
             Content = question.ContentSnapshot,
             ImageUrl = question.ImageUrlSnapshot,
             Point = question.Point,
+            AllowMultiple = question.AllowMultiple,
             Answers = question.Answers
                 .OrderBy(answer => answer.Ordinal)
                 .Select(answer => new AttemptAnswerOptionDto
@@ -111,10 +112,10 @@ public static class ExamAttemptMappingExtensions
             DurationMinutes = exam.DurationMinutes,
             TotalQuestions = totalQuestions,
 
-            // Ba trường dưới đây CHỈ để màn giới thiệu tính thang điểm và hiển thị, không phải
-            // blueprint (tỷ lệ ba mức độ) mà class doc ở trên nói học sinh không có lý do đọc —
-            // an toàn để trả ra.
-            PointPerQuestion = exam.PointPerQuestion,
+            // Ba trường dưới đây CHỈ để màn giới thiệu hiển thị, không phải blueprint (tỷ lệ ba mức
+            // độ) mà class doc ở trên nói học sinh không có lý do đọc — an toàn để trả ra. Tổng điểm
+            // thay cho điểm mỗi câu: điểm từng mức sẽ hé lộ cấu trúc ba mức độ.
+            TotalScore = ExamScoring.TotalOf(exam),
             ShuffleQuestions = exam.ShuffleQuestions,
             ShuffleAnswers = exam.ShuffleAnswers,
 

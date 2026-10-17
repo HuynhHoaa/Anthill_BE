@@ -37,7 +37,11 @@ public class AppDbContext : DbContext
 
     public DbSet<ExamAssignment> ExamAssignments => Set<ExamAssignment>();
 
+    public DbSet<ExamQuestion> ExamQuestions => Set<ExamQuestion>();
+
     public DbSet<ExamPaper> ExamPapers => Set<ExamPaper>();
+
+    public DbSet<ExamPaperVariant> ExamPaperVariants => Set<ExamPaperVariant>();
 
     public DbSet<ExamPaperQuestion> ExamPaperQuestions => Set<ExamPaperQuestion>();
 

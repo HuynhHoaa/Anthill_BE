@@ -12,6 +12,11 @@ public class QuestionConfiguration : IEntityTypeConfiguration<Question>
 
         builder.HasKey(q => q.Id);
 
+        // Rỗng là hợp lệ: câu hỏi chưa được đặt tên.
+        builder.Property(q => q.Title)
+            .IsRequired()
+            .HasMaxLength(200);
+
         builder.Property(q => q.Content)
             .IsRequired()
             .HasMaxLength(2000);

@@ -6,12 +6,12 @@
 # Trong khoang do hoc sinh da duoc bao gio va co the dang lam bai, nen doi gio chi gay hai. Het gio dong
 # thi khong ai lam do nua, va do la duong cuu em lo gio hoac mo lai de, nen mo khoa tro lai.
 #
-# Bo kiem nay canh bon duong doi gio deu bi chan CHAN THAT o server, khong chi an nut:
+# Bo kiem nay canh hai duong doi gio deu bi chan CHAN THAT o server, khong chi an nut:
 #   1. Sua ca de (PUT) va doi lich de (PATCH) — chi chan khi de da giao cho ai do.
 #   2. Gui lai mot lop kem khung gio moi — giao them hoc sinh vao lop thi van duoc.
-#   3. Doi gio rieng cua mot em chon dich danh (PATCH).
-# va co khoa (scheduleLocked) tren de, tren tung dong giao bai va tren tung khung gio cua lop khop voi
-# viec server tu choi.
+# Bai chi giao theo lop nen khong con duong doi gio rieng tung em: khung cua mot em luon la khung cua lop em.
+# Co khoa (scheduleLocked) tren de, tren tung dong giao bai va tren tung khung gio cua lop khop voi viec
+# server tu choi.
 
 source "$(dirname "$0")/lib.sh"
 
@@ -129,7 +129,7 @@ add_student() {
 
 # Than de 9 cau. $1 tieu de, $2/$3 moc mo/dong ISO, $4 thoi luong (phut).
 exam_body() {
-  printf '{"title":"%s","topic":"","durationMinutes":%s,"totalQuestions":9,"easyPercentage":45,"mediumPercentage":33,"hardPercentage":22,"pointPerQuestion":1,"shuffleQuestions":true,"shuffleAnswers":true,"showResultAfterSubmit":true,"openAt":"%s","closeAt":"%s"}' \
+  printf '{"title":"%s","topic":"","durationMinutes":%s,"totalQuestions":9,"easyPercentage":45,"mediumPercentage":33,"hardPercentage":22,"pointEasy":10,"pointMedium":10,"pointHard":15,"shuffleQuestions":true,"shuffleAnswers":true,"showResultAfterSubmit":true,"openAt":"%s","closeAt":"%s"}' \
     "$1" "$4" "$2" "$3"
 }
 
@@ -147,11 +147,6 @@ patch_exam_schedule() {
   call PATCH "/api/exams/$1/schedule" "$TEACHER" "{\"openAt\":\"$(at_hours "$2")\",\"closeAt\":\"$(at_hours "$3")\"}"
 }
 
-# PATCH gio rieng cua dong giao bai $2 trong de $1 sang khung $3..$4 (gio tu bay gio). In ma HTTP.
-patch_assignment() {
-  call PATCH "/api/exams/$1/assignments/$2/schedule" "$TEACHER" "{\"openAt\":\"$(at_hours "$3")\",\"closeAt\":\"$(at_hours "$4")\"}"
-}
-
 # Than PUT dua de ve nhap: $1 tieu de, $2/$3 moc mo/dong ISO. Giu nguyen cau hinh, chi them lifecycle.
 draft_body() {
   local body
@@ -165,11 +160,9 @@ resend_class() {
     "{\"studentIds\":[],\"classes\":[{\"groupId\":$2,\"openAt\":\"$(at_hours "$3")\",\"closeAt\":\"$(at_hours "$4")\"}],\"notify\":false}"
 }
 
-# Giao de $1 cho hoc sinh chon dich danh $2, kem khung $3..$4 (gio tu bay gio; bo trong = theo lich de).
-assign_student() {
-  local window=""
-  [[ -n "${3:-}" ]] && window=",\"openAt\":\"$(at_hours "$3")\",\"closeAt\":\"$(at_hours "$4")\""
-  call POST "/api/exams/$1/assignments" "$TEACHER" "{\"studentIds\":[$2],\"groupIds\":[],\"notify\":false$window}"
+# Giao de $1 cho lop $2 theo lich cua de (khong kem gio rieng). In ma HTTP.
+assign_class() {
+  call POST "/api/exams/$1/assignments" "$TEACHER" "{\"studentIds\":[],\"groupIds\":[$2],\"notify\":false}"
 }
 
 section "Dung hai lop"
@@ -244,34 +237,32 @@ expect_status "  cau bao noi de dang mo" yes "$(body_says dang_mo)"
 expect_status "gui lai lop B kem khung moi → 409" 409 "$(resend_class "$E2" "$G_B" 6 9)"
 expect_status "  cau bao noi dang mo" yes "$(body_says dang_mo)"
 
-section "Em chon dich danh: dong giao bai tu khoa theo gio cua em"
-new_exam "De giao le $STAMP" -24 168; E3=$NEW_EID
-expect_status "giao em B, khung 5..7 gio nua → 200" 200 "$(assign_student "$E3" "$SID_B" 5 7)"
+section "Lop co gio rieng: dong giao bai tu khoa theo gio cua lop"
+new_exam "De giao lop $STAMP" -24 168; E3=$NEW_EID
+expect_status "giao lop B, khung 5..7 gio nua → 200" 200 "$(resend_class "$E3" "$G_B" 5 7)"
 expect_status "bang theo doi → 200" 200 "$(call GET "/api/exams/$E3/assignments" "$TEACHER")"
-AID_B=$(row_of_student id "$SID_B")
 expect_status "  con xa: khong khoa" false "$(row_of_student scheduleLocked "$SID_B")"
-expect_status "doi gio em, con 5 gio → 200" 200 "$(patch_assignment "$E3" "$AID_B" 8 10)"
-expect_status "doi sang con 114 phut → 200" 200 "$(patch_assignment "$E3" "$AID_B" 1.9 4)"
+expect_status "doi gio lop, con 5 gio → 200" 200 "$(resend_class "$E3" "$G_B" 8 10)"
+expect_status "doi sang con 114 phut → 200" 200 "$(resend_class "$E3" "$G_B" 1.9 4)"
 expect_status "bang theo doi → 200" 200 "$(call GET "/api/exams/$E3/assignments" "$TEACHER")"
 expect_status "  con 114 phut: khoa" true "$(row_of_student scheduleLocked "$SID_B")"
 B_OPEN=$(row_of_student openAt "$SID_B"); B_CLOSE=$(row_of_student closeAt "$SID_B")
-expect_status "doi gio em → 409" 409 "$(patch_assignment "$E3" "$AID_B" 8 10)"
-expect_status "  cau bao noi ve em" yes "$(body_says em)"
+expect_status "doi gio lop → 409" 409 "$(resend_class "$E3" "$G_B" 8 10)"
+expect_status "  cau bao noi ve lop" yes "$(body_says lop)"
 expect_status "  cau bao noi sap mo" yes "$(body_says sap_mo)"
-expect_status "ve lich de (de dang mo) → 409" 409 \
-  "$(call PATCH "/api/exams/$E3/assignments/$AID_B/schedule" "$TEACHER" "{}")"
+expect_status "ve lich de (lop dang khoa) → 409" 409 \
+  "$(call POST "/api/exams/$E3/assignments" "$TEACHER" "{\"studentIds\":[],\"classes\":[{\"groupId\":$G_B}],\"notify\":false}")"
 expect_status "gui lai dung khung dang giu → 200 (khong doi gi)" 200 \
-  "$(call PATCH "/api/exams/$E3/assignments/$AID_B/schedule" "$TEACHER" "{\"openAt\":\"$B_OPEN\",\"closeAt\":\"$B_CLOSE\"}")"
+  "$(call POST "/api/exams/$E3/assignments" "$TEACHER" "{\"studentIds\":[],\"classes\":[{\"groupId\":$G_B,\"openAt\":\"$B_OPEN\",\"closeAt\":\"$B_CLOSE\"}],\"notify\":false}")"
 
 section "Het gio dong: mo khoa lai de cuu em lo gio va mo lai de"
 new_exam "De da dong $STAMP" -5 -1; E4=$NEW_EID
-expect_status "giao em A2 (theo lich de da dong) → 200" 200 "$(assign_student "$E4" "$SID_A2")"
-expect_status "giao lop B → 200" 200 \
-  "$(call POST "/api/exams/$E4/assignments" "$TEACHER" "{\"studentIds\":[],\"groupIds\":[$G_B],\"notify\":false}")"
+expect_status "giao lop A (theo lich de da dong) → 200" 200 "$(assign_class "$E4" "$G_A")"
+expect_status "giao lop B → 200" 200 "$(assign_class "$E4" "$G_B")"
 expect_status "bang theo doi → 200" 200 "$(call GET "/api/exams/$E4/assignments" "$TEACHER")"
-AID_A2=$(row_of_student id "$SID_A2")
 expect_status "  em A2 khong khoa" false "$(row_of_student scheduleLocked "$SID_A2")"
-expect_status "cuu em A2: dat gio rieng sau 5 gio → 200" 200 "$(patch_assignment "$E4" "$AID_A2" 5 7)"
+expect_status "cuu lop A: dat gio rieng sau 5 gio → 200" 200 "$(resend_class "$E4" "$G_A" 5 7)"
+expect_json   "  hai em cua lop A doi gio" scheduleUpdatedCount 2
 expect_status "gui lai lop B kem khung moi → 200" 200 "$(resend_class "$E4" "$G_B" 6 9)"
 expect_json   "  scheduleUpdatedCount = 1" scheduleUpdatedCount 1
 expect_status "chi tiet de → 200" 200 "$(call GET "/api/exams/$E4" "$TEACHER")"
@@ -307,12 +298,11 @@ section "Cap gio chung cua request cung bi khoa khi kem groupIds"
 expect_status "gui lai lop B qua groupIds kem cap gio chung, de dang mo → 409" 409 \
   "$(call POST "/api/exams/$E2/assignments" "$TEACHER" "{\"studentIds\":[],\"groupIds\":[$G_B],\"openAt\":\"$(at_hours 6)\",\"closeAt\":\"$(at_hours 9)\",\"notify\":false}")"
 
-section "Em theo lich de tren de dang mo: dat gio rieng cung bi chan"
-expect_status "giao em A2 (theo lich de dang mo) → 200" 200 "$(assign_student "$E2" "$SID_A2")"
+section "Lop theo lich de tren de dang mo: dat gio rieng cung bi chan"
+expect_status "giao lop A (theo lich de dang mo) → 200" 200 "$(assign_class "$E2" "$G_A")"
 expect_status "bang theo doi → 200" 200 "$(call GET "/api/exams/$E2/assignments" "$TEACHER")"
-AID_A2_OPEN=$(row_of_student id "$SID_A2")
 expect_status "  em A2 khoa" true "$(row_of_student scheduleLocked "$SID_A2")"
-expect_status "dat gio rieng cho em A2 → 409" 409 "$(patch_assignment "$E2" "$AID_A2_OPEN" 8 10)"
+expect_status "dat gio rieng cho lop A → 409" 409 "$(resend_class "$E2" "$G_A" 8 10)"
 expect_status "  cau bao noi dang mo" yes "$(body_says dang_mo)"
 
 section "Em da bat dau lam bai: gui lai lop (chi con em do) khong bi chan va khong doi gio em"

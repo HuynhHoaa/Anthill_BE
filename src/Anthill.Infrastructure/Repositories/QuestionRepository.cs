@@ -21,13 +21,19 @@ public class QuestionRepository : GenericRepository<Question>, IQuestionReposito
         QuestionDifficulty? difficulty,
         QuestionStatus? status,
         PaginationParams pagination,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        IReadOnlyCollection<int>? excludeQuestionIds = null)
     {
         var query = InScope(DbSet.AsNoTracking(), subjectId, currentUserId)
             .Include(q => q.CreatedBy)
             .Include(q => q.Answers.OrderBy(a => a.Ordinal));
 
         var filtered = ApplyFilters(query, search, topic, difficulty, status);
+
+        if (excludeQuestionIds is { Count: > 0 })
+        {
+            filtered = filtered.Where(q => !excludeQuestionIds.Contains(q.Id));
+        }
 
         return await filtered
             .OrderByDescending(q => q.CreatedAt)
@@ -103,8 +109,27 @@ public class QuestionRepository : GenericRepository<Question>, IQuestionReposito
             .ToListAsync(cancellationToken);
     }
 
+    public async Task<IReadOnlyList<Question>> GetInScopeWithAnswersByIdsAsync(
+        int subjectId,
+        int currentUserId,
+        IReadOnlyCollection<int> ids,
+        CancellationToken cancellationToken = default)
+    {
+        if (ids.Count == 0)
+        {
+            return [];
+        }
+
+        return await InScope(DbSet.AsNoTracking(), subjectId, currentUserId)
+            .Where(q => ids.Contains(q.Id))
+            .Include(q => q.CreatedBy)
+            .Include(q => q.Answers.OrderBy(a => a.Ordinal))
+            .ToListAsync(cancellationToken);
+    }
+
     public async Task<bool> IsUsedInAnyPaperAsync(int questionId, CancellationToken cancellationToken = default) =>
-        await Context.ExamPaperQuestions.AnyAsync(pq => pq.QuestionId == questionId, cancellationToken);
+        await Context.ExamPaperQuestions.AnyAsync(pq => pq.QuestionId == questionId, cancellationToken)
+        || await Context.ExamQuestions.AnyAsync(row => row.QuestionId == questionId, cancellationToken);
 
     public async Task<int> CountInSubjectAsync(int subjectId, CancellationToken cancellationToken = default) =>
         await DbSet.CountAsync(q => q.SubjectId == subjectId, cancellationToken);
@@ -153,7 +178,8 @@ public class QuestionRepository : GenericRepository<Question>, IQuestionReposito
         if (SearchText.ToLikePattern(search) is { } pattern)
         {
             query = query.Where(q =>
-                EF.Functions.ILike(EF.Functions.Unaccent(q.Content), pattern)
+                EF.Functions.ILike(EF.Functions.Unaccent(q.Title), pattern)
+                || EF.Functions.ILike(EF.Functions.Unaccent(q.Content), pattern)
                 || EF.Functions.ILike(EF.Functions.Unaccent(q.Topic), pattern));
         }
 

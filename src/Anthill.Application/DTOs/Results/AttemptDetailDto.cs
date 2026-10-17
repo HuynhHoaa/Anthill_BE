@@ -4,7 +4,7 @@ namespace Anthill.Application.DTOs.Results;
 /// <remarks>
 /// Cùng một endpoint phục vụ hai vai trò với hai mức chi tiết khác nhau. Giáo viên sở hữu đề luôn
 /// thấy tất cả. Với học sinh, điểm cần ba điều kiện — bài là của mình, đã chấm xong, và giáo viên bật
-/// <c>showResultAfterSubmit</c> — còn <see cref="AttemptDetailQuestionDto.CorrectAnswerId"/> và
+/// <c>showResultAfterSubmit</c> — còn <see cref="AttemptDetailQuestionDto.CorrectAnswerIds"/> và
 /// <see cref="AttemptDetailQuestionDto.IsCorrect"/> cần thêm điều kiện thứ tư: mọi lượt giao của đề
 /// đã qua giờ đóng. Chưa đủ thì hai trường đó <b>vắng mặt khỏi JSON</b> (§3 quy tắc ⑥).
 /// </remarks>
@@ -65,6 +65,12 @@ public sealed record AttemptDetailDto
     /// </remarks>
     public DateTime? AnswersVisibleAt { get; init; }
 
+    /// <summary>
+    /// Mã đề của em ("A", "B"…) khi đề được chia thành nhiều đề. Vắng khỏi JSON với đề không chia, và <b>luôn vắng với học sinh</b>:
+    /// học sinh không biết mình cầm đề nào, càng không biết bạn cầm đề nào.
+    /// </summary>
+    public string? PaperLabel { get; init; }
+
     public required IReadOnlyList<AttemptDetailQuestionDto> Questions { get; init; }
 }
 
@@ -85,20 +91,28 @@ public sealed record AttemptDetailQuestionDto
 
     public required IReadOnlyList<AttemptDetailAnswerDto> Answers { get; init; }
 
-    /// <summary>Đáp án em đã chọn. NULL nghĩa là bỏ trống câu này.</summary>
-    public int? SelectedAnswerId { get; init; }
+    /// <summary>Câu cho chọn nhiều đáp án: học sinh phải chọn đúng và đủ mới được điểm.</summary>
+    public required bool AllowMultiple { get; init; }
 
-    /// <summary>Vắng mặt khỏi JSON khi người gọi chưa được phép xem đáp án.</summary>
-    public int? CorrectAnswerId { get; init; }
+    /// <summary>Các đáp án em đã chọn. Mảng rỗng nghĩa là bỏ trống câu này.</summary>
+    public required IReadOnlyList<int> SelectedAnswerIds { get; init; }
 
-    /// <summary>Vắng mặt cùng lúc với <see cref="CorrectAnswerId"/>.</summary>
+    /// <summary>
+    /// Các đáp án đúng. Vắng mặt khỏi JSON khi người gọi chưa được phép xem đáp án.
+    /// </summary>
+    /// <remarks>Một phần tử với câu một đáp án đúng; có thể nhiều hơn với câu cho chọn nhiều đáp án.</remarks>
+    public IReadOnlyList<int>? CorrectAnswerIds { get; init; }
+
+    /// <summary>
+    /// Em chọn đúng và đủ các đáp án đúng. Vắng mặt cùng lúc với <see cref="CorrectAnswerIds"/>.
+    /// </summary>
     public bool? IsCorrect { get; init; }
 }
 
 /// <summary>Một phương án trả lời trong bản đề.</summary>
 /// <remarks>
 /// Cố ý <b>không có</b> trường <c>isCorrect</c>. Đáp án đúng nếu được phép xem thì đi qua
-/// <see cref="AttemptDetailQuestionDto.CorrectAnswerId"/> — đúng một trường, một chỗ để kiểm.
+/// <see cref="AttemptDetailQuestionDto.CorrectAnswerIds"/> — đúng một trường, một chỗ để kiểm.
 /// Gắn cờ lên từng phương án nghĩa là mỗi lần thêm một nhánh trả dữ liệu lại phải nhớ lọc nó.
 /// </remarks>
 public sealed record AttemptDetailAnswerDto

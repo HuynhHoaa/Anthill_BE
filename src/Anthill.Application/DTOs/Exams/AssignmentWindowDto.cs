@@ -1,7 +1,7 @@
 namespace Anthill.Application.DTOs.Exams;
 
 /// <summary>
-/// Một khung giờ đang áp cho một phần người được giao đề: một lớp, hoặc một nhóm học sinh chọn lẻ cùng giờ.
+/// Một khung giờ đang áp cho một phần người được giao đề: một lớp, hoặc (dữ liệu cũ) một nhóm học sinh giao lẻ cùng giờ.
 /// </summary>
 /// <remarks>
 /// <para>
@@ -17,7 +17,7 @@ namespace Anthill.Application.DTOs.Exams;
 /// </remarks>
 public sealed record AssignmentWindowDto
 {
-    /// <summary>Lớp mà các em được giao qua. NULL (vắng khỏi JSON) với học sinh chọn đích danh.</summary>
+    /// <summary>Lớp mà các em được giao qua. NULL (vắng khỏi JSON) chỉ với dữ liệu cũ, từ thời còn giao riêng từng em.</summary>
     public int? GroupId { get; init; }
 
     /// <summary>Tên lớp; NULL cùng <see cref="GroupId"/>.</summary>

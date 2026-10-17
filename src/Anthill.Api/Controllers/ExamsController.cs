@@ -65,6 +65,16 @@ public sealed class ExamsController : ApiControllerBase
         CancellationToken cancellationToken)
         => FromResult(await _examService.PreviewBlueprintAsync(input, cancellationToken));
 
+    /// <summary>Cách đề được chia thành các đề nhỏ: số câu mỗi mức, câu trùng/dư, đề nào phát cho em nào.</summary>
+    /// <remarks>Giáo viên đọc đề của mình, quản trị viên đọc mọi đề. Học sinh không gọi được.</remarks>
+    [HttpGet("{id:int}/papers")]
+    [ProducesResponseType<ExamPapersDto>(StatusCodes.Status200OK)]
+    [ProducesResponseType<ApiErrorResponse>(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType<ApiErrorResponse>(StatusCodes.Status403Forbidden)]
+    [ProducesResponseType<ApiErrorResponse>(StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> GetPapers(int id, CancellationToken cancellationToken)
+        => FromResult(await _examService.GetPapersAsync(id, cancellationToken));
+
     /// <summary>Chi tiết một đề.</summary>
     /// <remarks>Đề của giáo viên khác trả <b>404</b>, không phải 403 — 403 là xác nhận id đó có thật (§4.2).</remarks>
     [HttpGet("{id:int}")]
@@ -72,6 +82,34 @@ public sealed class ExamsController : ApiControllerBase
     [ProducesResponseType<ApiErrorResponse>(StatusCodes.Status404NotFound)]
     public async Task<IActionResult> Get(int id, CancellationToken cancellationToken)
         => FromResult(await _examService.GetAsync(id, cancellationToken));
+
+    /// <summary>Danh sách câu hỏi của một đề soạn theo danh sách, theo thứ tự, kèm đáp án đúng và điểm từng câu.</summary>
+    /// <remarks>
+    /// Rỗng với đề theo ma trận (<c>usesQuestionList = false</c>). Đây là dữ liệu của giáo viên duyệt đề —
+    /// học sinh không có đường nào tới đây; các em nhận bản đề qua <c>/api/my/exams</c>.
+    /// </remarks>
+    [HttpGet("{id:int}/questions")]
+    [ProducesResponseType<IReadOnlyList<ExamQuestionDto>>(StatusCodes.Status200OK)]
+    [ProducesResponseType<ApiErrorResponse>(StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> GetQuestions(int id, CancellationToken cancellationToken)
+        => FromResult(await _examService.GetQuestionsAsync(id, cancellationToken));
+
+    /// <summary>"Soạn tự động": rút câu hỏi từ ngân hàng theo số câu từng mức, loại các câu đã có trong đề.</summary>
+    /// <remarks>
+    /// Chỉ trả gợi ý, <b>không ghi gì</b>: đề chỉ đổi khi giáo viên duyệt xong và lưu. Mỗi lần gọi rút một bộ
+    /// khác nhau. Ngân hàng không đủ câu thì trả những câu có và báo số câu còn thiếu ở <c>missing</c>.
+    /// <c>excludeAssignedToGroupIds</c> bỏ thêm những câu mà các lớp đó đã nhận ở các đề trước (<c>skippedAlreadyAssigned</c> cho biết bỏ
+    /// bao nhiêu câu); lớp không thuộc quyền giáo viên trả <b>400</b>.
+    /// </remarks>
+    [HttpPost("compose-questions")]
+    [Authorize(Roles = SystemRoles.Teacher)]
+    [ProducesResponseType<ComposeQuestionsResultDto>(StatusCodes.Status200OK)]
+    [ProducesResponseType<ApiErrorResponse>(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType<ApiErrorResponse>(StatusCodes.Status403Forbidden)]
+    public async Task<IActionResult> ComposeQuestions(
+        [FromBody] ComposeQuestionsRequest request,
+        CancellationToken cancellationToken)
+        => FromResult(await _examService.ComposeQuestionsAsync(request, cancellationToken));
 
     /// <summary>Blueprint của một đề đã lưu, đối chiếu với tồn kho <b>hiện tại</b>.</summary>
     /// <remarks>
@@ -132,7 +170,7 @@ public sealed class ExamsController : ApiControllerBase
     /// <remarks>
     /// Tồn tại riêng vì đây là thao tác hay làm nhất sau khi đề đã giao. Dùng PUT cho việc này
     /// nghĩa là gửi lại trọn cấu hình, và chỉ cần client bỏ sót một trường là tỷ lệ độ khó hoặc
-    /// điểm mỗi câu bị ghi đè bằng giá trị mặc định — trên một đề học sinh đang chờ làm.
+    /// điểm từng mức bị ghi đè bằng giá trị mặc định — trên một đề học sinh đang chờ làm.
     /// Trả <b>409</b> khi đề đã giao và đang trong lúc khoá giờ (từ dưới 120 phút trước giờ mở tới hết giờ đóng).
     /// </remarks>
     [HttpPatch("{id:int}/schedule")]
@@ -162,6 +200,21 @@ public sealed class ExamsController : ApiControllerBase
     [ProducesResponseType<ApiErrorResponse>(StatusCodes.Status409Conflict)]
     public async Task<IActionResult> Publish(int id, CancellationToken cancellationToken)
         => FromResult(await _examService.PublishAsync(id, cancellationToken));
+
+    /// <summary>Mở điểm và đáp án từng câu cho học sinh, sau khi hết giờ.</summary>
+    /// <remarks>
+    /// Bật <c>showResultAfterSubmit</c> của đề. Chỉ làm được khi lớp đóng bài muộn nhất đã hết giờ: còn lớp đang
+    /// làm hay chưa tới giờ làm, hoặc đề chưa giao cho ai, trả <b>409</b>. Đã bật rồi thì trả 200 không đổi gì.
+    /// Chỉ chủ đề; đề của giáo viên khác trả <b>404</b>.
+    /// </remarks>
+    [HttpPost("{id:int}/release-answers")]
+    [Authorize(Roles = SystemRoles.Teacher)]
+    [ProducesResponseType<ExamDto>(StatusCodes.Status200OK)]
+    [ProducesResponseType<ApiErrorResponse>(StatusCodes.Status403Forbidden)]
+    [ProducesResponseType<ApiErrorResponse>(StatusCodes.Status404NotFound)]
+    [ProducesResponseType<ApiErrorResponse>(StatusCodes.Status409Conflict)]
+    public async Task<IActionResult> ReleaseAnswers(int id, CancellationToken cancellationToken)
+        => FromResult(await _examService.ReleaseAnswersAsync(id, cancellationToken));
 
     /// <summary>Nhân bản đề thành một bản nháp mới, cùng cấu hình, chưa giao cho ai.</summary>
     /// <remarks>

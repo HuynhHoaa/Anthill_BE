@@ -20,6 +20,12 @@ public sealed record UpdateStudentRequest
 
     public required string Code { get; init; }
 
+    /// <summary>
+    /// Số điện thoại. <c>null</c> (không gửi) giữ nguyên số đang có; chuỗi rỗng xoá trắng. Học sinh không tự
+    /// sửa được số này, chỉ quản trị viên.
+    /// </summary>
+    public string? Phone { get; init; }
+
     /// <summary>Bỏ trống hoặc 0 nghĩa là gỡ khỏi nhóm hiện tại, không xoá tài khoản.</summary>
     public int? GroupId { get; init; }
 

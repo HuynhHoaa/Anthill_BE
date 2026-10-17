@@ -23,6 +23,9 @@ public class ExamPaperQuestion : BaseEntity
     /// <summary>Điểm của câu tại thời điểm sinh đề.</summary>
     public decimal Point { get; set; }
 
+    /// <summary>Câu cho chọn nhiều đáp án, chụp lúc sinh đề cùng với nội dung và đáp án.</summary>
+    public bool AllowMultiple { get; set; }
+
     public ExamPaper ExamPaper { get; set; } = null!;
 
     public Question Question { get; set; } = null!;

@@ -147,12 +147,12 @@ if [[ "$MODE" == "setup" ]]; then
   printf '  học sinh %s (%s) trong lớp %s\n' "$SID" "$FULL_NAME" "$GID"
 
   c=$(call POST /api/exams "$TEACHER" \
-    "{\"title\":\"De xoa HS $STAMP\",\"topic\":\"XoaHS$STAMP\",\"durationMinutes\":45,\"totalQuestions\":1,\"easyPercentage\":100,\"mediumPercentage\":0,\"hardPercentage\":0,\"pointPerQuestion\":1,\"openAt\":\"2020-01-01T00:00:00Z\",\"closeAt\":\"2035-01-01T00:00:00Z\",\"shuffleQuestions\":false,\"shuffleAnswers\":false,\"showResultAfterSubmit\":true}")
+    "{\"title\":\"De xoa HS $STAMP\",\"topic\":\"XoaHS$STAMP\",\"durationMinutes\":45,\"totalQuestions\":1,\"easyPercentage\":100,\"mediumPercentage\":0,\"hardPercentage\":0,\"pointEasy\":100,\"pointMedium\":0,\"pointHard\":0,\"openAt\":\"2020-01-01T00:00:00Z\",\"closeAt\":\"2035-01-01T00:00:00Z\",\"shuffleQuestions\":false,\"shuffleAnswers\":false,\"showResultAfterSubmit\":true}")
   [[ "$c" != "200" ]] && fail_fast "tao de: HTTP $c — $(body)"
   EID=$(json_field id)
 
   expect_status "giao bài → 200" 200 \
-    "$(call POST "/api/exams/$EID/assignments" "$TEACHER" "{\"studentIds\":[$SID],\"groupIds\":[],\"notify\":true}")"
+    "$(call POST "/api/exams/$EID/assignments" "$TEACHER" "{\"studentIds\":[],\"groupIds\":[$GID],\"notify\":true}")"
 
   call GET /api/my/exams "$STUDENT" > /dev/null
   AID=$(python -c "

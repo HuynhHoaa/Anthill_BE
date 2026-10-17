@@ -28,7 +28,11 @@ public sealed class AuthService : IAuthService
     private const string InvalidCredentialsMessage = "Tên đăng nhập hoặc mật khẩu không đúng.";
     private const string SessionExpiredMessage = "Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại.";
     private const string RoleMismatchMessage = "Tài khoản không thuộc vai trò đã chọn.";
-    private const string StudentIdentityLockedMessage = "Họ tên và email chỉ quản trị viên mới đổi được.";
+    private const string StudentIdentityLockedMessage =
+        "Họ tên, email và số điện thoại chỉ quản trị viên mới đổi được.";
+    private const string TeacherContactLockedMessage =
+        "Email và số điện thoại chỉ quản trị viên mới đổi được.";
+    private const string StudentAvatarLockedMessage = "Học sinh không tự đổi ảnh đại diện được.";
 
     /// <summary>Tên hai trường của <see cref="ChangePasswordRequest"/> đúng như trong JSON.</summary>
     private const string CurrentPasswordField = "currentPassword";
@@ -209,50 +213,98 @@ public sealed class AuthService : IAuthService
             return Result.Failure<UserProfileDto>("Số điện thoại không hợp lệ.");
         }
 
-        // Tài khoản học sinh thuộc về quản trị viên (Requirement, Stage 2): họ tên và email là thứ giáo
-        // viên đối chiếu trên bảng điểm, nên chính em không tự sửa. Form hồ sơ luôn gửi đủ bốn trường,
-        // vì vậy gửi lại đúng giá trị đang có là hợp lệ — chỉ giá trị khác đi mới bị chặn.
+        // Thông tin liên hệ thuộc về nhà trường (quản trị viên), không phải của người dùng:
+        //  - học sinh: họ tên, email và số điện thoại (Requirement, Stage 2 — họ tên và email là thứ giáo viên
+        //    đối chiếu trên bảng điểm);
+        //  - giáo viên: email và số điện thoại. Họ tên vẫn tự sửa; môn giảng dạy không có trong request nên
+        //    không có đường nào để đổi (quản trị viên gắn bằng SubjectId).
+        // Form hồ sơ luôn gửi đủ ba trường, vì vậy gửi lại đúng giá trị đang có là hợp lệ — chỉ giá trị khác đi
+        // mới bị chặn. Quản trị viên không bị khoá: họ chính là bên quản lý.
         var isStudent = account.Role == UserRole.Student;
-        if (isStudent)
+        var contactLocked = account.Role != UserRole.Admin;
+
+        var lockedFields = ProfileEditPolicy.LockedFieldsChanged(
+            account.Role, account.FullName, account.Email, account.Phone, fullName, email, phone);
+        if (lockedFields.Count > 0)
         {
-            var locked = new Dictionary<string, string[]>();
+            var lockedMessage = isStudent ? StudentIdentityLockedMessage : TeacherContactLockedMessage;
+            var locked = lockedFields.ToDictionary(field => field, _ => new[] { lockedMessage });
 
-            if (!string.Equals(fullName, account.FullName, StringComparison.Ordinal))
-            {
-                locked["fullName"] = [StudentIdentityLockedMessage];
-            }
-
-            if (!string.Equals(email, account.Email, StringComparison.OrdinalIgnoreCase))
-            {
-                locked["email"] = [StudentIdentityLockedMessage];
-            }
-
-            if (locked.Count > 0)
-            {
-                return Result.Failure<UserProfileDto>(StudentIdentityLockedMessage, ErrorCode.Validation, locked);
-            }
+            return Result.Failure<UserProfileDto>(lockedMessage, ErrorCode.Validation, locked);
         }
 
         // So trùng trên chuỗi ĐÃ trim, loại trừ chính mình — nếu không, người dùng lưu lại hồ sơ mà
-        // không đổi email sẽ tự báo trùng với chính mình (§5).
-        if (!isStudent && await _unitOfWork.Users.IsEmailTakenAsync(email, account.Id, cancellationToken))
+        // không đổi email sẽ tự báo trùng với chính mình (§5). Chỉ quản trị viên đổi được email nên chỉ cần
+        // kiểm ở nhánh đó.
+        if (!contactLocked && await _unitOfWork.Users.IsEmailTakenAsync(email, account.Id, cancellationToken))
         {
             return Result.Conflict<UserProfileDto>("Email này đã được một tài khoản khác sử dụng.");
         }
 
-        // Danh sách trắng của §5 gồm bốn trường: fullName, email, phone, subject.
-        // Ba trường đầu gán ở đây; trường thứ tư KHÔNG có mặt trong UpdateProfileRequest nên không
-        // tồn tại đường nào để đổi — môn của giáo viên do quản trị viên gắn bằng SubjectId, không đổi
-        // bằng cách gõ tên môn, và học sinh thì không có môn. Id, Role, Username, Code, GroupId,
-        // AvatarColor và CreatedAt cũng vắng mặt khỏi DTO vì cùng một lý do: client gửi lên thì rơi
-        // mất ngay lúc deserialize, không cần lọc lại ở đây.
+        // Danh sách trắng của §5 gồm bốn trường: fullName, email, phone, subject. Môn (subject) KHÔNG có mặt
+        // trong UpdateProfileRequest nên không tồn tại đường nào để đổi. Id, Role, Username, Code, GroupId,
+        // AvatarColor và CreatedAt cũng vắng mặt khỏi DTO vì cùng một lý do: client gửi lên thì rơi mất ngay
+        // lúc deserialize, không cần lọc lại ở đây.
         if (!isStudent)
         {
             account.FullName = fullName;
-            account.Email = email;
         }
 
-        account.Phone = phone;
+        if (!contactLocked)
+        {
+            account.Email = email;
+            account.Phone = phone;
+        }
+
+        account.UpdatedAt = DateTime.UtcNow;
+
+        _unitOfWork.Users.Update(account);
+        await _unitOfWork.SaveChangesAsync(cancellationToken);
+
+        return Result.Success(await BuildProfileDtoAsync(account, cancellationToken));
+    }
+
+    /// <inheritdoc />
+    public async Task<Result<UserProfileDto>> UpdateCurrentAvatarAsync(
+        UpdateAvatarRequest request,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(request);
+
+        if (!TryGetCurrentUserId(out var userId))
+        {
+            return Result.Unauthorized<UserProfileDto>(SessionExpiredMessage);
+        }
+
+        // Cùng đường ghi với UpdateCurrentProfileAsync: entity trần đang được theo dõi nên SaveChanges chỉ ghi đúng
+        // các cột gán dưới đây, không đè Status hay SecurityStamp mà quản trị viên vừa đổi.
+        var user = await _unitOfWork.Users.GetByIdAsync(userId, cancellationToken);
+
+        var guard = GuardAccountState(user);
+        if (guard.IsFailure)
+        {
+            return Result.Failure<UserProfileDto>(guard.Error!, guard.ErrorCode);
+        }
+
+        var account = user!;
+
+        // Cố ý KHÔNG áp IDemoAccountGuard ở đây (khác UpdateCurrentProfileAsync): lệnh cấm ở §H19 nhằm giữ cho tài khoản
+        // demo dùng chung không bị "phá" — mất đăng nhập, đổi email, bị khoá. Ảnh đại diện không làm được điều nào trong
+        // số đó, ai cũng gỡ lại được, và chặn nó thì chính tài khoản giáo viên demo đang dùng để xem thử cũng không đổi
+        // được ảnh. Đường tải ảnh (/api/uploads/images) cũng không chặn tài khoản demo.
+        if (!AvatarPolicy.CanChange(account.Role))
+        {
+            return Result.Forbidden<UserProfileDto>(StudentAvatarLockedMessage);
+        }
+
+        var avatarUrl = AvatarPolicy.Normalize(request.AvatarUrl);
+        var problem = AvatarPolicy.Validate(avatarUrl);
+        if (problem is not null)
+        {
+            return Result.Failure<UserProfileDto>(problem);
+        }
+
+        account.AvatarUrl = avatarUrl;
         account.UpdatedAt = DateTime.UtcNow;
 
         _unitOfWork.Users.Update(account);
