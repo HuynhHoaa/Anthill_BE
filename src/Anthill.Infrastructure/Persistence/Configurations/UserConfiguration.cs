@@ -74,6 +74,9 @@ public class UserConfiguration : IEntityTypeConfiguration<User>
             .IsRequired()
             .HasMaxLength(16);
 
+        builder.Property(u => u.AvatarUrl)
+            .HasMaxLength(512);
+
         builder.HasIndex(u => u.Email)
             .IsUnique()
             .HasDatabaseName("IX_Users_Email");

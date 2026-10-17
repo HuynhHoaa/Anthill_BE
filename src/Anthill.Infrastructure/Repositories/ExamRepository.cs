@@ -105,6 +105,36 @@ public class ExamRepository : GenericRepository<Exam>, IExamRepository
         await Context.ExamPapers
             .FirstOrDefaultAsync(p => p.ExamId == examId && p.AssignmentId == null, cancellationToken);
 
+    public async Task<IReadOnlyCollection<int>> GetQuestionIdsDeliveredToGroupsAsync(
+        IReadOnlyCollection<int> groupIds,
+        CancellationToken cancellationToken = default)
+    {
+        if (groupIds.Count == 0)
+        {
+            return [];
+        }
+
+        var viaGroups = Context.ExamAssignments
+            .AsNoTracking()
+            .Where(assignment => assignment.AssignedViaGroupId != null && groupIds.Contains(assignment.AssignedViaGroupId.Value));
+
+        // Bản đề riêng của từng em được giao qua các lớp này.
+        var ownPapers = Context.ExamPaperQuestions
+            .AsNoTracking()
+            .Where(row => row.ExamPaper.AssignmentId != null
+                && viaGroups.Any(assignment => assignment.Id == row.ExamPaper.AssignmentId))
+            .Select(row => row.QuestionId);
+
+        // Bản đề chung (không gắn lượt giao nào) của các đề giao cho lớp: mọi em của lớp đều nhận bản đó.
+        var sharedPapers = Context.ExamPaperQuestions
+            .AsNoTracking()
+            .Where(row => row.ExamPaper.AssignmentId == null
+                && viaGroups.Any(assignment => assignment.ExamId == row.ExamPaper.ExamId))
+            .Select(row => row.QuestionId);
+
+        return await ownPapers.Union(sharedPapers).ToListAsync(cancellationToken);
+    }
+
     public async Task<ExamPaper?> GetPaperByAssignmentAsync(
         int assignmentId,
         CancellationToken cancellationToken = default) =>
@@ -134,16 +164,114 @@ public class ExamRepository : GenericRepository<Exam>, IExamRepository
 
         // Câu hỏi và đáp án của bản đề đi theo nhờ ON DELETE CASCADE ở database.
         Context.ExamPapers.RemoveRange(papers);
+
+        // Cách chia đề nhỏ gắn với cấu hình đề đã sinh bản đề: bỏ bản đề thì bỏ luôn cách chia, không để lần giao sau
+        // phát lại những đề nhỏ của cấu hình cũ.
+        var variants = await Context.ExamPaperVariants
+            .Where(v => v.ExamId == examId)
+            .ToListAsync(cancellationToken);
+
+        Context.ExamPaperVariants.RemoveRange(variants);
+    }
+
+    public async Task<IReadOnlyList<ExamPaperVariant>> GetVariantsAsync(
+        int examId,
+        int? groupId,
+        CancellationToken cancellationToken = default) =>
+        await Context.ExamPaperVariants
+            .Where(v => v.ExamId == examId && v.GroupId == groupId)
+            .OrderBy(v => v.VariantIndex)
+            .ToListAsync(cancellationToken);
+
+    public async Task<IReadOnlyList<ExamPaperVariant>> GetAllVariantsAsync(
+        int examId,
+        CancellationToken cancellationToken = default) =>
+        await Context.ExamPaperVariants
+            .AsNoTracking()
+            .Include(v => v.Group)
+            .Where(v => v.ExamId == examId)
+            .OrderBy(v => v.GroupId)
+            .ThenBy(v => v.VariantIndex)
+            .ToListAsync(cancellationToken);
+
+    public async Task AddVariantsAsync(
+        IEnumerable<ExamPaperVariant> variants,
+        CancellationToken cancellationToken = default) =>
+        await Context.ExamPaperVariants.AddRangeAsync(variants, cancellationToken);
+
+    public async Task<IReadOnlyDictionary<int, int>> GetVariantUsageAsync(
+        int examId,
+        int? groupId,
+        CancellationToken cancellationToken = default) =>
+        await Context.ExamPapers
+            .AsNoTracking()
+            .Where(p => p.ExamId == examId
+                        && p.VariantIndex != null
+                        && p.Assignment!.AssignedViaGroupId == groupId)
+            .GroupBy(p => p.VariantIndex!.Value)
+            .Select(group => new { Variant = group.Key, Students = group.Count() })
+            .ToDictionaryAsync(row => row.Variant, row => row.Students, cancellationToken);
+
+    public async Task<IReadOnlyList<(int? GroupId, int VariantIndex, int Students)>> GetVariantUsageByExamAsync(
+        int examId,
+        CancellationToken cancellationToken = default)
+    {
+        var rows = await Context.ExamPapers
+            .AsNoTracking()
+            .Where(p => p.ExamId == examId && p.VariantIndex != null)
+            .GroupBy(p => new { p.Assignment!.AssignedViaGroupId, Variant = p.VariantIndex!.Value })
+            .Select(group => new { group.Key.AssignedViaGroupId, group.Key.Variant, Students = group.Count() })
+            .ToListAsync(cancellationToken);
+
+        return rows.Select(row => (row.AssignedViaGroupId, row.Variant, row.Students)).ToList();
     }
 
     public async Task<IReadOnlyList<int>> GetExamIdsUsingQuestionAsync(
         int questionId,
-        CancellationToken cancellationToken = default) =>
-        await Context.ExamPaperQuestions
+        CancellationToken cancellationToken = default)
+    {
+        var fromPapers = await Context.ExamPaperQuestions
             .Where(paperQuestion => paperQuestion.QuestionId == questionId)
             .Select(paperQuestion => paperQuestion.ExamPaper.ExamId)
             .Distinct()
             .ToListAsync(cancellationToken);
+
+        // Đề theo danh sách nắm câu hỏi này ngay từ lúc soạn, trước cả khi có bản đề nào được sinh.
+        var fromLists = await Context.ExamQuestions
+            .Where(row => row.QuestionId == questionId)
+            .Select(row => row.ExamId)
+            .Distinct()
+            .ToListAsync(cancellationToken);
+
+        return fromPapers.Union(fromLists).ToList();
+    }
+
+    public async Task<IReadOnlyList<ExamQuestion>> GetQuestionRowsAsync(
+        int examId,
+        CancellationToken cancellationToken = default) =>
+        await Context.ExamQuestions
+            .Where(row => row.ExamId == examId)
+            .OrderBy(row => row.Ordinal)
+            .ToListAsync(cancellationToken);
+
+    public async Task<IReadOnlyList<ExamQuestion>> GetQuestionListAsync(
+        int examId,
+        CancellationToken cancellationToken = default) =>
+        await Context.ExamQuestions
+            .AsNoTracking()
+            .Where(row => row.ExamId == examId)
+            .Include(row => row.Question).ThenInclude(question => question.CreatedBy)
+            .Include(row => row.Question).ThenInclude(question => question.Answers.OrderBy(answer => answer.Ordinal))
+            .OrderBy(row => row.Ordinal)
+            .ToListAsync(cancellationToken);
+
+    public void RemoveQuestionRows(IEnumerable<ExamQuestion> rows) =>
+        Context.ExamQuestions.RemoveRange(rows);
+
+    public async Task AddQuestionRowsAsync(
+        IEnumerable<ExamQuestion> rows,
+        CancellationToken cancellationToken = default) =>
+        await Context.ExamQuestions.AddRangeAsync(rows, cancellationToken);
 
     public async Task<int> CountAssignedByCreatorAsync(
         int createdByUserId,

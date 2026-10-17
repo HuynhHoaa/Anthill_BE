@@ -35,6 +35,21 @@ public class ExamConfiguration : IEntityTypeConfiguration<Exam>
         builder.Property(e => e.PointHard)
             .HasPrecision(6, 2);
 
+        // Cùng độ chính xác với cột điểm tối đa của lượt làm bài, nên một danh sách ghi được là một danh sách
+        // làm bài được.
+        builder.Property(e => e.ListTotalScore)
+            .HasPrecision(6, 2);
+
+        // Đề có từ trước tính năng chia đề là đề một bản chung.
+        builder.Property(e => e.PaperCount)
+            .HasDefaultValue(1);
+
+        builder.Property(e => e.PaperBonusUnits)
+            .HasDefaultValue(0);
+
+        // Suy ra từ hai cột trên, không có cột riêng.
+        builder.Ignore(e => e.UsesPerAssignmentPapers);
+
         builder.HasOne(e => e.CreatedBy)
             .WithMany(u => u.CreatedExams)
             .HasForeignKey(e => e.CreatedByUserId)

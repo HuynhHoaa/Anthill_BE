@@ -22,19 +22,16 @@ public class StudentAnswerConfiguration : IEntityTypeConfiguration<StudentAnswer
             .HasForeignKey(s => s.ExamPaperQuestionId)
             .OnDelete(DeleteBehavior.Cascade);
 
-        // Trỏ tới bản snapshot chứ không phải AnswerOption gốc.
-        builder.HasOne(s => s.SelectedAnswer)
-            .WithMany()
-            .HasForeignKey(s => s.SelectedAnswerId)
-            .OnDelete(DeleteBehavior.Cascade);
+        // Tập id ExamPaperAnswer đã chọn (bản snapshot, không phải AnswerOption gốc). Mảng nguyên của
+        // PostgreSQL: câu nhiều đáp án đúng ghi cả tập trong một dòng, nên unique (lượt, câu) bên dưới vẫn đúng.
+        builder.Property(s => s.SelectedAnswerIds)
+            .HasColumnType("integer[]")
+            .IsRequired();
 
         // Lưu nháp mang ngữ nghĩa MERGE theo questionId (§4.7): mỗi câu trong một lượt làm bài
         // chỉ có đúng một dòng, autosave lần sau ghi đè lên chính dòng đó.
         builder.HasIndex(s => new { s.AttemptId, s.ExamPaperQuestionId })
             .IsUnique()
             .HasDatabaseName("IX_StudentAnswers_Attempt_Question");
-
-        builder.HasIndex(s => s.SelectedAnswerId)
-            .HasDatabaseName("IX_StudentAnswers_SelectedAnswerId");
     }
 }
