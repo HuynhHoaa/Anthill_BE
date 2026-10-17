@@ -116,10 +116,6 @@ elif mode == "qids":
     # Tap id cau hoi cua mot phien, da sap — hai phien cung mot ban de thi hai chuoi nay bang nhau.
     print(",".join(str(q["id"]) for q in sorted(load(sys.argv[2])["questions"], key=lambda q: q["id"])))
 
-elif mode == "ids":
-    # Id cua moi dong trong mot danh sach, cach nhau bang dau cach.
-    print(" ".join(str(row["id"]) for row in load(sys.argv[2])))
-
 elif mode == "assignment":
     # assignmentId cua de $3 trong danh sach bai cua hoc sinh.
     rows = load(sys.argv[2])
@@ -407,12 +403,9 @@ section "Thu hoi het, doi cau hinh, giao lai: ban de theo cau hinh MOI"
 new_exam title="De thu hoi $STAMP" total=4 easy=50 medium=50 hard=0 pe=25 pm=25 ph=0; E4=$NEW_EID
 expect_status "giao cho lop (de chung) → 200" 200 "$(assign_class "$E4")"
 expect_json   "  assignedCount = 2" assignedCount 2
-expect_status "danh sach giao bai → 200" 200 "$(call GET "/api/exams/$E4/assignments" "$TEACHER")"
-REVOKED=0
-for aid in $(python "$HELPERS" ids "$(to_native_path "$BODY_FILE")" | tr -d '\r'); do
-  [[ "$(call DELETE "/api/exams/$E4/assignments/$aid" "$TEACHER")" == "200" ]] && REVOKED=$((REVOKED + 1))
-done
-expect_status "thu hoi ca hai em" 2 "$REVOKED"
+expect_status "thu hoi ca lop → 200" 200 "$(call DELETE "/api/exams/$E4/assignments/classes/$GID" "$TEACHER")"
+expect_json   "  go 2 em"                revokedCount 2
+expect_json   "  khong em nao da bat dau" keptStartedCount 0
 expect_status "doc de → 200" 200 "$(call GET "/api/exams/$E4" "$TEACHER")"
 expect_json   "  assignedCount = 0" assignedCount 0
 expect_status "doi sang 8 cau luc khong con luot giao → 200" 200 \

@@ -121,7 +121,8 @@ saved_count() { python -c "import json,sys;print(len(json.load(sys.stdin).get('s
 saved_answer() {
   python -c "
 import json,sys
-print(json.load(sys.stdin).get('savedAnswers', {}).get(sys.argv[1], 'khong-co'))
+value = json.load(sys.stdin).get('savedAnswers', {}).get(sys.argv[1])
+print(value[0] if value else 'khong-co')
 " "$1" < "$BODY_FILE"
 }
 
@@ -520,7 +521,7 @@ expect_json   "  tra lai so server dang giu = 5"     lastAppliedSeq 5
 
 expect_status "nạp lại phiên → 200" 200 "$(call GET "/api/exam-attempts/$SEQ_ATTEMPT" "$STUDENT_A")"
 expect_json   "  lastAppliedSeq = 5 de client noi tiep" lastAppliedSeq 5
-expect_status "  dap an cu van la cai da ghi luc seq=5" "$SEQ_A0"   "$(body | python -c "import json,sys;print(json.load(sys.stdin)['savedAnswers'].get('$SEQ_Q0',''))")"
+expect_status "  dap an cu van la cai da ghi luc seq=5" "$SEQ_A0"   "$(body | python -c "import json,sys;print((json.load(sys.stdin)['savedAnswers'].get('$SEQ_Q0') or [''])[0])")"
 
 # Nộp bài KHÔNG được chặn theo seq: đây là lời tuyên bố cuối cùng của học sinh, không có gói nào
 # mới hơn đang trên đường tới. Chặn ở đây nghĩa là chấm trên đáp án CŨ rồi trả về 200 kèm điểm.

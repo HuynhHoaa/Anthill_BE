@@ -152,7 +152,7 @@ if [[ "$MODE" == "setup" ]]; then
   EID=$(json_field id)
 
   expect_status "giao bài → 200" 200 \
-    "$(call POST "/api/exams/$EID/assignments" "$TEACHER" "{\"studentIds\":[$SID],\"groupIds\":[],\"notify\":true}")"
+    "$(call POST "/api/exams/$EID/assignments" "$TEACHER" "{\"studentIds\":[],\"groupIds\":[$GID],\"notify\":true}")"
 
   call GET /api/my/exams "$STUDENT" > /dev/null
   AID=$(python -c "

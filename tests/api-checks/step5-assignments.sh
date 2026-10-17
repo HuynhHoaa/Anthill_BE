@@ -125,7 +125,7 @@ code=$(call POST /api/exams "$TEACHER" "$(exam_body draft)")
 [[ "$code" != "200" ]] && fail_fast "tao de nhap: HTTP $code — $(body)"
 DRAFT_ID=$(json_field id); EXAMS+=("$DRAFT_ID")
 expect_status "giao đề còn là nháp → 409" 409 \
-  "$(call POST "/api/exams/$DRAFT_ID/assignments" "$TEACHER" "{\"studentIds\":[$S1],\"groupIds\":[],\"randomizePerStudent\":false,\"notify\":false}")"
+  "$(call POST "/api/exams/$DRAFT_ID/assignments" "$TEACHER" "{\"studentIds\":[],\"groupIds\":[$GROUP_ID],\"randomizePerStudent\":false,\"notify\":false}")"
 
 section "Giao bài"
 code=$(call POST /api/exams "$TEACHER" "$(exam_body)")
@@ -140,7 +140,7 @@ expect_status "không chọn ai → 400" 400 \
 # thẳng null, và quy tắc đọc .Count trên đó ném NullReferenceException.
 expect_status "studentIds/groupIds = null → 400, không phải 500" 400   "$(call POST "/api/exams/$EXAM_ID/assignments" "$TEACHER" '{"studentIds":null,"groupIds":null,"randomizePerStudent":false,"notify":false}')"
 
-expect_status "id âm trong danh sách → 400" 400   "$(call POST "/api/exams/$EXAM_ID/assignments" "$TEACHER" '{"studentIds":[-1],"groupIds":[],"randomizePerStudent":false,"notify":false}')"
+expect_status "id âm trong danh sách lớp → 400" 400   "$(call POST "/api/exams/$EXAM_ID/assignments" "$TEACHER" '{"studentIds":[],"groupIds":[-1],"randomizePerStudent":false,"notify":false}')"
 # Giao cả nhóm: 5 em trong nhóm, nhưng 1 em đang khoá → chỉ 4 em nhận bài.
 expect_status "giao cả nhóm → 200" 200 \
   "$(call POST "/api/exams/$EXAM_ID/assignments" "$TEACHER" "{\"studentIds\":[],\"groupIds\":[$GROUP_ID],\"randomizePerStudent\":false,\"notify\":true}")"
@@ -153,25 +153,14 @@ expect_status "giao lại cùng nhóm → 200 (idempotent)" 200 \
 expect_json "  assignedCount = 0"            assignedCount 0
 expect_json "  skippedAlreadyAssigned = 3"   skippedAlreadyAssigned 3
 
-expect_status "học sinh ngoài nhóm + id lạ → 200" 200 \
+# Bài kiểm tra chỉ giao theo lớp: danh sách học sinh bị từ chối rõ ràng, không lặng lẽ bỏ qua. Client cũ gửi
+# danh sách em kèm một lớp sẽ nhận 400 thay vì "đã giao" trong khi danh sách em bị vứt đi.
+expect_status "chọn đích danh học sinh (studentIds) → 400" 400 \
   "$(call POST "/api/exams/$EXAM_ID/assignments" "$TEACHER" "{\"studentIds\":[$OUTSIDER,999999],\"groupIds\":[],\"randomizePerStudent\":false,\"notify\":false}")"
-expect_json "  assignedCount = 0"        assignedCount 0
-expect_json "  skippedOutOfScope = 2 (em lop khac + id la, gop lam mot)" skippedOutOfScope 2
-expect_status "  khong con truong skippedNotFound de doi chieu" absent \
-  "$(body | python -c 'import json,sys;print("present" if "skippedNotFound" in json.load(sys.stdin) else "absent")')"
-
-# Doi chung: hai id lac, khong id nao la hoc sinh that, cho ra dung con so nhu tren. Tach hai ly do
-# ra thanh hai con so la giao vien ban tung id mot roi doc xem id nao la hoc sinh that cua lop nguoi
-# khac — dung thu ma phep kiem pham vi sinh ra de giau.
-expect_status "hai id la, khong em nao co that → 200" 200 \
-  "$(call POST "/api/exams/$EXAM_ID/assignments" "$TEACHER" '{"studentIds":[999998,999999],"groupIds":[],"randomizePerStudent":false,"notify":false}')"
-expect_json "  skippedOutOfScope = 2, khong phan biet duoc voi truong hop tren" skippedOutOfScope 2
-
-# Chọn một em lẻ đã nằm trong nhóm vừa giao: khử trùng lặp phải nhận ra.
-expect_status "chọn lẻ em đã có bài → 200" 200 \
+expect_status "  câu từ chối nói rõ bài chỉ giao theo lớp" yes \
+  "$(body | grep -q 'chỉ giao theo lớp' && echo yes || echo no)"
+expect_status "studentIds kèm groupIds → 400, không giao lớp nào" 400 \
   "$(call POST "/api/exams/$EXAM_ID/assignments" "$TEACHER" "{\"studentIds\":[$S1],\"groupIds\":[$GROUP_ID],\"randomizePerStudent\":false,\"notify\":false}")"
-expect_json "  assignedCount = 0"          assignedCount 0
-expect_json "  skippedAlreadyAssigned = 3" skippedAlreadyAssigned 3
 
 section "Danh sách đã giao và số đếm dẫn xuất"
 expect_status "danh sách assignment → 200" 200 "$(call GET "/api/exams/$EXAM_ID/assignments" "$TEACHER")"
@@ -188,32 +177,39 @@ expect_json   "  submittedCount = 0" submittedCount 0
 section "Phân quyền"
 expect_status "quản trị viên xem danh sách giao → 200" 200 "$(call GET "/api/exams/$EXAM_ID/assignments" "$ADMIN")"
 expect_status "quản trị viên giao bài → 403" 403 \
-  "$(call POST "/api/exams/$EXAM_ID/assignments" "$ADMIN" "{\"studentIds\":[$S1],\"groupIds\":[],\"randomizePerStudent\":false,\"notify\":false}")"
+  "$(call POST "/api/exams/$EXAM_ID/assignments" "$ADMIN" "{\"studentIds\":[],\"groupIds\":[$GROUP_ID],\"randomizePerStudent\":false,\"notify\":false}")"
 expect_status "học sinh xem danh sách giao → 403" 403 "$(call GET "/api/exams/$EXAM_ID/assignments" "$STUDENT")"
-expect_status "học sinh tự giao bài cho mình → 403" 403 \
-  "$(call POST "/api/exams/$EXAM_ID/assignments" "$STUDENT" "{\"studentIds\":[$S1],\"groupIds\":[],\"randomizePerStudent\":false,\"notify\":false}")"
+expect_status "học sinh tự giao bài → 403" 403 \
+  "$(call POST "/api/exams/$EXAM_ID/assignments" "$STUDENT" "{\"studentIds\":[],\"groupIds\":[$GROUP_ID],\"randomizePerStudent\":false,\"notify\":false}")"
 expect_status "giao trên đề không tồn tại → 404" 404 \
-  "$(call POST "/api/exams/999999/assignments" "$TEACHER" "{\"studentIds\":[$S1],\"groupIds\":[],\"randomizePerStudent\":false,\"notify\":false}")"
+  "$(call POST "/api/exams/999999/assignments" "$TEACHER" "{\"studentIds\":[],\"groupIds\":[$GROUP_ID],\"randomizePerStudent\":false,\"notify\":false}")"
 
-section "Thu hồi"
-expect_status "thu hồi assignment không thuộc đề này → 404" 404 \
-  "$(call DELETE "/api/exams/$DRAFT_ID/assignments/$ASSIGNMENT_ID" "$TEACHER")"
-expect_status "thu hồi assignment không tồn tại → 404" 404 \
-  "$(call DELETE "/api/exams/$EXAM_ID/assignments/999999" "$TEACHER")"
+section "Thu hồi theo lớp"
+# Bài giao theo lớp nên thu hồi cũng theo lớp: không còn thu hồi riêng từng em.
+expect_status "không còn thu hồi riêng từng em (404)" 404 \
+  "$(call DELETE "/api/exams/$EXAM_ID/assignments/$ASSIGNMENT_ID" "$TEACHER")"
+expect_status "thu hồi lớp chưa được giao đề này → 404" 404 \
+  "$(call DELETE "/api/exams/$DRAFT_ID/assignments/classes/$GROUP_ID" "$TEACHER")"
+expect_status "thu hồi lớp không tồn tại → 404" 404 \
+  "$(call DELETE "/api/exams/$EXAM_ID/assignments/classes/999999" "$TEACHER")"
 expect_status "quản trị viên thu hồi → 403" 403 \
-  "$(call DELETE "/api/exams/$EXAM_ID/assignments/$ASSIGNMENT_ID" "$ADMIN")"
-expect_status "thu hồi hợp lệ → 200" 200 \
-  "$(call DELETE "/api/exams/$EXAM_ID/assignments/$ASSIGNMENT_ID" "$TEACHER")"
-expect_status "thu hồi lại chính nó → 404" 404 \
-  "$(call DELETE "/api/exams/$EXAM_ID/assignments/$ASSIGNMENT_ID" "$TEACHER")"
+  "$(call DELETE "/api/exams/$EXAM_ID/assignments/classes/$GROUP_ID" "$ADMIN")"
+expect_status "học sinh thu hồi → 403" 403 \
+  "$(call DELETE "/api/exams/$EXAM_ID/assignments/classes/$GROUP_ID" "$STUDENT")"
+expect_status "thu hồi cả lớp → 200" 200 \
+  "$(call DELETE "/api/exams/$EXAM_ID/assignments/classes/$GROUP_ID" "$TEACHER")"
+expect_json   "  gỡ 3 em"                   revokedCount 3
+expect_json   "  không em nào đã bắt đầu"   keptStartedCount 0
+expect_status "thu hồi lại chính lớp đó → 404 (không còn gì)" 404 \
+  "$(call DELETE "/api/exams/$EXAM_ID/assignments/classes/$GROUP_ID" "$TEACHER")"
 
-expect_status "sau thu hồi, assignedCount còn 2" 200 "$(call GET "/api/exams/$EXAM_ID" "$TEACHER")"
-expect_json   "  assignedCount = 2" assignedCount 2
+expect_status "sau thu hồi, assignedCount = 0" 200 "$(call GET "/api/exams/$EXAM_ID" "$TEACHER")"
+expect_json   "  assignedCount = 0" assignedCount 0
 
-# Giao lại chính em vừa bị thu hồi: phải nhận bài mới, chứng minh thu hồi thật sự xoá bản ghi.
-expect_status "giao lại em vừa thu hồi → 200" 200 \
+# Giao lại lớp vừa thu hồi: phải nhận bài mới, chứng minh thu hồi thật sự xoá bản ghi.
+expect_status "giao lại lớp vừa thu hồi → 200" 200 \
   "$(call POST "/api/exams/$EXAM_ID/assignments" "$TEACHER" "{\"studentIds\":[],\"groupIds\":[$GROUP_ID],\"randomizePerStudent\":false,\"notify\":false}")"
-expect_json   "  assignedCount = 1" assignedCount 1
+expect_json   "  assignedCount = 3" assignedCount 3
 
 section "randomizePerStudent — cờ thật, không phải điều khiển giả"
 code=$(call POST /api/exams "$TEACHER" "$(exam_body)")

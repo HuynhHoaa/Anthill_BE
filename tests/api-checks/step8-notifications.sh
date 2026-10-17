@@ -167,7 +167,7 @@ for i in 1 2 3; do
   c=$(call POST /api/exams "$TEACHER" "$(exam_body " bao $i")")
   [[ "$c" != "200" ]] && fail_fast "tao de bao $i: HTTP $c"
   extra_exam=$(json_field id); EXAMS+=("$extra_exam")
-  call POST "/api/exams/$extra_exam/assignments" "$TEACHER" "{\"studentIds\":[$S_A],\"groupIds\":[],\"notify\":true}" > /dev/null
+  call POST "/api/exams/$extra_exam/assignments" "$TEACHER" "{\"studentIds\":[],\"groupIds\":[$GROUP_ID],\"notify\":true}" > /dev/null
 done
 expect_status "A dang co nhieu hon 1 thong bao chua doc" true   "$(call GET "/api/notifications/unread-count" "$STUDENT_A" > /dev/null; body | python -c 'import sys;print(str(int(sys.stdin.read())>1).lower())')"
 

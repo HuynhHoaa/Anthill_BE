@@ -61,6 +61,42 @@ NEW_ANSWER_IDS=$(body | python -c 'import json,sys;print(",".join(str(a["id"]) f
 expect_status "  id dap an cu bien mat hoan toan" absent \
   "$(python -c "print('present' if '$OLD_ANSWER_ID' in '$NEW_ANSWER_IDS'.split(',') else 'absent')")"
 
+section "Ten cau hoi tach khoi noi dung"
+# Ten la nhan ngan de nhan ra cau trong ngan hang; khong bat buoc, la mot dong, toi da 200 ky tu.
+title_body() {
+  # $1 = ten (dang JSON, da escape), $2 = noi dung
+  echo "{\"title\":\"$1\",\"content\":\"$2\",\"topic\":\"$TOPIC\",\"difficulty\":\"easy\",\"defaultPoint\":1,\"answers\":[{\"content\":\"A\",\"isCorrect\":true},{\"content\":\"B\",\"isCorrect\":false}]}"
+}
+title_of() { body | python -c 'import json,sys;print(json.load(sys.stdin)["title"])'; }
+
+expect_status "tao cau co ten (nhieu dau cach, xuong dong) → 200" 200 \
+  "$(call POST /api/questions "$TEACHER" "$(title_body "  Tieu de   rieng\n  $STAMP " "Noi dung khong chua ten $STAMP")")"
+QT=$(json_field id); QUESTION_IDS+=("$QT")
+expect_status "  ten duoc gop thanh mot dong" "Tieu de rieng $STAMP" "$(title_of)"
+
+expect_status "doc lai: ten giu nguyen → 200" 200 "$(call GET "/api/questions/$QT" "$TEACHER")"
+expect_status "  ten van la mot dong" "Tieu de rieng $STAMP" "$(title_of)"
+
+expect_status "tim theo tu chi co trong ten → 200" 200 \
+  "$(call GET "/api/questions?search=Tieu%20de%20rieng%20$STAMP&pageSize=10" "$TEACHER")"
+expect_status "  ra dung mot cau" 1 "$(body | python -c 'import json,sys;print(json.load(sys.stdin)["total"])')"
+
+expect_status "tao cau khong gui ten → 200" 200 \
+  "$(call POST /api/questions "$TEACHER" "$(question_body 1 3)")"
+QN=$(json_field id); QUESTION_IDS+=("$QN")
+expect_status "  ten la chuoi rong (khong null)" "" "$(title_of)"
+
+expect_status "ten 200 ky tu → 200" 200 \
+  "$(call POST /api/questions "$TEACHER" "$(title_body "$(printf 'a%.0s' $(seq 1 200))" "Cau ten dung tran $STAMP")")"
+QL=$(json_field id); QUESTION_IDS+=("$QL")
+expect_status "ten 201 ky tu → 400" 400 \
+  "$(call POST /api/questions "$TEACHER" "$(title_body "$(printf 'a%.0s' $(seq 1 201))" "Cau ten vuot tran $STAMP")")"
+
+# PUT thay toan bo: bo trong ten la xoa ten da dat.
+expect_status "sua cau, bo trong ten → 200" 200 \
+  "$(call PUT "/api/questions/$QT" "$TEACHER" "$(question_body 1 3)")"
+expect_status "  ten da bi xoa" "" "$(title_of)"
+
 section "Data URI bi tu choi (§1)"
 expect_status "gui data URI thay vi URL → 400" 400 \
   "$(call POST /api/questions "$TEACHER" "{\"content\":\"Cau data uri\",\"topic\":\"$TOPIC\",\"difficulty\":\"easy\",\"defaultPoint\":1,\"imageUrl\":\"data:image/png;base64,iVBORw0KGgo=\",\"answers\":[{\"content\":\"A\",\"isCorrect\":true},{\"content\":\"B\",\"isCorrect\":false}]}")"

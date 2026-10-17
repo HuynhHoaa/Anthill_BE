@@ -423,34 +423,34 @@ expect_status "em lop A nop bai → 200" 200 "$(call POST "/api/exam-attempts/$A
 expect_status "em lop A xem chi tiet → 200" 200 "$(call GET "/api/results/$ATT_KA" "$TOK_KA")"
 expect_status "  co score"                         present "$(has_field score)"
 expect_json   "  canSeeAnswers = false"            canSeeAnswers false
-expect_status "  cau dau KHONG co correctAnswerId" absent "$(q0_has correctAnswerId)"
+expect_status "  cau dau KHONG co correctAnswerIds" absent "$(q0_has correctAnswerIds)"
 expect_status "  cau dau KHONG co isCorrect"       absent "$(q0_has isCorrect)"
 expect_status "  answersVisibleAt = gio dong cua lop B" true "$(near_time answersVisibleAt "$KB_CLOSE")"
 
 expect_status "giao vien xem chinh bai do → 200" 200 "$(call GET "/api/results/$ATT_KA" "$TEACHER")"
 expect_json   "  canSeeAnswers = true voi giao vien" canSeeAnswers true
-expect_status "  cau dau co correctAnswerId"         present "$(q0_has correctAnswerId)"
+expect_status "  cau dau co correctAnswerIds"         present "$(q0_has correctAnswerIds)"
 expect_status "  answersVisibleAt vang mat"          absent  "$(has_field answersVisibleAt)"
 
 printf '  doi khung gio cua lop A dong...\n'
 wait_past "$KA_CLOSE"
 expect_status "lop A da het gio, lop B chua thi → 200" 200 "$(call GET "/api/results/$ATT_KA" "$TOK_KA")"
 expect_json   "  canSeeAnswers van false"             canSeeAnswers false
-expect_status "  cau dau van KHONG co correctAnswerId" absent "$(q0_has correctAnswerId)"
+expect_status "  cau dau van KHONG co correctAnswerIds" absent "$(q0_has correctAnswerIds)"
 
 # Giao vien doi lop B ve mot khung gio da qua. Em lop B chua bat dau nen khung moi ap ngay.
 expect_status "doi lop B ve khung da qua → 200" 200 "$(assign "$E_DA" "$G_KB" -3 -2)"
 expect_json   "  scheduleUpdatedCount = 1" scheduleUpdatedCount 1
 expect_status "moi lop da het gio → 200" 200 "$(call GET "/api/results/$ATT_KA" "$TOK_KA")"
 expect_json   "  canSeeAnswers = true"            canSeeAnswers true
-expect_status "  cau dau co correctAnswerId"       present "$(q0_has correctAnswerId)"
+expect_status "  cau dau co correctAnswerIds"       present "$(q0_has correctAnswerIds)"
 expect_status "  cau dau co isCorrect"             present "$(q0_has isCorrect)"
 expect_status "  answersVisibleAt vang mat"        absent  "$(has_field answersVisibleAt)"
 
-section "Em moi vao lop, giao DICH DANH thi ke thua khung gio cua lop (H24)"
-# Lop da co MOT em duoc giao qua nhom, kem khung gio rieng. Em thu hai vua vao lop SAU khi da giao —
-# giao vien chon DICH DANH em do (studentIds), khong tick lai ca lop, va request KHONG kem gio rieng
-# nao. Neu backend roi ve lich chung cua DE (co the da dong tu lau — chinh EID dang mo tu hom qua) thay
+section "Em moi vao lop, giao lai LOP thi ke thua khung gio cua lop (H24)"
+# Lop da co MOT em duoc giao kem khung gio rieng. Em thu hai vua vao lop SAU khi da giao — giao vien gui
+# lai lop do (groupIds), khong kem gio rieng nao. Bai chi giao theo lop nen day la cach duy nhat de em moi
+# nhan bai. Neu backend roi ve lich chung cua DE (co the da dong tu lau — chinh EID dang mo tu hom qua) thay
 # vi ke thua dung khung gio cua lop, day chinh la H24: em moi thay mot khung gio khac han cac ban.
 build_class "Lop ke thua $STAMP" "${STAMP}k"; G_KETHUA=$BUILT_GID; SID_KETHUA_1=$BUILT_SID
 expect_status "giao lan dau cho lop, kem khung rieng → 200" 200 "$(assign "$EID" "$G_KETHUA" 6 8)"
@@ -461,8 +461,8 @@ code=$(call POST /api/students "$ADMIN" "{\"fullName\":\"HS ${STAMP}k2\",\"email
 [[ "$code" != "200" ]] && fail_fast "tao hoc sinh thu hai cua lop ke thua: HTTP $code — $(body)"
 SID_KETHUA_2=$(json_field id); STUDENT_IDS+=("$SID_KETHUA_2"); MEMBERS+=("$G_KETHUA/$SID_KETHUA_2")
 
-DIRECT_BODY="{\"studentIds\":[$SID_KETHUA_2],\"groupIds\":[],\"notify\":false}"
-expect_status "giao dich danh em moi, khong kem gio → 200" 200 "$(call POST "/api/exams/$EID/assignments" "$TEACHER" "$DIRECT_BODY")"
+RESEND_BODY="{\"studentIds\":[],\"groupIds\":[$G_KETHUA],\"notify\":false}"
+expect_status "giao lai lop, khong kem gio → 200" 200 "$(call POST "/api/exams/$EID/assignments" "$TEACHER" "$RESEND_BODY")"
 expect_json   "  assignedCount = 1" assignedCount 1
 
 TOK_KETHUA_2=$(login_and_clear_must_change "p${STAMP}k2" "123456" "Pk2$STAMP")
@@ -470,9 +470,8 @@ expect_status "em moi doc danh sach cua minh → 200" 200 "$(call GET /api/my/ex
 expect_status "  nhan DUNG khung gio cua lop, khong phai lich chung cua de" "$OPEN_KETHUA" "$(field_of_exam openAt "$EID")"
 call GET "/api/exams/$EID/assignments" "$TEACHER" > /dev/null
 expect_status "  giao vien thay em moi cung mang hasScheduleOverride" true "$(row_of_student hasScheduleOverride "$SID_KETHUA_2")"
-# AssignedViaGroupId ghi dung "giao dich danh", khac voi em dau tien cua lop (giao qua nhom) — chi khung
-# gio la thu duoc ke thua, khong phai moi lien ket voi lop cho muc dich doi gio hang loat sau nay.
-expect_status "  assignedViaGroupId van la dich danh (vang mat)" absent "$(row_of_student assignedViaGroupId "$SID_KETHUA_2")"
+# AssignedViaGroupId ghi lop da giao qua: lan doi gio ca lop sau nay tim lai dung nhung em cua lop.
+expect_status "  assignedViaGroupId ghi dung lop" "$G_KETHUA" "$(row_of_student assignedViaGroupId "$SID_KETHUA_2")"
 
 section "Xoa lop da tung giao bai khong lam hong bai cua em"
 build_class "Lop xoa $STAMP" "${STAMP}x"; G_XOA=$BUILT_GID; SID_XOA=$BUILT_SID
