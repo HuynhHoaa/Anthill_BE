@@ -53,7 +53,7 @@ Giới hạn đã biết:
 
 ## API
 
-68 endpoint REST trong 13 controller cộng một hub SignalR; danh sách đầy đủ ở
+73 endpoint REST trong 13 controller cộng một hub SignalR; danh sách đầy đủ ở
 [hợp đồng API](docs/Anthill_API_Contract.md) và Swagger. Mọi endpoint yêu cầu JWT trừ
 `POST /api/auth/login` và `POST /api/auth/refresh`.
 
@@ -226,7 +226,7 @@ trống, và được tự chuyển sang chuỗi kết nối Npgsql. Hai điều
 
 ## Kiểm thử
 
-**Unit test** — `tests/Anthill.Tests/`, 481 test:
+**Unit test** — `tests/Anthill.Tests/`, 704 test:
 
 ```bash
 dotnet test
@@ -236,7 +236,7 @@ Chúng kiểm tra logic thuần, không cần database: chia blueprint, xáo đ�
 hạn giờ và điều kiện bắt đầu làm bài, chấm điểm, lịch theo lớp, cổng xem đáp án, ẩn danh hoá, phạm vi học
 sinh của giáo viên, kiểm phiên đăng nhập, luật validator.
 
-**Bộ kiểm HTTP** — `tests/api-checks/`, hơn 1100 phép kiểm trong 19 script; chi tiết từng bộ ở
+**Bộ kiểm HTTP** — `tests/api-checks/`, hơn 1600 phép kiểm trong 27 script; chi tiết từng bộ ở
 [tests/api-checks/README.md](tests/api-checks/README.md). Chúng chạy trên API thật để kiểm thứ unit test
 không với tới: 401/403/404, phân quyền theo vai trò, phạm vi dữ liệu, transaction. Có một bộ cho mỗi bước
 từ `step2` tới `step8`, và các bộ cho phần thêm sau đó: lớp do quản trị viên lập, luồng từ lớp tới học
@@ -275,7 +275,7 @@ không cần tắt tiến trình đó khi chạy script.
 
 ## Phát triển
 
-- Repo có sẵn 5 migration trong `src/Anthill.Infrastructure/Persistence/Migrations/`. Đổi entity thì
+- Repo có sẵn 16 migration trong `src/Anthill.Infrastructure/Persistence/Migrations/`. Đổi entity thì
   thêm migration bằng `dotnet ef migrations add <Tên>` với cùng hai tham số `--project` /
   `--startup-project` ở trên và `--output-dir Persistence/Migrations`.
 - API cố ý không tự chạy migration lúc khởi động: hai tiến trình khởi động cùng lúc sẽ cùng sửa lược đồ.
@@ -289,7 +289,7 @@ không cần tắt tiến trình đó khi chạy script.
 
 | File | Nội dung |
 |---|---|
-| [docs/Anthill_API_Contract.md](docs/Anthill_API_Contract.md) | Hợp đồng API: 68 endpoint, quy tắc bảo mật, lược đồ database, quy tắc nghiệp vụ |
+| [docs/Anthill_API_Contract.md](docs/Anthill_API_Contract.md) | Hợp đồng API: 73 endpoint, quy tắc bảo mật, lược đồ database, quy tắc nghiệp vụ |
 | [docs/Anthill_BE_Tech_Structure.md](docs/Anthill_BE_Tech_Structure.md) | Cấu trúc thư mục từng project |
 | [docs/Anthill_Requirement.md](docs/Anthill_Requirement.md) | Đặc tả nghiệp vụ |
 | [docs/Anthill_Workflow_Deploy.md](docs/Anthill_Workflow_Deploy.md) | Quy trình làm việc và phương án deploy |

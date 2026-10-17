@@ -4,7 +4,7 @@ Tài liệu này được **rút ra từ tầng service của frontend** trướ
 
 Backend đã được dựng theo tài liệu này, và frontend đã chuyển mọi hàm service sang gọi `apiClient` — **chữ ký hàm giữ nguyên nên không trang nào phải sửa**. Tài liệu được cập nhật theo code; chỗ nào lệch thì code là chuẩn.
 
-Ngày lập: 06/09/2026 · Nguồn: 9 service, ~50 hàm · Hiện tại: **69 endpoint** (kể cả `POST /api/exams/{id}/duplicate`)
+Ngày lập: 06/09/2026 · Nguồn: 9 service, ~50 hàm · Hiện tại: **74 endpoint** (kể cả `GET /api/exams/{id}/papers`, `POST /api/exams/{id}/duplicate`, `POST /api/exams/{id}/release-answers`, `GET /api/exams/{id}/questions`, `POST /api/exams/compose-questions` và `PUT /api/auth/me/avatar`)
 
 > Đọc kèm: `Anthill_Requirement.md` (nghiệp vụ), `Anthill_BE_Tech_Structure.md` (kiến trúc BE), `Anthill_Workflow_Deploy.md` (lộ trình và hạ tầng).
 
@@ -59,7 +59,7 @@ Ngày lập: 06/09/2026 · Nguồn: 9 service, ~50 hàm · Hiện tại: **69 en
 `attemptService` cố ý ghi đè `isCorrect = false` trước khi trả câu hỏi xuống. Ở BE phải dùng **hai DTO tách biệt**: `AttemptAnswerOptionDto { id, content, imageUrl }` cho lúc làm bài (không khai báo trường `isCorrect`, kể cả gán false) và `ResultAnswerOptionDto { id, content, imageUrl, isCorrect }` cho lúc xem kết quả. Học sinh mở DevTools là thấy toàn bộ response — gán false không đủ, phải **không có trường đó**.
 
 **② Chấm điểm ở server, luôn luôn.**
-`submitAttempt` hiện tính điểm ngay trong FE rồi ghi vào mock. Client chỉ được gửi `{ questionId: answerId }`; server đối chiếu `AnswerOption.IsCorrect` trong DB, đếm, tính điểm. **Không bao giờ nhận `score`/`correctCount` từ client.**
+`submitAttempt` hiện tính điểm ngay trong FE rồi ghi vào mock. Client chỉ được gửi `{ questionId, answerIds }` (câu một đáp án thì mảng có một phần tử); server đối chiếu `AnswerOption.IsCorrect` trong DB, đếm, tính điểm. **Không bao giờ nhận `score`/`correctCount` từ client.**
 
 **③ Hạn giờ tính bằng đồng hồ server.**
 `expiresAt = startedAt + durationMinutes`, lưu vào bảng Attempt lúc bắt đầu, mọi kiểm tra so với `DateTime.UtcNow`. Client đổi giờ máy chỉ làm lệch cái đồng hồ trên màn hình, không mở rộng được thời gian thật.
@@ -72,7 +72,7 @@ Và: **phải có background job** quét các attempt `inprogress` quá hạn đ
 Mock hiện lấy hồ sơ theo đúng role client chọn (`getDefaultProfile(payload.role)`). Bê nguyên logic đó lên BE là **leo thang quyền tức thì** — gửi `role: 'admin'` là thành admin. Trường `role` trong request chỉ dùng để đối chiếu, hoặc bỏ hẳn.
 
 **⑥ Quyền xem đáp án thực thi ở server.**
-Quy tắc: giáo viên sở hữu đề luôn xem được. Học sinh xem **điểm** (`score`, `maxScore`, `correctCount`) khi *(attempt là của mình)* **và** *(status = graded)* **và** *(exam.showResultAfterSubmit = true)*. **Đáp án từng câu** (`correctAnswerId`, `isCorrect`) cần thêm điều kiện thứ tư: *(mọi lượt giao của đề đã qua giờ đóng có hiệu lực — lịch riêng của lớp nếu có, ngược lại lịch chung của đề)* — một đề giao cho nhiều lớp với nhiều khung giờ, và em lớp làm trước không được cầm đáp án chuyền cho lớp chưa thi. Khi không đủ điều kiện, response phải **không chứa** các trường đó — không phải ẩn ở giao diện. `GET /api/results/{attemptId}` trả kèm `answersVisibleAt` (mốc đáp án sẽ mở; vắng mặt khi đã mở, hoặc khi không có mốc nào để hẹn).
+Quy tắc: giáo viên sở hữu đề luôn xem được. Học sinh xem **điểm** (`score`, `maxScore`, `correctCount`) khi *(attempt là của mình)* **và** *(status = graded)* **và** *(exam.showResultAfterSubmit = true)*. **Đáp án từng câu** (`correctAnswerIds`, `isCorrect`) cần thêm điều kiện thứ tư: *(mọi lượt giao của đề đã qua giờ đóng có hiệu lực — lịch riêng của lớp nếu có, ngược lại lịch chung của đề)* — một đề giao cho nhiều lớp với nhiều khung giờ, và em lớp làm trước không được cầm đáp án chuyền cho lớp chưa thi. Khi không đủ điều kiện, response phải **không chứa** các trường đó — không phải ẩn ở giao diện. `GET /api/results/{attemptId}` trả kèm `answersVisibleAt` (mốc đáp án sẽ mở; vắng mặt khi đã mở, hoặc khi không có mốc nào để hẹn).
 
 ---
 
@@ -85,7 +85,8 @@ Quy tắc: giáo viên sở hữu đề luôn xem được. Học sinh xem **đi
 | POST | `/api/auth/login` | — | Đăng nhập bằng email (teacher/admin) hoặc username/mã HS (student). Trả JWT + hồ sơ |
 | POST | `/api/auth/refresh` | — | Cấp lại access token. **Bổ sung** — cần thiết vì học sinh làm bài 45–60 phút, hết token giữa chừng là mất bài |
 | GET | `/api/auth/me` | tất cả | Hồ sơ người đang đăng nhập, suy từ JWT |
-| PUT | `/api/auth/me` | tất cả | Cập nhật thông tin liên hệ của chính mình. **Học sinh không tự đổi `fullName` và `email`** (quản trị viên giữ danh tính trên bảng điểm): gửi giá trị khác trả **400** kèm `errors.fullName` / `errors.email`, gửi lại đúng giá trị đang có thì hợp lệ. `email` tối đa 256 ký tự |
+| PUT | `/api/auth/me` | tất cả | Cập nhật hồ sơ của chính mình. **Thông tin liên hệ do nhà trường quản lý:** quản trị viên sửa được `fullName`, `email`, `phone`; **giáo viên chỉ sửa được `fullName`** (gửi `email` hay `phone` khác đi trả **400** kèm `errors.email` / `errors.phone`); **học sinh không sửa được trường nào** (cả `fullName`, `email`, `phone`). Gửi lại đúng giá trị đang có thì hợp lệ — form luôn gửi đủ ba trường. Môn giảng dạy không có trong request nên không đổi được từ đây. `email` tối đa 256 ký tự |
+| PUT | `/api/auth/me/avatar` | admin, teacher | Đặt hay gỡ **ảnh đại diện** của chính mình. Body `{ "avatarUrl": string \| null }`, trường **phải có mặt** (thiếu là **400**, để client quên gửi không âm thầm gỡ ảnh); `null` hay chuỗi rỗng là gỡ. Ảnh tải lên trước ở `POST /api/uploads/images`, rồi gửi đường dẫn nhận về; chỉ nhận đường dẫn tương đối bắt đầu bằng `/uploads/`, không chứa `..`, tối đa 512 ký tự — URL tuyệt đối, `//host`, data URI trả **400**. Học sinh trả **403** (hồ sơ học sinh do nhà trường quản lý, và học sinh cũng không tải ảnh lên được). Cố ý **không** áp khoá tài khoản demo (§H19). Trả `UserProfileDto` có `avatarUrl` (vắng khi chưa có ảnh); `GET /api/auth/me` và phản hồi đăng nhập cũng mang trường này. File ảnh cũ không bị xoá khi đổi hay gỡ |
 | POST | `/api/auth/change-password` | tất cả | Đổi mật khẩu, xác minh mật khẩu hiện tại. Sai mật khẩu hiện tại → **400** kèm `errors.currentPassword`; 401 chỉ khi phiên đã chết |
 | POST | `/api/auth/logout` | tất cả | Thu hồi phiên (chỉ cần khi dùng refresh token) |
 
@@ -111,8 +112,8 @@ JWT claims tối thiểu: `sub` = userId, `role`, `name`, `subject_id` (giáo vi
 |---|---|---|---|
 | GET | `/api/students` | admin, teacher | Danh sách có phân trang, lọc theo từ khoá / nhóm / trạng thái. Giáo viên chỉ nhận học sinh ở lớp đã công bố mà mình được phân công |
 | GET | `/api/students/{id}` | admin, teacher | Hồ sơ một học sinh. Giáo viên: học sinh lớp mình dạy, hoặc đã nhận một đề do chính mình tạo; ngoài ra 404 |
-| POST | `/api/students` | admin | Tạo tài khoản kèm mật khẩu ban đầu |
-| PUT | `/api/students/{id}` | admin | Cập nhật hồ sơ, nhóm, trạng thái. **Không nhận mật khẩu** |
+| POST | `/api/students` | admin | Tạo tài khoản kèm mật khẩu ban đầu. `phone` không bắt buộc (sai định dạng trả 400) |
+| PUT | `/api/students/{id}` | admin | Cập nhật hồ sơ, nhóm, trạng thái. **Không nhận mật khẩu**. `phone`: không gửi thì giữ nguyên số đang có, chuỗi rỗng xoá trắng. `StudentDto.phone` chỉ có khi người gọi là quản trị viên — giáo viên không nhận trường này |
 | PATCH | `/api/students/{id}/status` | admin | Khoá / mở khoá — chỉ nhận `active` hoặc `locked`; hai trạng thái xoá đi qua hai endpoint riêng bên dưới |
 | POST | `/api/students/{id}/reset-password` | admin | **Bổ sung** — cấp lại mật khẩu khi học sinh quên |
 | POST | `/api/students/{id}/request-deletion` | admin | **Bổ sung** — đưa vào diện chờ xoá (`pendingDeletion`), lý do bắt buộc (≥ 10 ký tự). Không đăng nhập được, token cũ chết ngay. Sau 60 ngày tiến trình nền ẩn danh hoá, gỡ khỏi lớp và chuyển sang `deleted`; lượt làm bài và điểm giữ nguyên |
@@ -150,7 +151,7 @@ JWT claims tối thiểu: `sub` = userId, `role`, `name`, `subject_id` (giáo vi
 
 | Method | Path | Vai trò | Mô tả |
 |---|---|---|---|
-| GET | `/api/questions` | teacher, admin | Danh sách, lọc theo từ khoá / chủ đề / độ khó / trạng thái |
+| GET | `/api/questions` | teacher, admin | Danh sách, lọc theo từ khoá / chủ đề / độ khó / trạng thái. Thêm `excludeAssignedToGroupIds` (mã lớp ngăn cách bằng dấu phẩy, ví dụ `18,19`) để **bỏ những câu mà học sinh các lớp đó đã nhận ở đề trước** — dùng cho hộp "Thêm từ ngân hàng" của trình soạn đề. Chỉ giáo viên, chỉ lớp mình được phân công và đã công bố; lớp lạ, chuỗi không phải số, quá 50 lớp, hay quản trị viên dùng là **400** (không âm thầm bỏ qua). Bỏ trống là không lọc. Cùng cách tính "đã nhận" với `excludeAssignedToGroupIds` của soạn tự động |
 | GET | `/api/questions/topics` | teacher, admin | Tập chủ đề đang có (cho dropdown và gợi ý nhập) |
 | GET | `/api/questions/summary` | teacher, admin | Thống kê ngân hàng. Gộp 3 lời gọi FE đang bắn song song |
 | GET | `/api/questions/{id}` | teacher, admin | Một câu hỏi kèm đáp án |
@@ -162,25 +163,30 @@ JWT claims tối thiểu: `sub` = userId, `role`, `name`, `subject_id` (giáo vi
 
 > **Sửa câu hỏi:** FE **thay cả mảng đáp án** chứ không sửa tại chỗ, có chú thích rõ *"để các bài làm đã chấm giữ nguyên đáp án cũ"*. BE phải giữ đúng ý này — bằng versioning hoặc bằng snapshot vào attempt (xem §6).
 > **Xoá câu hỏi:** FE xoá thẳng, không kiểm tra câu đó đã nằm trong đề hay bài làm nào. BE **bắt buộc** phải kiểm.
+> **Tên câu hỏi (`title`):** nhãn ngắn do giáo viên đặt, tách khỏi `content` (đề bài). Server không bắt buộc (trình soạn trên giao diện bắt buộc nhập từ 17/10), một dòng (khoảng trắng và xuống dòng được gộp), tối đa 200 ký tự — vượt thì **400**. Chưa đặt thì API trả chuỗi rỗng và giao diện dùng phần đầu của `content`. `PUT` thay toàn bộ nên bỏ trống `title` là xoá tên đã đặt. `search` khớp cả tên. Học sinh không nhận trường này: bản đề chụp lại chỉ giữ nội dung.
+> **Loại câu (`allowMultiple`):** cờ do giáo viên chọn rõ khi soạn, không suy ra từ số đáp án đúng. `false` (mặc định, cũng là giá trị khi `POST`/`PUT` bỏ trống trường) = câu một đáp án: đúng **một** đáp án đúng, nhiều hơn trả **400**. `true` = câu nhiều đáp án đúng: **từ một** đáp án đúng trở lên. Cả hai loại đều bắt buộc có ít nhất một đáp án đúng. `QuestionDto` luôn mang `allowMultiple`; bản đề chụp lại giữ cờ này (`ExamPaperQuestion.AllowMultiple`) nên đổi loại câu trong ngân hàng không làm đổi đề đã sinh.
 
 ### 4.6 Bài kiểm tra
 
 | Method | Path | Vai trò | Mô tả |
 |---|---|---|---|
 | GET | `/api/exams` | teacher, admin | Danh sách, tìm kiếm + lọc theo vòng đời |
-| GET | `/api/exams/{id}` | teacher, admin | Chi tiết một đề |
-| POST | `/api/exams` | teacher | Tạo đề theo blueprint. **Đề không chứa danh sách câu hỏi cụ thể** |
-| PUT | `/api/exams/{id}` | teacher | Sửa toàn bộ cấu hình. Chưa em nào bắt đầu làm: sửa được mọi trường, bản đề đã sinh cho các lượt giao được **sinh lại** theo cấu hình mới (ngân hàng không đủ câu thì từ chối, không đổi gì); đề không còn lượt giao nào (đã thu hồi hết) thì bản đề cũ bị bỏ, lần giao sau sinh theo cấu hình mới. Đã có em bắt đầu (`blueprintFrozen`): đổi số câu, ba tỷ lệ, chủ đề, điểm mỗi câu, thời lượng, tuỳ chọn trộn hoặc đưa về nháp trả **409**; tên, mô tả và `showResultAfterSubmit` vẫn sửa được. Lịch có luật khoá riêng (xem `scheduleLocked`): đề đã giao thì đổi lịch trả **409** từ lúc còn dưới 120 phút nữa là mở cho tới hết giờ đóng, gửi lại đúng lịch đang có thì không bị chặn. Điểm đã chấm không bao giờ đổi |
+| GET | `/api/exams/{id}` | teacher, admin | Chi tiết một đề (`usesQuestionList` cho biết kiểu) |
+| GET | `/api/exams/{id}/questions` | teacher, admin | Danh sách câu hỏi của đề theo danh sách, theo thứ tự, mỗi dòng `{ ordinal, point, question }` với `question` là `QuestionDto` đầy đủ (đáp án đúng, ảnh, trạng thái). Rỗng với đề theo ma trận |
+| GET | `/api/exams/{id}/papers` | teacher, admin | Cách đề được **chia thành nhiều đề nhỏ**: mỗi mức đề lớn có bao nhiêu câu, mỗi đề cần bao nhiêu, bao nhiêu câu trùng ở nhiều đề hay không vào đề nào, và với từng lớp đã giao thì mỗi đề nhỏ (mã A, B…) có bao nhiêu em cùng mã câu của nó. Đề không chia: `paperCount = 1`, hai mảng rỗng. Học sinh **403**. Xem "Chia một đề thành nhiều đề" |
+| POST | `/api/exams/compose-questions` | teacher | **"Soạn tự động"**: nhận `{ easy, medium, hard, topic?, excludeQuestionIds?, excludeAssignedToGroupIds? }`, rút ngẫu nhiên câu đang bật từ ngân hàng của môn giáo viên, loại các câu đã có. `topic` là **chương** cần soạn (khớp tên chính xác, không phân biệt hoa thường); soạn đề nhiều chương thì gọi lần lượt từng chương, truyền các câu đã có vào `excludeQuestionIds`. `excludeAssignedToGroupIds` (tối đa 50 lớp) bỏ thêm những câu mà học sinh của các lớp đó **đã nhận** ở các đề trước — bản đề riêng của từng em và bản chung của đề giao cho lớp; đề chia nhiều đề chỉ tính các câu thực sự rơi vào đề của lớp. Lớp không thuộc quyền giáo viên (chưa được phân công, chưa công bố, hay không tồn tại) trả **400**, không âm thầm bỏ qua. Trả `{ questions, missing, skippedAlreadyAssigned }`; thiếu câu không phải lỗi (`missing.hard = 3` nghĩa là còn thiếu 3 câu Khó), `skippedAlreadyAssigned` là số câu đủ điều kiện nhưng bị bỏ vì lớp đã nhận. **Không ghi gì** — đề chỉ đổi khi lưu |
+| POST | `/api/exams` | teacher | Tạo đề. Có hai kiểu: **theo danh sách câu hỏi** (gửi `questions`: từng câu kèm điểm riêng, giáo viên đã duyệt trước khi lưu) hoặc **theo ma trận** (gửi `totalQuestions` + ba tỷ lệ, đề không chứa câu hỏi cụ thể). Đề theo danh sách có thể gửi thêm `paperCount` (2–10) để chia thành nhiều đề nhỏ cho mỗi lớp. Xem "Đề theo danh sách câu hỏi" và "Chia một đề thành nhiều đề" |
+| PUT | `/api/exams/{id}` | teacher | Sửa toàn bộ cấu hình. Chưa em nào bắt đầu làm: sửa được mọi trường, bản đề đã sinh cho các lượt giao được **sinh lại** theo cấu hình mới (ngân hàng không đủ câu thì từ chối, không đổi gì); đề không còn lượt giao nào (đã thu hồi hết) thì bản đề cũ bị bỏ, lần giao sau sinh theo cấu hình mới. Đã có em bắt đầu (`blueprintFrozen`): đổi số câu, ba tỷ lệ, chủ đề, điểm mỗi câu (đề theo danh sách: danh sách câu hỏi hoặc điểm từng câu; đề chia nhiều đề: số đề), thời lượng, tuỳ chọn trộn hoặc đưa về nháp trả **409**; tên, mô tả và `showResultAfterSubmit` vẫn sửa được. Lịch có luật khoá riêng (xem `scheduleLocked`): đề đã giao thì đổi lịch trả **409** từ lúc còn dưới 120 phút nữa là mở cho tới hết giờ đóng, gửi lại đúng lịch đang có thì không bị chặn. Điểm đã chấm không bao giờ đổi |
 | PATCH | `/api/exams/{id}/schedule` | teacher | **Chỉ** đổi lịch mở/đóng — hẹp và an toàn hơn PUT. **409** khi đề đã giao và lịch đang khoá (từ dưới 120 phút trước giờ mở tới hết giờ đóng) |
 | DELETE | `/api/exams/{id}` | teacher | Xoá đề kèm toàn bộ bản ghi giao bài và bản đề đã sinh. Đã có học sinh nộp bài thì **409** — để đề tự đóng theo lịch, kết quả của các em vẫn tra cứu được |
 | POST | `/api/exams/blueprint-preview` | teacher | **Trái tim của tính năng.** Nhận cấu hình đang gõ dở, trả số câu cần / số câu có / hợp lệ hay không |
-| GET | `/api/exams/{id}/blueprint` | teacher | Blueprint của đề đã lưu |
+| GET | `/api/exams/{id}/blueprint` | teacher | Blueprint của đề đã lưu, đối chiếu với tồn kho hiện tại. Đề theo danh sách: `required` là số câu mỗi mức trong chính danh sách, `available` là số câu trong đó còn bật, `errors` nói bao nhiêu câu đang bị ẩn |
 | POST | `/api/exams/{id}/publish` | teacher | **Bổ sung** — chuyển nháp sang xuất bản. FE hiện làm việc này bằng cách gửi PUT với `lifecycle` bỏ trống. Kiểm lại hai điều kiện mà nháp được miễn: tổng ba tỷ lệ và ngân hàng đủ câu. Tổng điểm không phải điều kiện (xem "Điểm của đề") |
+| POST | `/api/exams/{id}/release-answers` | teacher | **Bổ sung** — "Mở đáp án": bật `showResultAfterSubmit` của đề để học sinh đã nộp xem được điểm và đáp án từng câu. **Chỉ khi hết giờ**: lớp đóng bài muộn nhất (kể cả lượt đang chạy) đã qua giờ đóng; còn lớp đang làm hay chưa tới giờ làm thì **409** "Chưa hết giờ…", đề chưa giao cho lớp nào cũng **409**. Đã bật rồi thì 200, không đổi gì. Chỉ chủ đề (giáo viên khác 404, học sinh và quản trị viên 403). Cờ này vẫn sửa được qua `PUT` kể cả khi cấu hình đề đã khoá, nhưng đáp án từng câu luôn chờ lớp cuối hết giờ |
 | POST | `/api/exams/{id}/duplicate` | teacher | **Bổ sung** — nhân bản đề của chính mình thành một bản **nháp** mới, cùng cấu hình, tên thêm " (bản sao)", chưa giao cho ai. Lối ra khi cấu hình đã khoá. Đề của giáo viên khác trả 404; giáo viên chưa được gán môn trả 403 như khi tạo đề |
-| GET | `/api/exams/{id}/assignments` | teacher | Danh sách học sinh đã giao kèm trạng thái làm bài. Mỗi dòng mang khung giờ thật của em (`openAt`, `closeAt`, `hasScheduleOverride`, `assignedViaGroupId`); `expired` tính theo khung giờ đó |
-| POST | `/api/exams/{id}/assignments` | teacher | Giao bài cho học sinh lẻ và/hoặc cả nhóm, tuỳ chọn kèm khung giờ riêng (`openAt` + `closeAt`, phải chứa trọn `durationMinutes`, nếu không 400). Gửi lại một lớp kèm khung giờ là sửa giờ cho em chưa bắt đầu (`scheduleUpdatedCount`, `scheduleKeptStartedCount`); **409** nếu khung giờ lớp đang theo đã khoá, gửi lại đúng khung cũ hoặc giao thêm em vào lớp thì không bị chặn |
-| PATCH | `/api/exams/{examId}/assignments/{assignmentId}/schedule` | teacher | Dời giờ riêng cho một em chọn đích danh (`openAt` + `closeAt`, bỏ trống cả hai để về lịch chung). **409** khi em được giao qua lớp, em đã bắt đầu làm, hoặc khung giờ hiện tại của em đang khoá |
-| DELETE | `/api/exams/{examId}/assignments/{assignmentId}` | teacher | **Bổ sung** — thu hồi bài đã giao. Giao nhầm lớp là chuyện thường, mà endpoint giao bài lại cố ý idempotent nên không có đường lùi |
+| GET | `/api/exams/{id}/assignments` | teacher | Danh sách học sinh đã giao kèm trạng thái làm bài. Mỗi dòng mang khung giờ thật của em (`openAt`, `closeAt`, `hasScheduleOverride`, `assignedViaGroupId`) và, với đề chia nhiều đề, `paperLabel` (mã đề của em; **chỉ giáo viên và quản trị viên thấy**); `expired` tính theo khung giờ đó |
+| POST | `/api/exams/{id}/assignments` | teacher | Giao bài cho một hay nhiều **lớp** (`groupIds`, hoặc `classes` khi mỗi lớp có khung giờ riêng). **Bài chỉ giao theo lớp**: body mang `studentIds` khác rỗng trả **400**; em mới vào lớp nhận bài khi gửi lại lớp. Tuỳ chọn kèm khung giờ (`openAt` + `closeAt`, phải chứa trọn `durationMinutes`, nếu không 400). Gửi lại một lớp kèm khung giờ là sửa giờ cho em chưa bắt đầu (`scheduleUpdatedCount`, `scheduleKeptStartedCount`); **409** nếu khung giờ lớp đang theo đã khoá, gửi lại đúng khung cũ hoặc giao thêm em vào lớp thì không bị chặn |
+| DELETE | `/api/exams/{examId}/assignments/classes/{groupId}` | teacher | **Bổ sung** — thu hồi bài đã giao cho **cả một lớp**: gỡ mọi em của lớp chưa bắt đầu làm, em đã bắt đầu giữ nguyên bài và điểm. Trả `{ revokedCount, keptStartedCount }`. **404** khi lớp chưa được giao đề này, **409** khi mọi em đã bắt đầu. Giao nhầm lớp là chuyện thường, mà endpoint giao bài lại cố ý idempotent nên không có đường lùi; không có thu hồi riêng từng học sinh |
 
 ### 4.7 Làm bài (phía học sinh)
 
@@ -206,18 +212,33 @@ JWT claims tối thiểu: `sub` = userId, `role`, `name`, `subject_id` (giáo vi
 
 `POST .../submit` sau khi đã chốt (vì hết giờ hoặc em đã nộp) trả lại đúng kết quả cũ với 200 — nộp bài là idempotent.
 
+**Hình dạng đáp án khi làm bài (hỗ trợ câu nhiều đáp án đúng).**
+
+| Hướng | Trường | Ý nghĩa |
+|---|---|---|
+| Gửi `PUT .../answers`, `POST .../submit` | `answers: [{ questionId, answerIds }]` | Mỗi phần tử là **toàn bộ** lựa chọn hiện tại của câu đó: mảng rỗng là bỏ chọn hết. Tối đa 10 id, mỗi id dương, trùng thì gộp. Chưa có dòng nào cho câu thì coi như bỏ trống |
+| Gửi (kiểu cũ, vẫn nhận) | `answerId` (số hoặc `null`) | Tương đương `answerIds` một phần tử (hoặc rỗng). Gửi cả `answerId` lẫn `answerIds` trong cùng một phần tử trả **400** |
+| Nhận (nạp lại phiên, trả sau khi lưu) | `savedAnswers: { [questionId]: number[] }` | Chỉ có câu đã chọn ít nhất một đáp án |
+| Nhận | `questions[].allowMultiple` | Cho giao diện chọn kiểu ô tròn hay ô vuông. Tuyệt đối **không** kèm đáp án nào đúng |
+
+- Câu một đáp án nhận nhiều hơn một id trả **422**, id không thuộc câu đó trả **422** (như trước).
+- **Chấm điểm câu nhiều đáp án: tất cả hoặc không gì cả.** Câu chỉ đúng khi tập đáp án đã chọn **bằng đúng** tập đáp án đúng — chọn thiếu hay chọn thừa đều 0 điểm; bỏ trống thì 0 điểm; chưa có điểm từng phần. Câu một đáp án chấm như cũ.
+- Cột `StudentAnswer.SelectedAnswerIds` là `integer[]`, một dòng cho mỗi (lượt, câu); bỏ chọn hết thì dòng có mảng rỗng hoặc không có dòng.
+
 ### 4.8 Kết quả và tổng quan
 
 | Method | Path | Vai trò | Mô tả |
 |---|---|---|---|
 | GET | `/api/results` | teacher | Bảng kết quả, lọc chéo theo đề / học sinh / nhóm / trạng thái |
 | GET | `/api/results/stats` | teacher | Các ô số liệu đầu trang, nhận cùng bộ lọc với bảng kết quả: `totalAttempts`, `gradedCount`, `inProgressCount` (lượt đang làm dở, chưa nộp), `averageScore`, `highestScore`, `completionRate` |
-| GET | `/api/results/{attemptId}` | teacher, student | Chi tiết một lượt làm bài, soi từng câu |
+| GET | `/api/results/{attemptId}` | teacher, student | Chi tiết một lượt làm bài, soi từng câu. Với đề chia nhiều đề, giáo viên nhận thêm `paperLabel` (mã đề của em); học sinh **không bao giờ** nhận trường này |
 | GET | `/api/results/{attemptId}/summary` | student | **Bổ sung** — cho màn "Đã nộp bài". Hiện trang đó gọi `getAttemptDetail`, tức kéo về toàn bộ câu hỏi chỉ để hiện một vòng tròn điểm |
 | GET | `/api/my/results` | student | Lịch sử làm bài của chính mình. **Chỉ gồm lượt đã nộp hoặc đã chấm**; bài đang làm dở nằm ở `GET /api/my/exams` |
 | GET | `/api/dashboard/teacher` | teacher | Endpoint **gộp** cho trang tổng quan |
 | GET | `/api/dashboard/student` | student | Endpoint **gộp** cho trang tổng quan |
 
+> **Phía giao diện giáo viên không còn trang bảng kết quả chung** (đã bỏ): bài làm được mở từ lớp → học sinh, hoặc từ bài kiểm tra → lớp → học sinh. `GET /api/results` vẫn được dùng để liệt kê bài làm của một học sinh (`studentId`); `GET /api/results/stats` hiện chưa có nơi nào ở giao diện gọi.
+> **Chi tiết một lượt (`GET /api/results/{attemptId}`) với câu nhiều đáp án đúng.** Mỗi câu mang `allowMultiple` và `selectedAnswerIds` (mảng, rỗng khi bỏ trống — luôn có, vì đó là lựa chọn của chính em). Khi đủ điều kiện xem đáp án (rule ⑥) mới có thêm `correctAnswerIds` (đủ mọi đáp án đúng theo thứ tự hiển thị) và `isCorrect`; không đủ điều kiện thì hai trường này **vắng mặt hẳn** như trước. Giao diện đối chiếu `selectedAnswerIds` với `correctAnswerIds` để chỉ ra ô chọn thiếu, ô chọn thừa.
 > Hai endpoint dashboard **nên gộp**, không nên tách: FE hiện gọi đúng một lần và render cả trang. Tách ra sẽ thành 6 truy vấn độc lập cho một màn hình.
 > `GET /api/results/stats` hiện không nhận bộ lọc, nên số liệu là của toàn hệ thống và không đổi theo bảng bên dưới — FE phải ghi chú *"Toàn hệ thống"* để tránh hiểu nhầm. Cân nhắc cho nhận bộ lọc.
 
@@ -239,23 +260,55 @@ Mức Khó nhận phần dư nên **tổng luôn bằng `totalQuestions`**. Tron
 
 **BE tự tính, không tin số client gửi.** Client chỉ gửi `(totalQuestions, 3 tỷ lệ, topic)`.
 
-**Validate đề:** `title` không rỗng sau trim · `1 ≤ durationMinutes ≤ 300` · `totalQuestions ≥ 1` · `pointEasy`, `pointMedium`, `pointHard` không âm, tối đa 100 và tối đa 2 chữ số thập phân (mức có câu thì phải > 0) · `closeAt > openAt` · nếu `lifecycle ≠ 'draft'` thì tổng ba tỷ lệ phải bằng 100 và ngân hàng phải đủ câu. Tổng điểm khác 100 **không** bị chặn (mục dưới).
+### Đề theo danh sách câu hỏi
+
+Đề có thể soạn bằng **danh sách câu hỏi cụ thể** thay vì ma trận: giáo viên chọn từng câu từ ngân hàng (hoặc bấm "Soạn tự động"), đặt điểm cho từng câu, **duyệt xong mới lưu**. Học sinh nhận đúng những câu đó.
+
+- Gửi `questions: [{ questionId, point }]` (thứ tự mảng là thứ tự trong đề; mảng rỗng được với bản nháp). Có mặt `questions` thì các trường ma trận (`totalQuestions`, ba tỷ lệ, `pointEasy/Medium/Hard`, `topic`) **bị bỏ qua**: server dẫn xuất lại từ danh sách để mọi màn hình đọc chúng vẫn chạy. `usesQuestionList = true` trong `ExamDto`.
+- Mỗi lần `PUT` một đề như vậy **phải gửi lại** `questions` (thiếu thì 400): danh sách là một phần của "thay toàn bộ cấu hình".
+- Điểm: mỗi câu `0 ≤ point ≤ 100`, tối đa 2 chữ số thập phân; tổng ≤ 9999,99. `totalScore` là tổng điểm từng câu (chụp lúc lưu vào `Exam.ListTotalScore`). Chuẩn là 10 (trước đây 100) nhưng không bắt buộc, như đề ma trận. Trần 100 của **một câu** là trần cứng của server, cố ý khác tổng chuẩn để đề cũ chấm trên 100 vẫn sửa được.
+- Mỗi câu phải còn trong ngân hàng mà giáo viên đọc được (cùng môn; câu riêng tư của đồng nghiệp thì không). Bản nháp được giữ cả câu đang bị ẩn; xuất bản (`lifecycle` bỏ trống, hoặc `POST /{id}/publish`) thì phải có ít nhất một câu, mọi câu đang bật, tổng điểm > 0.
+- **Bản đề** sinh lúc giao bài rút thẳng từ danh sách, theo thứ tự (khi tắt trộn), mỗi `ExamPaperQuestion.Point` lấy từ điểm riêng của câu. Mọi học sinh cùng một bộ câu (trừ khi đề được chia thành nhiều đề — xem mục sau); `randomizePerStudent: true` trả **400**.
+- Đổi danh sách (thêm, bớt, thay, xếp lại, đổi điểm) theo đúng ranh giới "lượt làm bài đầu tiên" như đề ma trận: chưa ai làm thì ghi và sinh lại bản đề; đã có em làm thì **409** gọi tên "danh sách câu hỏi và điểm từng câu".
+- Câu hỏi đang nằm trong danh sách của một đề **không xoá được** (409), kể cả đề nháp: ẩn thay vì xoá. Ẩn một câu đang nằm trong đề đã giao khiến bản đề không sinh lại được (vẫn giữ bản cũ), và đề đó không xuất bản/giao thêm được cho tới khi thay câu.
+- Đề cũ theo ma trận giữ nguyên cách chạy. Gửi `questions` lên một đề ma trận chưa ai làm thì chuyển nó sang kiểu danh sách.
+- `POST /{id}/duplicate` chép cả danh sách.
+
+### Chia một đề thành nhiều đề
+
+Một đề theo danh sách có thể được chia thành **N đề nhỏ** cho mỗi lớp, để các em ngồi cạnh nhau cầm đề khác nhau. Danh sách câu hỏi giáo viên đã duyệt là **đề lớn**; mỗi đề nhỏ rút từ đó theo một chuẩn chung.
+
+- **`paperCount`** (trong `SaveExamRequest` và `ExamDto`): 1–10, mặc định 1 (cả lớp một đề). Ngoài khoảng là **400** "Số đề phải từ 1 đến 10."; từ 2 trở lên mà không gửi `questions` là **400** "Chia thành nhiều đề chỉ dùng được với đề soạn theo danh sách câu hỏi."
+- **`paperBonusUnits`** (trong `SaveExamRequest` và `ExamDto`): số đơn vị **0,01 điểm** cộng thêm cho các câu **mức cao nhất** (Khó; hết câu Khó thì tràn xuống Trung bình rồi Dễ) của **mỗi** đề nhỏ, để đề nhỏ cộng **đúng 10** với mọi cấu hình. Lý do: các câu cùng mức cùng điểm và điểm chỉ có hai chữ số thập phân, nên tổng điểm theo mức luôn là bội của `g × 0,01` (`g` là ước chung lớn nhất của ba số câu) — 3 / 3 / 3 câu không bao giờ ra đúng 10,00. Mặc định 0, trong 0–500; phải là 0 khi `paperCount` ≤ 1 (**400** "Điểm cộng thêm chỉ dùng được khi chia thành nhiều đề."); không lớn hơn `totalQuestions` (**400** "Điểm cộng thêm không thể nhiều đơn vị hơn số câu của một đề."). Điểm của một câu trong bản đề của em là điểm mức, cộng 0,01 nếu câu đó nằm trong `paperBonusUnits` câu đầu theo thứ tự Khó → Trung bình → Dễ **trong bản đề của chính em** (nên các em có thể có hai câu cùng mức hơn kém nhau 0,01, nhưng mọi bản đề cùng tổng). Ví dụ 3 / 3 / 3 câu, điểm 0,9 / 1,1 / 1,33 = 9,99, `paperBonusUnits = 1` → một câu Khó mỗi đề là 1,34, tổng đúng 10,00. Giao diện tự tính điểm theo mức và `paperBonusUnits`; giáo viên không nhập.
+- **Từ 2 đề**, `totalQuestions` (1–500) và ba tỷ lệ `easyPercentage` / `mediumPercentage` / `hardPercentage` là **cấu hình của MỘT đề nhỏ** do giáo viên nhập; server **không** dẫn xuất lại chúng từ danh sách như với đề một đề. Số câu mỗi mức tính bằng đúng công thức làm tròn của ma trận (mức Khó nhận phần dư). `pointEasy` / `pointMedium` / `pointHard` vẫn dẫn xuất từ danh sách, và **`totalScore` là tổng điểm của một đề nhỏ** (số câu mỗi mức × điểm mức đó, cộng `paperBonusUnits` × 0,01).
+- **Điều kiện lưu và xuất bản** (bản nháp được miễn tổng tỷ lệ và số câu đủ; khoảng giá trị của từng trường luôn được kiểm): ba tỷ lệ cộng đúng 100; mỗi mức, đề lớn có ít nhất bằng số câu **một** đề cần ở mức đó (thiếu thì **400** "Mức Dễ: mỗi đề cần X câu nhưng đề lớn chỉ có Y câu Dễ…"); các câu **cùng mức phải cùng điểm** (**400** "Đề nhiều đề: các câu Dễ phải cùng điểm…") để mọi đề nhỏ có chung tổng điểm.
+- **Chia câu** (`PaperPartitioner`; `PaperPlanner` tính trước cùng công thức, nên con số giáo viên thấy lúc soạn là con số lúc sinh đề). Ưu tiên theo thứ tự: mỗi đề đủ số câu → đúng tỷ lệ độ khó → tới tác giả/chủ đề. Mỗi mức: nhu cầu là N × số câu mỗi đề; các câu được dùng **đều nhau** (hai câu cùng mức chênh nhau nhiều nhất một lần) và trong một đề **không bao giờ có hai câu giống nhau**. Đề lớn đủ câu cho mọi đề (số câu mức đó ≥ N × số câu mỗi đề) thì các đề không trùng nhau; không đủ thì **được trùng** (không phải lỗi); dư thì một số câu không vào đề nào.
+- **Mỗi lớp xáo riêng**: bảng `ExamPaperVariants (ExamId, GroupId, VariantIndex, QuestionIds integer[])` giữ bộ câu của từng đề nhỏ ở từng lớp, nên "đề A" của hai lớp có thể gồm các câu khác nhau.
+- **Phát đề**: lúc giao bài, mỗi em có một `ExamPaper` riêng (`AssignmentId`, `VariantIndex`) chép từ đề nhỏ của em, thứ tự câu và đáp án trộn riêng khi tuỳ chọn trộn bật. Em nhận đề **ngẫu nhiên nhưng cân bằng** (bộ sinh số ngẫu nhiên mật mã, xáo danh sách trước khi chia): số em mỗi đề trong một lớp chênh nhau nhiều nhất 1 và **không theo thứ tự danh sách** (không xoay A, B, C, D), để học sinh không suy ra đề của mình từ vị trí. Em vào lớp sau được xếp vào đề đang ít em nhất.
+- **`paperLabel`** ("A", "B"…) trong `ExamAssignmentDto` (`GET /api/exams/{id}/assignments`): mã đề của em, vắng với đề không chia. **Chỉ giáo viên và quản trị viên thấy**; học sinh không bao giờ nhận mã đề của mình hay của bạn.
+- **`GET /api/exams/{id}/papers`** → `ExamPapersDto`: `{ paperCount, levels: [{ level, poolSize, perPaper, sufficient, sharedQuestions, unusedQuestions }], classes: [{ groupId?, groupName, students, papers: [{ variantIndex, label, students, questionCount, easy, medium, hard, questionIds }] }] }`. Đề không chia: `paperCount: 1` và hai mảng rỗng. Giáo viên đọc đề của mình, quản trị viên đọc mọi đề, học sinh **403**, đề của giáo viên khác **404**.
+- **Khoá**: đổi `paperCount` ("số đề"), `totalQuestions`, ba tỷ lệ hay `paperBonusUnits` ("điểm cộng thêm của đề nhỏ") khi đã có em bắt đầu làm là **409** gọi đúng tên trường; chưa ai làm thì ghi và các bản đề đã phát được chia lại, phát lại.
+- `randomizePerStudent: true` với đề theo danh sách vẫn **400**: chia đề là cách chống gian lận thay cho nó. `POST /{id}/duplicate` chép cả `paperCount` và `paperBonusUnits`.
+- **H10 (đáp án đã lộ)**: thêm học sinh vào một lớp đã có đề nhỏ, khi mọi cửa sổ làm bài của đề đã đóng (đáp án đã tới tay các em trước), là **409** — vì các câu của đề lớn đã lộ cùng đáp án, nên đổi cách chia cũng không giúp gì; câu chữ riêng cho đề chia nhiều đề, khuyên nhân bản đề. Lớp chưa có đề nhỏ nào (giao mới) không bị chặn, và còn lớp nào chưa hết giờ thì chưa bị chặn.
+- Chia nhiều đề chỉ có với đề soạn theo danh sách (giáo viên tự duyệt đề lớn); đề theo ma trận không chia nhiều đề.
+
+**Validate đề (theo ma trận):** `title` không rỗng sau trim · `1 ≤ durationMinutes ≤ 300` · `totalQuestions ≥ 1` · `pointEasy`, `pointMedium`, `pointHard` không âm, tối đa 100 và tối đa 2 chữ số thập phân (mức có câu thì phải > 0) · `closeAt > openAt` · nếu `lifecycle ≠ 'draft'` thì tổng ba tỷ lệ phải bằng 100 và ngân hàng phải đủ câu. Tổng điểm khác 100 **không** bị chặn (mục dưới).
 Bổ sung một kiểm tra FE chỉ cảnh báo ở UI: **`durationMinutes` không được lớn hơn khoảng cách `openAt..closeAt`** — làm bài 90 phút trong cửa sổ mở 30 phút là vô nghĩa.
 
-### Điểm của đề: chuẩn 100, gắn theo mức độ khó
+### Điểm của đề: chuẩn 10, gắn theo mức độ khó
 
-Tổng điểm **chuẩn** của một đề là 100, nhưng server không bắt buộc (xem dưới). Điểm gắn theo **mức độ khó**, không theo từng câu cụ thể: đề chỉ là ma trận (xem trên), câu hỏi thật chỉ xuất hiện khi sinh bản đề và khác nhau giữa các học sinh, nên giáo viên đặt ba số `pointEasy`, `pointMedium`, `pointHard` (điểm của MỘT câu ở mức đó).
+Tổng điểm **chuẩn** của một đề là 10 (đổi từ 100 ngày 15/10/2026), nhưng server không bắt buộc (xem dưới). Điểm gắn theo **mức độ khó**, không theo từng câu cụ thể: đề chỉ là ma trận (xem trên), câu hỏi thật chỉ xuất hiện khi sinh bản đề và khác nhau giữa các học sinh, nên giáo viên đặt ba số `pointEasy`, `pointMedium`, `pointHard` (điểm của MỘT câu ở mức đó).
 
 ```
 tổng điểm = nDễ × pointEasy + nTrungBình × pointMedium + nKhó × pointHard      (nDễ, nTB, nKhó: số câu từ ma trận)
 ```
 
 - Số câu mỗi mức cố định theo ma trận nên **mọi học sinh cùng một tổng điểm**, kể cả khi `randomizePerStudent` bật. `ExamPaperQuestion.point` lấy theo mức của câu lúc sinh bản đề.
-- **Server không chặn tổng khác 100** ở bất kỳ đường lưu nào (tạo, sửa, nhân bản, xuất bản). Giáo viên chọn số câu bất kỳ — 56 câu chẳng hạn — và nhiều cấu hình không chia ra đúng 100,00 với hai chữ số thập phân; bắt đủ 100 thì họ kẹt ở những số câu đó. Server giữ đúng con số thật (phép cộng dùng `decimal`, không làm tròn) và báo lại ở `totalScore`; giao diện hiện "n / 100" và hỏi xác nhận trước khi chốt một đề chưa đủ, nên luật nhắc nhở nằm ở FE chứ không ở API.
-- Đề có từ trước luật này (ví dụ 9 câu × 1 điểm) giữ nguyên điểm cũ; không có phép chuyển dữ liệu nào đổi tổng của chúng. Đề đã có người làm vẫn bị khoá cấu hình như cũ (§5), điểm đã chấm không bao giờ đổi.
-- **Không phải cấu hình nào cũng chia được đúng 100.** Tổng điểm luôn là bội của ước chung lớn nhất của ba số câu (khi điểm có hai chữ số thập phân), nên 30 câu chia 12/12/6 hay 9 câu chia 3/3/3 không thể ra đúng 100,00. Frontend báo điều đó, điền cách chia sát 100 nhất và gợi ý số câu gần nhất chia được đúng.
+- **Server không chặn tổng khác 10** ở bất kỳ đường lưu nào (tạo, sửa, nhân bản, xuất bản). Giáo viên chọn số câu bất kỳ — 56 câu chẳng hạn — và nhiều cấu hình không chia ra đúng 10,00 với hai chữ số thập phân; bắt đủ 10 thì họ kẹt ở những số câu đó. Server giữ đúng con số thật (phép cộng dùng `decimal`, không làm tròn) và báo lại ở `totalScore`; giao diện hiện "n / 10" và hỏi xác nhận trước khi chốt một đề chưa đủ, nên luật nhắc nhở nằm ở FE chứ không ở API.
+- Đề có từ trước luật này (chấm trên 100, hay 9 câu × 1 điểm) giữ nguyên điểm cũ; không có phép chuyển dữ liệu nào đổi tổng của chúng. Đề đã có người làm vẫn bị khoá cấu hình như cũ (§5), điểm đã chấm không bao giờ đổi.
+- **Không phải cấu hình nào cũng chia được đúng 10.** Tổng điểm luôn là bội của ước chung lớn nhất của ba số câu (khi điểm có hai chữ số thập phân), nên 30 câu chia 12/12/6 không thể ra đúng 10,00. Frontend báo điều đó, điền cách chia sát 10 nhất và gợi ý số câu gần nhất chia được đúng.
 - Response `ExamDto` có `pointEasy`, `pointMedium`, `pointHard` và `totalScore` (tính sẵn). Học sinh chỉ nhận `totalScore` ở `StudentExamItemDto` (thẻ bài), không nhận ba điểm từng mức. Điểm của từng câu trong bản đề (`point`) vẫn hiện lúc làm bài và ở kết quả để biết câu nào nặng hơn; từ đó học sinh suy ra được mức điểm của câu, và đó là chủ ý.
-- Điểm tổng hợp (`averageScore`, `highestScore`, `Student.averageScore`) **quy về thang 100** (`score / maxScore × 100`) trước khi gộp, để đề cũ có `maxScore` khác 100 vẫn so được với đề mới.
+- Điểm tổng hợp (`averageScore`, `highestScore`, `Student.averageScore`) **quy về thang 10** (`score / maxScore × 10`, hằng `ExamScoring.TotalScore`) trước khi gộp, để đề có `maxScore` khác 10 (kể cả đề cũ chấm trên 100) vẫn so được với nhau; làm tròn hai chữ số thập phân.
 
 ### Sinh đề và cờ `randomizePerStudent`
 
@@ -278,7 +331,7 @@ Mock hiện tra ngược `mockQuestions` theo id lúc chấm — điều đó c�
 
 ### Giao bài
 
-- **Khử trùng lặp ở BE** bằng `HashSet`: `targets = distinct(studentIds hợp lệ ∪ học sinh của groupIds)`. FE có tính số hiển thị nhưng đó chỉ để hiện lên màn hình.
+- **Chỉ giao theo lớp:** `targets = distinct(học sinh của các lớp được chọn)`; request mang `studentIds` khác rỗng trả **400** vì bài kiểm tra không giao riêng từng học sinh. Khử trùng lặp ở BE bằng `HashSet`. FE có tính số hiển thị nhưng đó chỉ để hiện lên màn hình.
 - **Idempotent** theo cặp `(examId, studentId)` — unique index. Giao lại cho người đã có bài thì bỏ qua, giữ nguyên `status`/`attemptId`/`score`.
 - **Kiểm tra phạm vi:** học sinh phải thuộc một lớp đã công bố mà giáo viên đó được phân công. Không cho giáo viên A giao bài cho lớp của giáo viên B bằng cách đoán id. Em ngoài phạm vi đếm vào `skippedOutOfScope`, xét **trước** trạng thái tài khoản. **Id không tồn tại (hoặc không phải tài khoản học sinh) đếm vào cùng con số đó** — không có trường riêng cho "không tìm thấy": hai con số tách rời cho phép giáo viên bắn từng id một rồi đọc xem id nào là học sinh thật của lớp người khác. Lớp cũng vậy: lớp không tồn tại và lớp của người khác cùng đếm vào `skippedOutOfScopeGroups`.
 - **Học sinh bị khoá:** FE hiển thị nhãn "Đã khóa" nhưng vẫn cho chọn và vẫn tạo assignment. BE **bỏ qua** và trả `skippedLocked` để giáo viên biết. Tài khoản đang chờ xoá cũng bị bỏ qua nhưng đếm riêng vào `skippedRetired` — em đã rời trường thì không có gì để mở khoá. Tài khoản đã xoá hẳn đã bị gỡ khỏi lớp nên rơi vào `skippedOutOfScope`.
@@ -290,7 +343,7 @@ Mock hiện tra ngược `mockQuestions` theo id lúc chấm — điều đó c�
 
 - **Chống ghi đè ngược thứ tự:** autosave chạy mỗi 800ms; mạng chậm khiến gói cũ tới sau gói mới. Server giữ `lastAppliedSeq` cho mỗi attempt và bỏ qua request có `clientSeq` nhỏ hơn. **Không dùng timestamp client** làm mốc.
 - **Hết giờ không nhận nháp mới:** `PUT answers` trả **410** khi `serverNow > expiresAt`, và vẫn 410 khi lượt đã bị chốt vì hết giờ từ trước (bảng 409/410 ở §4.7).
-- **Validate đáp án gửi lên:** `questionId` phải thuộc đúng attempt đó, `answerId` phải thuộc đúng `questionId` đó. Trả **422** nếu lạ, không âm thầm bỏ qua.
+- **Validate đáp án gửi lên:** `questionId` phải thuộc đúng attempt đó, mọi id trong `answerIds` phải thuộc đúng `questionId` đó, và câu một đáp án chỉ nhận tối đa một id. Trả **422** nếu lạ, không âm thầm bỏ qua.
 - **`submittedAt` của bài hệ thống nộp thay là hạn của lượt** (`expiresAt`), không phải lúc tiến trình nền quét tới; nhờ vậy `durationUsedMinutes` không bao giờ vượt thời lượng của đề, kể cả khi em bỏ thi và bài được chốt hàng giờ sau. Bài em tự nộp trước giờ giữ giờ thật.
 - **Nộp idempotent:** nộp lại cùng `attemptId` trả đúng kết quả cũ (200), không tạo bản ghi thứ hai. FE có cờ chống bấm hai lần, nhưng retry sau timeout mạng vẫn tới server hai lần — chỉ khoá ở DB mới chắc.
 
@@ -305,7 +358,7 @@ Mock hiện tra ngược `mockQuestions` theo id lúc chấm — điều đó c�
 | `Exam.scheduleLocked` | `assignedCount > 0` và còn dưới 120 phút nữa là tới `openAt` của đề, hoặc đang mở (tới hết `closeAt`). Lịch chung không đổi được; hết giờ đóng thì mở khoá lại |
 | `ExamAssignment.scheduleLocked`, `AssignmentWindow.scheduleLocked` | Như trên nhưng tính theo khung giờ thật của em hoặc của lớp |
 | `Student.completedExams` | COUNT lượt có status ∈ {submitted, graded} |
-| `Student.averageScore` | AVG(score / maxScore × 100) trên các lượt `graded` (thang 100), làm tròn 1 chữ số |
+| `Student.averageScore` | AVG(score / maxScore × 10) trên các lượt `graded` (thang 10), làm tròn 2 chữ số |
 | `Student.deletionScheduledAt` | `deletionRequestedAt` + 60 ngày, chỉ có khi `status = pendingDeletion`. Server tính sẵn — FE không tự cộng ngày |
 | `AddMembersResponse.skippedRetired` | Số tài khoản chờ xoá hoặc đã xoá bị bỏ qua, không đưa vào lớp |
 | `AssignExamResponse.skippedRetired` | Số tài khoản **đang chờ xoá** bị bỏ qua khi giao bài — không tính vào `skippedLocked`. Tài khoản đã xoá hẳn không có lớp nên nằm trong `skippedOutOfScope` |
@@ -359,7 +412,7 @@ User      (Id, FullName, Email, Username, PasswordHash, SecurityStamp,
            GroupId        FK -> StudentGroup.Id NULL,
            Status,        -- Active | Locked | PendingDeletion | Deleted
            DeletionReason, DeletionRequestedAt, DeletionRequestedByUserId, DeletedAt,
-           Phone, AvatarColor, CreatedAt, MustChangePassword)
+           Phone, AvatarColor, AvatarUrl NULL, CreatedAt, MustChangePassword)
 
 StudentGroup (Id, Name, Description,
               CreatedByUserId FK -> User.Id,   -- quản trị viên đã lập lớp, chỉ để truy vết
@@ -368,7 +421,8 @@ StudentGroup (Id, Name, Description,
 StudentGroupTeacher (StudentGroupId FK, TeacherId FK -> User.Id, AssignedAt,
                      PRIMARY KEY (StudentGroupId, TeacherId))   -- một lớp nhiều giáo viên
 
-Question  (Id, Content, ImageUrl, Topic, Difficulty, DefaultPoint, Status,
+Question  (Id, Title, Content, ImageUrl, Topic, Difficulty, DefaultPoint, Status,
+           AllowMultiple,                                -- câu nhiều đáp án đúng, do giáo viên chọn
            SubjectId       FK -> Subject.Id  NOT NULL,  -- PHẠM VI: ai được thấy
            CreatedByUserId FK -> User.Id     NOT NULL,  -- QUY TRÁCH: ai được sửa
            Visibility)                                   -- Shared | Private
@@ -377,9 +431,14 @@ AnswerOption (Id, QuestionId FK, Content, ImageUrl, IsCorrect, Ordinal)
 
 Exam      (Id, Title, Description, Topic, DurationMinutes, TotalQuestions,
            EasyPercentage, MediumPercentage, HardPercentage, PointEasy, PointMedium, PointHard,
+           UsesQuestionList, ListTotalScore,        -- đề theo danh sách (các cột ma trận ở trên là dẫn xuất)
            ShuffleQuestions, ShuffleAnswers, RandomizePerStudent,
            ShowResultAfterSubmit, OpenAt, CloseAt, IsDraft, PublishedAt,
            CreatedByUserId FK -> User.Id)
+
+ExamQuestion (Id, ExamId FK -> Exam.Id CASCADE, QuestionId FK -> Question.Id RESTRICT,
+              Ordinal, Point numeric(6,2),
+              UNIQUE (ExamId, QuestionId))          -- chỉ có với đề theo danh sách
 
 ExamAssignment (Id, ExamId FK, StudentId FK, AssignedAt,
                 AssignedViaGroupId FK -> StudentGroup.Id NULL,
@@ -388,13 +447,15 @@ ExamAssignment (Id, ExamId FK, StudentId FK, AssignedAt,
 
 ExamPaper      (Id, ExamId FK, AssignmentId FK NULL)   -- NULL = đề chung cho cả lớp
 ExamPaperQuestion (Id, ExamPaperId FK, QuestionId FK, Ordinal,
-                   ContentSnapshot, ImageUrlSnapshot, Point)
+                   ContentSnapshot, ImageUrlSnapshot, Point, AllowMultiple)
 ExamPaperAnswer   (Id, ExamPaperQuestionId FK, ContentSnapshot, IsCorrect, Ordinal)
 
 ExamAttempt (Id, AssignmentId FK, StartedAt, ExpiresAt, SubmittedAt,
              Status, Score, MaxScore, CorrectCount, AutoSubmitted, LastAppliedSeq)
 
-StudentAnswer (Id, AttemptId FK, ExamPaperQuestionId FK, SelectedAnswerId NULL)
+StudentAnswer (Id, AttemptId FK, ExamPaperQuestionId FK,
+               SelectedAnswerIds integer[],            -- các đáp án đã chọn (id của ExamPaperAnswer); rỗng = bỏ trống
+               UNIQUE (AttemptId, ExamPaperQuestionId))
 
 Notification (Id, RecipientUserId FK, Type, Title, Message, Link,
               TargetType, TargetId, IsRead, CreatedAt)
@@ -431,7 +492,7 @@ Phiên bị thu hồi (§5 Tài khoản) đóng bốn cửa: negotiate và reque
 
 | Sự kiện | Ai nhận | Khi nào |
 |---|---|---|
-| `ExamAssigned` | student | Giáo viên giao bài, chỉ khi `notify = true` |
+| `ExamAssigned` | student | Giáo viên giao bài, chỉ khi `notify = true` (giao diện luôn gửi `true`: học sinh nhận bài mới luôn được báo, không còn ô chọn) |
 | `ExamSubmitted` | teacher | Học sinh nộp bài. Bắn cả vào group `exam:{examId}` để màn theo dõi tự tăng `submittedCount` |
 | `AutoSubmitted` | teacher + student | Hết giờ, hệ thống tự nộp. **Hai payload khác nhau** cho hai vai trò |
 | `DeadlineSoon` | student (chưa nộp) + teacher | Bài sắp đóng, do tiến trình nhắc hạn sinh. Học sinh nhận kèm một bản ghi thông báo; giáo viên nhận **mỗi em một sự kiện**, không kèm tên em và không có bản ghi thông báo (chỉ để màn theo dõi tự làm tươi) |

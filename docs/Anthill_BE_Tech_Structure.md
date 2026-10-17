@@ -411,11 +411,13 @@ StudentGroup
 Question
 - Id
 - TeacherId
+- Title            (tên ngắn, không bắt buộc, tối đa 200 ký tự)
 - Content
 - ImageUrl
 - Topic
 - Difficulty
 - DefaultPoint
+- AllowMultiple    (câu nhiều đáp án đúng; do giáo viên chọn rõ, không suy từ số đáp án đúng)
 - Status
 - CreatedAt
 - UpdatedAt
@@ -512,10 +514,12 @@ ExamAttemptQuestion
 ```text
 StudentAnswer
 - Id
-- ExamAttemptQuestionId
-- SelectedAnswerOptionId
-- IsCorrect
+- AttemptId
+- ExamPaperQuestionId
+- SelectedAnswerIds   (integer[]: các đáp án đã chọn; rỗng là bỏ trống)
 ```
+
+Đúng/sai không lưu trên `StudentAnswer`: `AttemptGrading.IsCorrect` so tập đã chọn với tập đáp án đúng của bản đề chụp (`ExamPaperQuestion` + `ExamPaperAnswer`). Câu một đáp án và câu nhiều đáp án dùng chung một quy tắc — tập chọn phải bằng đúng tập đáp án đúng, không có điểm từng phần.
 
 ### Notification
 
@@ -777,7 +781,7 @@ GET /api/dashboard/student
 
 ### Stage 5: Exam Assignment & Generation
 
-- Teacher giao bài cho Student/Group.
+- Teacher giao bài cho lớp; bài chỉ giao theo lớp, không giao riêng từng Student.
 - Hệ thống sinh câu hỏi cho từng Student.
 - Lưu ExamAttemptQuestion.
 - Gửi notification realtime cho Student.
