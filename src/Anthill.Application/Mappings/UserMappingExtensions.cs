@@ -39,6 +39,7 @@ public static class UserMappingExtensions
             Phone = user.Phone,
             Subject = subjectName ?? user.Subject?.Name,
             AvatarColor = user.AvatarColor,
+            AvatarUrl = user.AvatarUrl,
             JoinedAt = user.CreatedAt.ToUtc()
         };
     }

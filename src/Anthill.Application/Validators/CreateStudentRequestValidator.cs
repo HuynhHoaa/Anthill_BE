@@ -16,6 +16,7 @@ public sealed class CreateStudentRequestValidator : AbstractValidator<CreateStud
         StudentFieldRules.ApplyEmail(this, request => request.Email);
         StudentFieldRules.ApplyUsername(this, request => request.Username);
         StudentFieldRules.ApplyCode(this, request => request.Code);
+        StudentFieldRules.ApplyOptionalPhone(this, request => request.Phone);
         StudentFieldRules.ApplyOptionalStatus(this, request => request.Status);
 
         // Mật khẩu không trim, cùng lý do đã ghi ở AuthService.ChangePasswordAsync: khoảng trắng

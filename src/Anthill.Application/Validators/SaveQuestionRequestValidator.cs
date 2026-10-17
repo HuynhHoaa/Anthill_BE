@@ -23,6 +23,7 @@ namespace Anthill.Application.Validators;
 /// </remarks>
 public sealed class SaveQuestionRequestValidator : AbstractValidator<SaveQuestionRequest>
 {
+    public const int MaxTitleLength = 200;
     public const int MaxContentLength = 2000;
     public const int MaxTopicLength = 128;
     public const int MaxAnswerContentLength = 1000;
@@ -38,6 +39,12 @@ public sealed class SaveQuestionRequestValidator : AbstractValidator<SaveQuestio
 
     public SaveQuestionRequestValidator()
     {
+        // Tên không bắt buộc, chỉ chặn độ dài. Đo sau khi gộp khoảng trắng — đúng chuỗi sẽ được lưu.
+        RuleFor(request => request.Title)
+            .Must(title => QuestionMappingExtensions.NormalizeTitle(title).Length <= MaxTitleLength)
+            .WithMessage($"Tên câu hỏi không được vượt quá {MaxTitleLength} ký tự.")
+            .When(request => !string.IsNullOrWhiteSpace(request.Title));
+
         RuleFor(request => request.Content)
             .Must(content => !string.IsNullOrWhiteSpace(content))
             .WithMessage("Nội dung câu hỏi không được để trống.");
@@ -146,16 +153,19 @@ public sealed class SaveQuestionRequestValidator : AbstractValidator<SaveQuestio
             .When(HasAnswers);
 
         // Hai vế tách riêng để thông điệp nói đúng việc người dùng phải làm: chưa chọn đáp án đúng
-        // và chọn nhầm hai đáp án đúng là hai thao tác sửa khác nhau.
+        // và chọn nhầm hai đáp án đúng là hai thao tác sửa khác nhau. Câu cho chọn nhiều đáp án thì vế
+        // thứ hai không áp dụng: nó có từ một đáp án đúng trở lên.
         RuleFor(request => request.Answers)
             .Must(answers => answers!.Any(answer => answer.IsCorrect))
-            .WithMessage("Vui lòng chọn một đáp án đúng.")
+            .WithMessage(request => request.AllowMultiple
+                ? "Vui lòng chọn ít nhất một đáp án đúng."
+                : "Vui lòng chọn một đáp án đúng.")
             .When(HasAnswers);
 
         RuleFor(request => request.Answers)
             .Must(answers => answers!.Count(answer => answer.IsCorrect) <= 1)
-            .WithMessage("Mỗi câu hỏi chỉ được có đúng một đáp án đúng.")
-            .When(HasAnswers);
+            .WithMessage("Câu một đáp án đúng chỉ được có đúng một đáp án đúng. Hãy bật \"nhiều đáp án đúng\" nếu câu có nhiều đáp án.")
+            .When(request => !request.AllowMultiple && HasAnswers(request));
     }
 
     private static bool HasAnswers(SaveQuestionRequest request) =>

@@ -440,7 +440,7 @@ public sealed class ExamAttemptService : IExamAttemptService
             return Result.Success(BuildSubmitResponse(
                 attempt,
                 questions.Count,
-                selections.Count(entry => entry.Value.HasValue)));
+                selections.Count(entry => entry.Value.Count > 0)));
         }
 
         if (attempt.Status == AssignmentStatus.Expired)
@@ -480,7 +480,7 @@ public sealed class ExamAttemptService : IExamAttemptService
             // trong đúng một lần ghi.
             foreach (var answer in request.Answers)
             {
-                selections[answer.QuestionId] = answer.AnswerId;
+                selections[answer.QuestionId] = answer.SelectedIds();
             }
 
             if (request.ClientSeq is { } clientSeq)
@@ -833,7 +833,7 @@ public sealed class ExamAttemptService : IExamAttemptService
         // tiêu đề và thời lượng của đề.
         attempt.Assignment = locked;
 
-        return Result.Success(BuildSession(attempt, paper, new Dictionary<int, int>(), now));
+        return Result.Success(BuildSession(attempt, paper, new Dictionary<int, IReadOnlyList<int>>(), now));
     }
 
     /// <summary>Dựng phiên làm bài cho một lượt đang chạy.</summary>
@@ -852,9 +852,9 @@ public sealed class ExamAttemptService : IExamAttemptService
 
         // Câu chưa chọn biến mất khỏi từ điển thay vì mang giá trị null — đúng hợp đồng của
         // AttemptSessionDto.SavedAnswers.
-        var saved = selections
-            .Where(entry => entry.Value.HasValue)
-            .ToDictionary(entry => entry.Key, entry => entry.Value!.Value);
+        IReadOnlyDictionary<int, IReadOnlyList<int>> saved = selections
+            .Where(entry => entry.Value.Count > 0)
+            .ToDictionary(entry => entry.Key, entry => entry.Value);
 
         return Result.Success(BuildSession(attempt, paper.ValueOrThrow, saved, now));
     }
@@ -862,7 +862,7 @@ public sealed class ExamAttemptService : IExamAttemptService
     private static AttemptSessionDto BuildSession(
         ExamAttempt attempt,
         ExamPaper paper,
-        IReadOnlyDictionary<int, int> savedAnswers,
+        IReadOnlyDictionary<int, IReadOnlyList<int>> savedAnswers,
         DateTime now)
     {
         var exam = attempt.Assignment.Exam;
@@ -919,9 +919,21 @@ public sealed class ExamAttemptService : IExamAttemptService
                 return Result.Unprocessable($"Câu hỏi {answer.QuestionId} không thuộc đề của lượt làm bài này.");
             }
 
-            if (answer.AnswerId is { } answerId && question.Answers.All(option => option.Id != answerId))
+            var selected = answer.SelectedIds();
+
+            foreach (var answerId in selected)
             {
-                return Result.Unprocessable($"Đáp án {answerId} không thuộc câu hỏi {answer.QuestionId}.");
+                if (question.Answers.All(option => option.Id != answerId))
+                {
+                    return Result.Unprocessable($"Đáp án {answerId} không thuộc câu hỏi {answer.QuestionId}.");
+                }
+            }
+
+            // Câu một đáp án đúng chỉ nhận một ô. Gửi hai ô cho nó là một request vô nghĩa, không phải một
+            // câu trả lời để chấm "gần đúng", và im lặng giữ ô đầu là chấm một lựa chọn em không hề chốt.
+            if (!question.AllowMultiple && selected.Count > 1)
+            {
+                return Result.Unprocessable($"Câu hỏi {answer.QuestionId} chỉ được chọn một đáp án.");
             }
         }
 
@@ -938,14 +950,23 @@ public sealed class ExamAttemptService : IExamAttemptService
 
         foreach (var answer in answers)
         {
+            // Sắp xếp để so hai tập không phụ thuộc thứ tự em tích: tích A rồi C hay C rồi A là cùng một lựa chọn.
+            var selected = answer.SelectedIds().Order().ToArray();
+
             if (!existing.TryGetValue(answer.QuestionId, out var row))
             {
+                // Chưa có dòng mà cũng không chọn gì thì không có gì để ghi: câu bỏ trống là câu không có dòng.
+                if (selected.Length == 0)
+                {
+                    continue;
+                }
+
                 await _unitOfWork.StudentAnswers.AddAsync(
                     new StudentAnswer
                     {
                         AttemptId = attempt.Id,
                         ExamPaperQuestionId = answer.QuestionId,
-                        SelectedAnswerId = answer.AnswerId,
+                        SelectedAnswerIds = selected,
                         CreatedAt = now
                     },
                     cancellationToken);
@@ -953,12 +974,12 @@ public sealed class ExamAttemptService : IExamAttemptService
                 continue;
             }
 
-            if (row.SelectedAnswerId == answer.AnswerId)
+            if (row.SelectedAnswerIds.Order().SequenceEqual(selected))
             {
                 continue;
             }
 
-            row.SelectedAnswerId = answer.AnswerId;
+            row.SelectedAnswerIds = selected;
             row.UpdatedAt = now;
             _unitOfWork.StudentAnswers.Update(row);
         }
@@ -976,14 +997,14 @@ public sealed class ExamAttemptService : IExamAttemptService
     private async Task<Result<SubmitAttemptResponse>> GradeAsync(
         ExamAttempt attempt,
         IReadOnlyList<ExamPaperQuestion> questions,
-        IReadOnlyDictionary<int, int?> selections,
+        IReadOnlyDictionary<int, IReadOnlyList<int>> selections,
         DateTime now,
         bool autoSubmitted,
         CancellationToken cancellationToken)
     {
         var result = AttemptGrading.Grade(questions, selections);
 
-        // Trắc nghiệm một đáp án đúng thì chấm xong ngay trong lời gọi này, nên không có khoảng
+        // Trắc nghiệm (một hay nhiều đáp án đúng) chấm xong ngay trong lời gọi này, nên không có khoảng
         // giữa "đã nộp" và "đã chấm" để đi qua. Submitted vẫn còn trong enum cho những loại câu hỏi
         // cần người chấm, thứ mà §8 xếp ra ngoài phạm vi v1.
         // Gán thẳng là đủ để EF ghi đúng những cột này vì thực thể đang được change tracker theo dõi;
@@ -1166,7 +1187,7 @@ public sealed class ExamAttemptService : IExamAttemptService
     {
         var exam = assignment.Exam;
 
-        var paper = exam.RandomizePerStudent
+        var paper = exam.UsesPerAssignmentPapers
             ? await _unitOfWork.Exams.GetPaperByAssignmentAsync(assignment.Id, cancellationToken)
             : await _unitOfWork.Exams.GetSharedPaperAsync(exam.Id, cancellationToken);
 
@@ -1182,8 +1203,10 @@ public sealed class ExamAttemptService : IExamAttemptService
             : Result.Success(loaded);
     }
 
-    /// <summary>Bản sao ghi được của map <c>questionId → answerId</c> đã lưu.</summary>
-    private async Task<Dictionary<int, int?>> ReadSelectionsAsync(int attemptId, CancellationToken cancellationToken) =>
+    /// <summary>Bản sao ghi được của map <c>questionId → các answerId</c> đã lưu.</summary>
+    private async Task<Dictionary<int, IReadOnlyList<int>>> ReadSelectionsAsync(
+        int attemptId,
+        CancellationToken cancellationToken) =>
         new(await _unitOfWork.StudentAnswers.GetSelectionMapAsync(attemptId, cancellationToken));
 
     /// <summary>Bản ghi giao bài của <b>chính người đang gọi</b>.</summary>

@@ -34,6 +34,7 @@ public static class ExamAttemptMappingExtensions
             Content = question.ContentSnapshot,
             ImageUrl = question.ImageUrlSnapshot,
             Point = question.Point,
+            AllowMultiple = question.AllowMultiple,
             Answers = question.Answers
                 .OrderBy(answer => answer.Ordinal)
                 .Select(answer => new AttemptAnswerOptionDto

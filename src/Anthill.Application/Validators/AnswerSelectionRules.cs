@@ -22,6 +22,9 @@ public static class AnswerSelectionRules
     /// </remarks>
     public const int MaxSelectionsPerRequest = 500;
 
+    /// <summary>Trần số ô được chọn cho một câu; bằng số đáp án tối đa của một câu hỏi.</summary>
+    public const int MaxAnswersPerSelection = 10;
+
     /// <summary>
     /// Gắn bộ luật vào một danh sách lựa chọn.
     /// </summary>
@@ -68,6 +71,25 @@ public static class AnswerSelectionRules
             .Must(answers => answers!.All(answer => answer.AnswerId is null or > 0))
             .WithName(propertyName)
             .WithMessage("Danh sách câu trả lời chứa mã đáp án không hợp lệ.")
+            .When(request => HasEntries(selector(request)));
+
+        validator.RuleFor(request => selector(request))
+            .Must(answers => answers!.All(answer => answer.AnswerIds is null || answer.AnswerIds.All(id => id > 0)))
+            .WithName(propertyName)
+            .WithMessage("Danh sách câu trả lời chứa mã đáp án không hợp lệ.")
+            .When(request => HasEntries(selector(request)));
+
+        validator.RuleFor(request => selector(request))
+            .Must(answers => answers!.All(answer =>
+                answer.AnswerIds is null || answer.AnswerIds.Count <= MaxAnswersPerSelection))
+            .WithName(propertyName)
+            .WithMessage($"Mỗi câu chỉ chọn được tối đa {MaxAnswersPerSelection} đáp án.")
+            .When(request => HasEntries(selector(request)));
+
+        validator.RuleFor(request => selector(request))
+            .Must(answers => answers!.All(answer => answer.AnswerId is null || answer.AnswerIds is null))
+            .WithName(propertyName)
+            .WithMessage("Mỗi câu chỉ gửi answerId hoặc answerIds, không gửi cả hai.")
             .When(request => HasEntries(selector(request)));
 
         // Hai dòng cho cùng một câu trong một gói tin thì không có câu trả lời đúng nào cho "cuối

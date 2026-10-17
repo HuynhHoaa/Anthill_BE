@@ -15,6 +15,7 @@ public sealed class UpdateStudentRequestValidator : AbstractValidator<UpdateStud
         StudentFieldRules.ApplyEmail(this, request => request.Email);
         StudentFieldRules.ApplyUsername(this, request => request.Username);
         StudentFieldRules.ApplyCode(this, request => request.Code);
+        StudentFieldRules.ApplyOptionalPhone(this, request => request.Phone);
         StudentFieldRules.ApplyOptionalStatus(this, request => request.Status);
 
         RuleFor(request => request.GroupId)

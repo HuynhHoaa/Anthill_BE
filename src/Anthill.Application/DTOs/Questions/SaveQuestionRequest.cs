@@ -16,6 +16,12 @@ namespace Anthill.Application.DTOs.Questions;
 /// </remarks>
 public sealed record SaveQuestionRequest
 {
+    /// <summary>
+    /// Tên ngắn của câu hỏi, không bắt buộc. Bỏ trống thì câu hỏi chưa có tên và giao diện dùng phần đầu của
+    /// nội dung; khi sửa, bỏ trống là <b>xoá</b> tên đã đặt (<c>PUT</c> thay toàn bộ, giống mảng đáp án).
+    /// </summary>
+    public string? Title { get; init; }
+
     public required string Content { get; init; }
 
     /// <summary>URL trả về từ <c>POST /api/uploads/images</c>, không phải data URI (§1).</summary>
@@ -27,6 +33,12 @@ public sealed record SaveQuestionRequest
     public required string Difficulty { get; init; }
 
     public required decimal DefaultPoint { get; init; }
+
+    /// <summary>
+    /// Câu cho chọn nhiều đáp án. Tắt (mặc định) thì phải có <b>đúng một</b> đáp án đúng; bật thì có từ một
+    /// đáp án đúng trở lên và học sinh phải chọn đúng và đủ mới được điểm.
+    /// </summary>
+    public bool AllowMultiple { get; init; }
 
     /// <summary><c>"active"</c> hoặc <c>"hidden"</c>. Bỏ trống thì mặc định <c>"active"</c> lúc tạo, giữ nguyên lúc sửa.</summary>
     public string? Status { get; init; }

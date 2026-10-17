@@ -8,9 +8,9 @@ namespace Anthill.Application.Interfaces.Services;
 /// </summary>
 /// <remarks>
 /// <para>
-/// Có bốn đường làm dời giờ của một em: sửa lịch chung của đề (PATCH schedule), sửa cả đề (PUT), gửi lại một
-/// lớp kèm khung giờ, và dời giờ một em chọn lẻ. Mỗi đường tự dựng thông báo thì sớm muộn một đường quên báo,
-/// hay báo cho cả những em giờ không đổi. Gom về đây để cả bốn đi qua một quy tắc.
+/// Có ba đường làm dời giờ của một em: sửa lịch chung của đề (PATCH schedule), sửa cả đề (PUT), và gửi lại một
+/// lớp kèm khung giờ. Mỗi đường tự dựng thông báo thì sớm muộn một đường quên báo, hay báo cho cả những em
+/// giờ không đổi. Gom về đây để cả ba đi qua một quy tắc.
 /// </para>
 /// <para>
 /// Chia ba bước theo đúng ràng buộc của <see cref="Realtime.IRealtimeNotificationService"/>: bản ghi thông báo

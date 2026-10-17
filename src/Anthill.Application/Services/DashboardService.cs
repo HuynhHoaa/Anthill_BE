@@ -141,7 +141,7 @@ public sealed class DashboardService : IDashboardService
             {
                 attempt.Assignment = assignment;
 
-                // Quy về thang 100 theo điểm tối đa của chính đề đó, như mọi số liệu tổng hợp khác
+                // Quy về thang chuẩn 10 theo điểm tối đa của chính đề đó, như mọi số liệu tổng hợp khác
                 // (ExamAttemptRepository): đề cũ 9 điểm và đề mới 100 điểm không cộng thô được với nhau.
                 if (attempt.CanRevealScore(isOwningTeacher: false)
                     && ExamScoring.ToStandardScale(attempt.Score, attempt.MaxScore) is { } normalized)
@@ -167,13 +167,13 @@ public sealed class DashboardService : IDashboardService
                 CompletedExams = completed,
 
                 AverageScore = visibleScores.Count > 0
-                    ? Math.Round(visibleScores.Average(), 1, MidpointRounding.AwayFromZero)
+                    ? Math.Round(visibleScores.Average(), 2, MidpointRounding.AwayFromZero)
                     : null,
 
                 // Làm tròn giống AverageScore ngay bên trên. Không làm thì hai ô cạnh nhau hiện
                 // "3,1" và "9,00" — cùng một thang điểm mà hai định dạng.
                 HighestScore = visibleScores.Count > 0
-                    ? Math.Round(visibleScores.Max(), 1, MidpointRounding.AwayFromZero)
+                    ? Math.Round(visibleScores.Max(), 2, MidpointRounding.AwayFromZero)
                     : null
             },
 

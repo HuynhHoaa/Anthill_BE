@@ -30,7 +30,8 @@ public static class StudentMappingExtensions
         this User user,
         int completedExams,
         decimal averageScore,
-        string? groupName = null)
+        string? groupName = null,
+        bool includePhone = false)
     {
         ArgumentNullException.ThrowIfNull(user);
 
@@ -40,6 +41,9 @@ public static class StudentMappingExtensions
             FullName = user.FullName,
             Email = user.Email,
             Username = user.Username,
+
+            // Số điện thoại chỉ đi tới quản trị viên: giáo viên không có lý do cần nó để dạy hay giao bài.
+            Phone = includePhone ? user.Phone : null,
 
             // Mã học sinh là NOT NULL về mặt nghiệp vụ nhưng nullable trong bảng dùng chung ba vai
             // trò. Rơi về chuỗi rỗng thay vì ném lỗi: một bản ghi lỗi dữ liệu không nên làm hỏng cả

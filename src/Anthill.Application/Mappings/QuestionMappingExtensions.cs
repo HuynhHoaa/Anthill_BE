@@ -34,10 +34,12 @@ public static class QuestionMappingExtensions
         return new QuestionDto
         {
             Id = question.Id,
+            Title = question.Title,
             Content = question.Content,
             ImageUrl = question.ImageUrl,
             Topic = question.Topic,
             Difficulty = question.Difficulty.ToDifficultyString(),
+            AllowMultiple = question.AllowMultiple,
             DefaultPoint = question.DefaultPoint,
             Status = question.Status.ToQuestionStatusString(),
 
@@ -108,4 +110,20 @@ public static class QuestionMappingExtensions
     /// <summary>Ô lọc chủ đề: <c>"all"</c> và chuỗi rỗng đều thành NULL, ngoài ra trả về chuỗi đã trim.</summary>
     public static string? NormalizeTopicFilter(string? value) =>
         FilterValueParser.NormalizeTextFilter(value);
+
+    /// <summary>
+    /// Tên câu hỏi đã chuẩn hoá: bỏ khoảng trắng hai đầu và gộp mọi dãy khoảng trắng (kể cả xuống dòng) thành
+    /// một dấu cách. Tên là một dòng; một lời gọi API dán cả đoạn nhiều dòng vào đây không được làm vỡ hàng
+    /// trong danh sách.
+    /// </summary>
+    /// <returns>Chuỗi rỗng khi chưa đặt tên — không bao giờ null.</returns>
+    public static string NormalizeTitle(string? value)
+    {
+        if (string.IsNullOrWhiteSpace(value))
+        {
+            return string.Empty;
+        }
+
+        return string.Join(' ', value.Split((char[]?)null, StringSplitOptions.RemoveEmptyEntries));
+    }
 }

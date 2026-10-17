@@ -26,6 +26,12 @@ public sealed record StudentDto
 
     public required string Username { get; init; }
 
+    /// <summary>
+    /// Số điện thoại. Chỉ có mặt khi người gọi là quản trị viên (nhà trường quản lý thông tin này); giáo viên
+    /// không nhận trường này.
+    /// </summary>
+    public string? Phone { get; init; }
+
     /// <summary>Mã học sinh, duy nhất toàn hệ thống.</summary>
     public required string Code { get; init; }
 

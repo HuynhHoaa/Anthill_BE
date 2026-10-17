@@ -40,10 +40,12 @@ public sealed class SaveExamRequestValidator : AbstractValidator<SaveExamRequest
     public const int MaxTotalQuestions = 500;
 
     /// <summary>
-    /// Điểm một câu không bao giờ lớn hơn tổng điểm của cả đề. Cũng nằm gọn trong cột điểm của đề
-    /// (<c>numeric(6, 2)</c>).
+    /// Trần cứng của điểm một câu. Cố ý <b>không</b> theo tổng điểm chuẩn (<see cref="ExamScoring.TotalScore"/> = 10):
+    /// đề cũ chấm trên 100 có câu nhiều hơn 10 điểm, và hạ trần xuống 10 sẽ làm những đề đó không sửa nổi cả tên
+    /// hay mô tả (mọi lần lưu đều đi qua phép kiểm này). Giao diện nhắc giáo viên về chuẩn 10, server chỉ chặn
+    /// con số vô lý. Cũng nằm gọn trong cột điểm của đề (<c>numeric(6, 2)</c>).
     /// </summary>
-    public const decimal MaxPointPerQuestion = ExamScoring.TotalScore;
+    public const decimal MaxPointPerQuestion = 100m;
 
     /// <summary>
     /// Trần của tổng <c>số câu mỗi mức × điểm mức đó</c> — chính là <c>MaxScore</c> của mọi lượt làm
@@ -75,9 +77,31 @@ public sealed class SaveExamRequestValidator : AbstractValidator<SaveExamRequest
             .InclusiveBetween(1, MaxDurationMinutes)
             .WithMessage($"Thời gian làm bài phải từ 1 đến {MaxDurationMinutes} phút.");
 
+        // Đề theo danh sách câu hỏi không gửi các trường ma trận (server tự dẫn xuất từ danh sách), nên cả
+        // nhóm quy tắc ma trận chỉ chạy khi request không mang `questions`.
         RuleFor(request => request.TotalQuestions)
             .InclusiveBetween(1, MaxTotalQuestions)
-            .WithMessage($"Số câu hỏi của đề phải từ 1 đến {MaxTotalQuestions}.");
+            .WithMessage($"Số câu hỏi của đề phải từ 1 đến {MaxTotalQuestions}.")
+            .When(HasPaperSpecInput);
+
+        // Chia đề lớn thành nhiều đề nhỏ: chỉ có nghĩa với đề soạn theo danh sách.
+        RuleFor(request => request.PaperCount)
+            .InclusiveBetween(1, PaperPlanner.MaxPaperCount)
+            .WithMessage($"Số đề phải từ 1 đến {PaperPlanner.MaxPaperCount}.");
+
+        RuleFor(request => request.PaperCount)
+            .Equal(1)
+            .When(request => request.Questions is null)
+            .WithMessage("Chia thành nhiều đề chỉ dùng được với đề soạn theo danh sách câu hỏi.");
+
+        RuleFor(request => request.PaperBonusUnits)
+            .InclusiveBetween(0, MaxTotalQuestions)
+            .WithMessage("Điểm cộng thêm không hợp lệ.");
+
+        RuleFor(request => request.PaperBonusUnits)
+            .Equal(0)
+            .When(request => request.PaperCount <= 1)
+            .WithMessage("Điểm cộng thêm chỉ dùng được khi chia thành nhiều đề.");
 
         AddPointRules(request => request.PointEasy, "Dễ", QuestionDifficulty.Easy);
         AddPointRules(request => request.PointMedium, "Trung bình", QuestionDifficulty.Medium);
@@ -95,13 +119,18 @@ public sealed class SaveExamRequestValidator : AbstractValidator<SaveExamRequest
         // Ba tỷ lệ kiểm riêng từng cái ở đây; tổng của chúng chỉ bắt buộc bằng 100 khi đề không
         // phải bản nháp, nên phép kiểm đó thuộc về service.
         RuleFor(request => request.EasyPercentage)
-            .InclusiveBetween(0, 100).WithMessage("Tỷ lệ câu Dễ phải nằm trong khoảng 0 đến 100.");
+            .InclusiveBetween(0, 100).WithMessage("Tỷ lệ câu Dễ phải nằm trong khoảng 0 đến 100.")
+            .When(HasPaperSpecInput);
 
         RuleFor(request => request.MediumPercentage)
-            .InclusiveBetween(0, 100).WithMessage("Tỷ lệ câu Trung bình phải nằm trong khoảng 0 đến 100.");
+            .InclusiveBetween(0, 100).WithMessage("Tỷ lệ câu Trung bình phải nằm trong khoảng 0 đến 100.")
+            .When(HasPaperSpecInput);
 
         RuleFor(request => request.HardPercentage)
-            .InclusiveBetween(0, 100).WithMessage("Tỷ lệ câu Khó phải nằm trong khoảng 0 đến 100.");
+            .InclusiveBetween(0, 100).WithMessage("Tỷ lệ câu Khó phải nằm trong khoảng 0 đến 100.")
+            .When(HasPaperSpecInput);
+
+        AddQuestionListRules();
 
         RuleFor(request => request.CloseAt)
             .GreaterThan(request => request.OpenAt)
@@ -139,7 +168,8 @@ public sealed class SaveExamRequestValidator : AbstractValidator<SaveExamRequest
             .WithMessage(
                 $"Điểm mỗi câu {levelLabel} chỉ được tối đa {PointDecimalPlaces} chữ số thập phân, "
                 + "vì cột điểm trong hệ thống lưu đúng chừng đó — phần lẻ dư ra sẽ bị làm tròn âm thầm "
-                + "lúc lưu.");
+                + "lúc lưu.")
+            .When(IsMatrixRequest);
 
         // Chỉ khi ba tỷ lệ cộng đúng 100 thì số câu mỗi mức mới nói lên điều giáo viên muốn. Bản nháp có thể
         // mới nhập dở, và khi đó mức Khó nhận cả phần dư: 30/30/0 trên 10 câu cho 4 câu Khó dù giáo viên
@@ -147,8 +177,64 @@ public sealed class SaveExamRequestValidator : AbstractValidator<SaveExamRequest
         // luật này chạy lại ở chính request xuất bản.
         RuleFor(selector)
             .GreaterThan(0m)
-            .When(request => PercentagesAddUpToWhole(request) && CountOf(request, difficulty) > 0)
+            .When(request => IsMatrixRequest(request)
+                             && PercentagesAddUpToWhole(request)
+                             && CountOf(request, difficulty) > 0)
             .WithMessage($"Đề có câu {levelLabel}, nên điểm mỗi câu {levelLabel} phải lớn hơn 0.");
+    }
+
+    private static bool IsMatrixRequest(SaveExamRequest request) => request.Questions is null;
+
+    /// <summary>
+    /// Số câu và tỷ lệ ba mức là đầu vào của giáo viên: đề theo ma trận, hoặc đề theo danh sách được chia thành nhiều
+    /// đề (khi đó là cấu hình của một đề nhỏ). Đề theo danh sách một đề thì chúng là số liệu server tự dẫn xuất.
+    /// </summary>
+    private static bool HasPaperSpecInput(SaveExamRequest request) =>
+        IsMatrixRequest(request) || request.PaperCount > 1;
+
+    /// <summary>
+    /// Quy tắc của danh sách câu hỏi: hình dạng thôi. Câu có thật không, có đang bật không là việc của
+    /// service vì cần database.
+    /// </summary>
+    private void AddQuestionListRules()
+    {
+        RuleFor(request => request.Questions)
+            .Must(list => list!.Count <= MaxTotalQuestions)
+            .WithMessage($"Một đề có tối đa {MaxTotalQuestions} câu hỏi.")
+            .When(request => request.Questions is not null);
+
+        // Bộ kiểm con bỏ qua phần tử null, nên "questions": [null] phải bị chặn riêng ở đây; để lọt thì mọi nơi
+        // đọc .QuestionId / .Point phía sau (kể cả ở service) ném NullReferenceException, tức 500 thay vì 400.
+        RuleForEach(request => request.Questions!)
+            .NotNull()
+            .WithMessage("Danh sách câu hỏi chứa một mục rỗng.")
+            .When(request => request.Questions is not null);
+
+        RuleFor(request => request.Questions)
+            .Must(list => list!
+                .Where(item => item is not null)
+                .Select(item => item.QuestionId)
+                .Distinct()
+                .Count() == list!.Count(item => item is not null))
+            .WithMessage("Một câu hỏi chỉ được xuất hiện một lần trong đề.")
+            .When(request => request.Questions is not null);
+
+        RuleForEach(request => request.Questions!)
+            .ChildRules(item =>
+            {
+                item.RuleFor(row => row.QuestionId)
+                    .GreaterThan(0)
+                    .WithMessage("Mã câu hỏi trong danh sách không hợp lệ.");
+
+                item.RuleFor(row => row.Point)
+                    .InclusiveBetween(0m, MaxPointPerQuestion)
+                    .WithMessage($"Điểm của một câu phải nằm trong khoảng 0 đến {MaxPointPerQuestion}.")
+                    .Must(HaveAtMostTwoDecimalPlaces)
+                    .WithMessage(
+                        $"Điểm của một câu chỉ được tối đa {PointDecimalPlaces} chữ số thập phân, vì cột điểm "
+                        + "trong hệ thống lưu đúng chừng đó.");
+            })
+            .When(request => request.Questions is not null);
     }
 
     private static bool PercentagesAddUpToWhole(SaveExamRequest request) =>
@@ -162,6 +248,18 @@ public sealed class SaveExamRequestValidator : AbstractValidator<SaveExamRequest
 
     private static bool FitsMaxTotalScore(SaveExamRequest request)
     {
+        if (request.Questions is not null)
+        {
+            // Từng điểm đã có rule riêng; chỉ cộng khi cả danh sách nằm trong trần để phép cộng không tràn.
+            // Phần tử null đã có rule riêng báo lỗi; không tính tổng trên danh sách còn mục rỗng.
+            if (request.Questions.Any(item => item is null || !IsWithinPointRange(item.Point)))
+            {
+                return true;
+            }
+
+            return ExamScoring.TotalOf(request) <= MaxTotalScore;
+        }
+
         // Điểm vượt trần từng câu đã có rule riêng báo lỗi. Không tính tổng trên con số đó: decimal có thể
         // tràn (điểm cỡ 7.9e28 nhân số câu) và ném OverflowException, tức 500 thay vì 400.
         if (!IsWithinPointRange(request.PointEasy)

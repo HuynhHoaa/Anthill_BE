@@ -2,14 +2,24 @@ namespace Anthill.Application.DTOs.ExamAssignments;
 
 /// <summary>Thân request của <c>POST /api/exams/{id}/assignments</c>.</summary>
 /// <remarks>
-/// Nhận cả học sinh lẻ lẫn cả nhóm trong một lần gọi, vì màn hình giao bài cho chọn xen kẽ hai
-/// kiểu. Backend gộp và khử trùng lặp; con số frontend tự tính chỉ để hiện lên màn hình (§5).
+/// <para>
+/// Giao bài chỉ theo <b>lớp</b>: giáo viên chọn các lớp đã công bố và được phân công cho mình, mỗi lớp có thể
+/// kèm khung giờ riêng. Cả lớp nhận bài; em vào lớp sau thì nhận bài ở lần giao kế tiếp (gửi lại lớp). Không
+/// có đường giao riêng cho từng học sinh — nghiệp vụ không có khái niệm đó.
+/// </para>
+/// <para>
+/// Backend gộp và khử trùng lặp; con số frontend tự tính chỉ để hiện lên màn hình (§5).
+/// </para>
 /// </remarks>
 public sealed record AssignExamRequest
 {
+    /// <summary>
+    /// <b>Đã bỏ.</b> Bài kiểm tra không giao riêng từng học sinh. Trường này chỉ còn để <b>từ chối rõ ràng</b>
+    /// (400) một client cũ gửi danh sách em, thay vì lặng lẽ bỏ qua danh sách đó rồi báo "đã giao".
+    /// </summary>
     public IReadOnlyList<int> StudentIds { get; init; } = [];
 
-    /// <summary>Giao cho toàn bộ học sinh của những nhóm này, tính tại thời điểm gọi.</summary>
+    /// <summary>Giao cho toàn bộ học sinh của những lớp này, tính tại thời điểm gọi.</summary>
     /// <remarks>
     /// Các lớp ở đây dùng cặp giờ chung <see cref="OpenAt"/>/<see cref="CloseAt"/> của request. Không kèm
     /// giờ thì khung giờ đã đặt cho lớp được giữ nguyên, và em mới vào lớp nhận đúng khung giờ lớp đang
@@ -44,7 +54,8 @@ public sealed record AssignExamRequest
     public bool Notify { get; init; } = true;
 
     /// <summary>
-    /// Giờ mở bài riêng cho lượt giao này. Bỏ trống thì dùng lịch chung của đề.
+    /// Giờ mở bài chung cho các lớp trong <see cref="GroupIds"/>. Bỏ trống thì không đụng tới khung giờ đã đặt
+    /// cho lớp (lớp mới giao theo lịch chung của đề).
     /// </summary>
     /// <remarks>
     /// <para>
@@ -59,14 +70,13 @@ public sealed record AssignExamRequest
     /// </para>
     /// <para>
     /// Gửi lại một lớp đã giao kèm khung giờ thì khung giờ của những em được giao qua lớp đó mà chưa
-    /// bắt đầu làm bài cũng được đổi theo; em chọn đích danh đã có bài không bị đổi (dời giờ từng em bằng
-    /// <c>PATCH .../assignments/{id}/schedule</c>); bỏ trống thì không đụng tới khung giờ đã đặt. Khung giờ đang
+    /// bắt đầu làm bài cũng được đổi theo; bỏ trống thì không đụng tới khung giờ đã đặt. Khung giờ đang
     /// khoá (còn dưới 120 phút nữa là mở cho tới hết giờ đóng) thì không đổi được: request trả 409.
     /// Cặp giờ này không áp cho các lớp trong <see cref="Classes"/> — mỗi lớp ở đó mang giờ của riêng nó.
     /// </para>
     /// </remarks>
     public DateTime? OpenAt { get; init; }
 
-    /// <summary>Giờ đóng bài riêng. Đi cùng cặp với <see cref="OpenAt"/>.</summary>
+    /// <summary>Giờ đóng bài chung. Đi cùng cặp với <see cref="OpenAt"/>.</summary>
     public DateTime? CloseAt { get; init; }
 }

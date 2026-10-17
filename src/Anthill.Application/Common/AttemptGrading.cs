@@ -46,15 +46,23 @@ public static class AttemptGrading
     /// Đối chiếu lựa chọn của học sinh với đáp án đã chụp.
     /// </summary>
     /// <param name="questions">Toàn bộ câu của bản đề, mỗi câu kèm phương án và cờ <c>IsCorrect</c>.</param>
-    /// <param name="selections">Map <c>ExamPaperQuestionId → SelectedAnswerId</c>; thiếu khoá hoặc giá trị NULL đều là bỏ trống.</param>
+    /// <param name="selections">
+    /// Map <c>ExamPaperQuestionId → các id phương án đã chọn</c>; thiếu khoá hoặc tập rỗng đều là bỏ trống.
+    /// </param>
     /// <remarks>
+    /// <para>
     /// Một id đáp án không thuộc câu đó thì tính là <b>sai</b> chứ không ném lỗi. Tầng service đã
     /// chặn trường hợp này từ lúc lưu nháp (§5, trả 422), nhưng hàm chấm là chốt chặn cuối cùng —
     /// nó không được phép tin rằng chốt chặn phía trước còn nguyên vẹn.
+    /// </para>
+    /// <para>
+    /// Câu nhiều đáp án đúng chấm <b>tất cả hoặc không có gì</b>: chỉ đúng khi tập đã chọn trùng khít tập đáp
+    /// án đúng. Chọn thiếu một ô đúng hay thừa một ô sai đều là sai, không cho điểm một phần.
+    /// </para>
     /// </remarks>
     public static AttemptScore Grade(
         IEnumerable<ExamPaperQuestion> questions,
-        IReadOnlyDictionary<int, int?> selections)
+        IReadOnlyDictionary<int, IReadOnlyList<int>> selections)
     {
         ArgumentNullException.ThrowIfNull(questions);
         ArgumentNullException.ThrowIfNull(selections);
@@ -68,14 +76,14 @@ public static class AttemptGrading
         {
             maxScore += question.Point;
 
-            if (!selections.TryGetValue(question.Id, out var selectedId) || selectedId is null)
+            if (!selections.TryGetValue(question.Id, out var selectedIds) || selectedIds.Count == 0)
             {
                 continue;
             }
 
             answeredCount++;
 
-            if (question.Answers.Any(answer => answer.Id == selectedId.Value && answer.IsCorrect))
+            if (IsCorrect(question, selectedIds))
             {
                 correctCount++;
                 score += question.Point;
@@ -89,6 +97,27 @@ public static class AttemptGrading
             Score = Round(score),
             MaxScore = Round(maxScore)
         };
+    }
+
+    /// <summary>
+    /// Tập đã chọn có trùng khít tập đáp án đúng của câu không. Một nguồn duy nhất cho cả việc chấm điểm lẫn
+    /// cờ <c>isCorrect</c> trên màn hình xem lại, để hai nơi không bao giờ hiểu "đúng" khác nhau.
+    /// </summary>
+    /// <remarks>
+    /// Câu không có đáp án đúng nào (dữ liệu hỏng) thì không ai đúng được: tập rỗng không được tính là
+    /// "trùng khít" với tập rỗng.
+    /// </remarks>
+    public static bool IsCorrect(ExamPaperQuestion question, IReadOnlyCollection<int> selectedIds)
+    {
+        ArgumentNullException.ThrowIfNull(question);
+        ArgumentNullException.ThrowIfNull(selectedIds);
+
+        var correctIds = question.Answers
+            .Where(answer => answer.IsCorrect)
+            .Select(answer => answer.Id)
+            .ToHashSet();
+
+        return correctIds.Count > 0 && selectedIds.Count > 0 && correctIds.SetEquals(selectedIds);
     }
 
     /// <summary>

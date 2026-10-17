@@ -11,7 +11,7 @@ using Anthill.Domain.Enums;
 namespace Anthill.Application.Services;
 
 /// <summary>
-/// Cài đặt <see cref="IExamAssignmentService"/> — bốn endpoint giao bài của §4.6.
+/// Cài đặt <see cref="IExamAssignmentService"/> — giao bài theo lớp của §4.6.
 /// </summary>
 /// <remarks>
 /// Bốn điều quyết định nằm ở file này:
@@ -32,7 +32,7 @@ namespace Anthill.Application.Services;
 public sealed class ExamAssignmentService : IExamAssignmentService
 {
     private const string ExamNotFoundMessage = "Không tìm thấy bài kiểm tra.";
-    private const string AssignmentNotFoundMessage = "Không tìm thấy bản ghi giao bài này.";
+    private const string ClassNotAssignedMessage = "Lớp này chưa được giao bài kiểm tra này.";
 
     private const string AdminCannotAssignMessage =
         "Quản trị viên chỉ xem được bài kiểm tra; việc giao bài thuộc về giáo viên phụ trách môn.";
@@ -129,6 +129,15 @@ public sealed class ExamAssignmentService : IExamAssignmentService
                 + "Hãy nới khung giờ ra, hoặc rút ngắn thời gian làm bài ở phần sửa đề.");
         }
 
+        // Đề theo danh sách có đúng một bộ câu do giáo viên duyệt; chưa có cách chia nó thành nhiều đề nhỏ cho
+        // từng em, nên cờ này chưa dùng được. Từ chối rõ ràng thay vì nhận rồi lặng lẽ bỏ qua.
+        if (exam.UsesQuestionList && request.RandomizePerStudent == true)
+        {
+            return Result.Failure<AssignExamResponse>(
+                "Đề soạn theo danh sách câu hỏi dùng chung một bộ câu cho cả lớp, chưa hỗ trợ sinh đề riêng "
+                + "cho từng học sinh. Các em vẫn được trộn thứ tự câu và đáp án nếu đề bật tuỳ chọn trộn.");
+        }
+
         // Cờ này thuộc về đề chứ không thuộc về từng assignment. Đổi nó khi đề đã giao một phần
         // thì mọi assignment cũ đổi luôn cách tra bản đề — bản chung sang bản riêng hoặc ngược lại
         // — trong khi chỉ những em mới được sinh đề. Kết quả là một lớp mà nửa số em không còn
@@ -206,33 +215,14 @@ public sealed class ExamAssignmentService : IExamAssignmentService
         // thi bị dời khung giờ dưới tay — và nhận một thông báo "giờ đã đổi" trong lúc đang làm bài.
         var ownedGroupIds = targets.OwnedGroupIds;
 
-        // Lớp thật (User.GroupId) của những em được chọn ĐÍCH DANH trong lần này — không tick vào lớp,
-        // nhưng lớp đó có thể đã có bài giao qua nhóm từ trước, với khung giờ riêng. Đọc thêm các dòng của
-        // những lớp này, CHỈ để những em mới kế thừa đúng khung giờ lớp mình đang theo (xem
-        // inheritedWindows/assignments bên dưới) — không gộp vào ownedGroupIds vì danh sách đó còn quyết
-        // định lớp nào bị DỜI GIỜ ở vòng lặp ngay sau, và dời cả lớp chỉ vì một em mới được thêm đích danh
-        // là đụng tới những em không ai yêu cầu đổi giờ (H24: em mới vào lớp sau khi lớp đã có khung giờ
-        // riêng, được giáo viên chọn thẳng tên thay vì tick lại cả lớp, trước đây rơi về lịch chung của ĐỀ
-        // thay vì giờ thật của lớp mình).
-        var inheritOnlyGroupIds = newcomers
-            .Where(student => !targets.ViaGroup.ContainsKey(student.Id))
-            // InScope đảm bảo GroupId có giá trị và thuộc lớp giáo viên này dạy — AssignmentTargetFilter
-            // .Classify đã kiểm cả hai trong ResolveTargetsAsync trước khi xếp em vào InScope.
-            .Select(student => student.GroupId!.Value)
-            .Where(groupId => !ownedGroupIds.Contains(groupId))
-            .Distinct()
-            .ToList();
-
-        var windowGroupIds = ownedGroupIds.Concat(inheritOnlyGroupIds).ToList();
-
-        if (windowGroupIds.Count > 0)
+        if (ownedGroupIds.Count > 0)
         {
             await _unitOfWork.ExamAssignments.LockByExamAsync(exam.Id, cancellationToken);
         }
 
-        IReadOnlyList<ExamAssignment> viaGroupRows = windowGroupIds.Count == 0
+        IReadOnlyList<ExamAssignment> viaGroupRows = ownedGroupIds.Count == 0
             ? []
-            : await _unitOfWork.ExamAssignments.GetByExamViaGroupsAsync(exam.Id, windowGroupIds, cancellationToken);
+            : await _unitOfWork.ExamAssignments.GetByExamViaGroupsAsync(exam.Id, ownedGroupIds, cancellationToken);
 
         var rowsByGroup = viaGroupRows
             .GroupBy(row => row.AssignedViaGroupId!.Value)
@@ -361,22 +351,13 @@ public sealed class ExamAssignmentService : IExamAssignmentService
         var assignments = newcomers
             .Select(student =>
             {
-                // NULL khi giáo viên chọn đích danh em này thay vì chọn cả lớp — AssignedViaGroupId chỉ
-                // đánh dấu "gắn với lớp" khi chính lớp đó được chọn trong lần này, vì đây là thứ quyết
-                // định em có bị cuốn theo lần DỜI GIỜ CẢ LỚP sau này hay không (GetByExamViaGroupsAsync ở
-                // trên chỉ đọc theo AssignedViaGroupId).
-                int? viaGroupId = targets.ViaGroup.TryGetValue(student.Id, out var groupId) ? groupId : null;
-
-                // Nhưng khung giờ thì vẫn nên kế thừa đúng lớp THẬT của em (student.GroupId), kể cả khi em
-                // được chọn đích danh: em vừa được thêm vào lớp sau khi lớp đã giao bài với khung giờ
-                // riêng, giáo viên bấm chọn thẳng tên em thay vì tick lại cả lớp — windowGroupIds/
-                // inheritedWindows ở trên đã đọc thêm đúng lớp này cho trường hợp vậy. Không có dòng này
-                // thì em rơi về lịch chung của ĐỀ (có thể đã đóng từ lâu) thay vì giờ thật của lớp mình
-                // (H24), dù request có kèm giờ hay không cũng ưu tiên như nhau (WindowForNewAssignment).
-                var inheritGroupId = viaGroupId ?? student.GroupId;
+                // Mọi em đều đến từ một lớp được chọn trong lần này: bài chỉ giao theo lớp. Ghi lại lớp đó để
+                // lần dời giờ cả lớp sau này tìm lại đúng những em được giao qua lớp ấy, kể cả khi em đã
+                // chuyển sang lớp khác (GetByExamViaGroupsAsync khớp theo AssignedViaGroupId).
+                var viaGroupId = targets.ViaGroup[student.Id];
 
                 var (openAt, closeAt) = AssignmentSchedule.WindowForNewAssignment(
-                    inheritGroupId,
+                    viaGroupId,
                     (request.OpenAt, request.CloseAt),
                     classWindows,
                     inheritedWindows);
@@ -487,129 +468,65 @@ public sealed class ExamAssignmentService : IExamAssignmentService
     }
 
     /// <inheritdoc />
-    public async Task<Result<ExamAssignmentDto>> RescheduleAsync(
+    /// <remarks>
+    /// <para>
+    /// Cùng thứ tự khoá với giao bài và sửa đề: dòng đề trước, dòng giao bài sau. Em bấm "Vào thi" giữ khoá trên
+    /// dòng của mình trước khi tạo lượt làm bài, nên hoặc em vào trước và phép đếm bên dưới thấy lượt của em
+    /// (em được giữ lại), hoặc em phải chờ lệnh thu hồi này commit (và không còn gì để vào nữa). Không khoá thì
+    /// một em vừa bấm "Vào thi" bị gỡ bài ngay dưới tay — mất luôn phần bài em vừa bắt đầu.
+    /// </para>
+    /// <para>
+    /// Chỉ gỡ những em được giao <b>qua lớp này</b> (<c>AssignedViaGroupId</c>), khớp cùng cách lần dời giờ cả
+    /// lớp tìm các em của lớp. Bản đề riêng của từng em đi theo nhờ cascade; bản đề chung của cả lớp không gắn
+    /// với assignment nào nên không bị đụng tới — những em khác vẫn đang làm trên đó.
+    /// </para>
+    /// </remarks>
+    public async Task<Result<RevokeClassResponse>> RevokeClassAsync(
         int examId,
-        int assignmentId,
-        UpdateAssignmentScheduleRequest request,
+        int groupId,
         CancellationToken cancellationToken = default)
     {
-        ArgumentNullException.ThrowIfNull(request);
-
         var found = await FindOwnedExamAsync(examId, cancellationToken);
         if (found.IsFailure)
         {
-            return Result.Failure<ExamAssignmentDto>(found.Error!, found.ErrorCode);
+            return Result.Failure<RevokeClassResponse>(found.Error!, found.ErrorCode);
         }
 
-        // Cùng thứ tự khoá với giao bài: dòng đề trước, dòng giao bài sau. Khoá dòng đề để lần dời giờ này
-        // xếp hàng với lần sửa đề (có thể đổi thời lượng mà phép kiểm bên dưới đang dựa vào) và với lần gửi
-        // lại lớp; khoá dòng giao bài để xếp hàng với chính em đang bấm "Vào thi".
         await using var transaction = await _unitOfWork.BeginTransactionAsync(cancellationToken);
 
-        var exam = await _unitOfWork.Exams.LockForEditAsync(examId, cancellationToken);
-        if (exam is null)
+        if (await _unitOfWork.Exams.LockForEditAsync(examId, cancellationToken) is null)
         {
-            return Result.NotFound<ExamAssignmentDto>(ExamNotFoundMessage);
+            return Result.NotFound<RevokeClassResponse>(ExamNotFoundMessage);
         }
 
-        var assignment = await _unitOfWork.ExamAssignments.LockForRescheduleAsync(assignmentId, cancellationToken);
+        await _unitOfWork.ExamAssignments.LockByExamAsync(examId, cancellationToken);
 
-        // Kiểm cả examId: thiếu vế này thì đổi số trên thanh địa chỉ là dời được giờ của một đề khác.
-        if (assignment is null || assignment.ExamId != examId)
+        var rows = await _unitOfWork.ExamAssignments.GetByExamViaGroupsAsync(examId, [groupId], cancellationToken);
+
+        if (rows.Count == 0)
         {
-            return Result.NotFound<ExamAssignmentDto>(AssignmentNotFoundMessage);
+            return Result.NotFound<RevokeClassResponse>(ClassNotAssignedMessage);
         }
 
-        if (assignment.AssignedViaGroupId is not null)
+        var revocable = rows.Where(row => row.Attempt is null).ToList();
+        var started = rows.Count - revocable.Count;
+
+        if (revocable.Count == 0)
         {
-            var className = assignment.AssignedViaGroup?.Name ?? "đã giao bài cho em";
-            return Result.Conflict<ExamAssignmentDto>(
-                $"Em này được giao bài qua lớp {className}, nên em làm bài theo khung giờ của cả lớp. "
-                + "Hãy đổi khung giờ của lớp ở trang giao bài.");
+            return Result.Conflict<RevokeClassResponse>(
+                "Mọi em của lớp này đã bắt đầu làm bài nên không thu hồi được nữa. "
+                + "Thu hồi lúc này là xoá luôn phần bài các em đã làm.");
         }
 
-        if (assignment.Attempt is not null)
-        {
-            return Result.Conflict<ExamAssignmentDto>(
-                "Em này đã bắt đầu làm bài nên hạn nộp đã chốt lúc vào thi, không dời giờ được nữa.");
-        }
-
-        var now = DateTime.UtcNow;
-
-        // Chỉ chặn khi lần này thật sự đổi giờ, để gửi lại đúng khung cũ không bị coi là dời lịch.
-        if (AssignmentSchedule.WindowWouldChange(assignment, request.OpenAt, request.CloseAt))
-        {
-            var (currentOpenAt, currentCloseAt) = AssignmentSchedule.Resolve(assignment, exam);
-            if (AssignmentSchedule.IsScheduleLocked(currentOpenAt, currentCloseAt, now))
-            {
-                return Result.Conflict<ExamAssignmentDto>(
-                    ScheduleLockMessage.For(ScheduleLockMessage.StudentSubject, currentOpenAt, now));
-            }
-        }
-
-        if (request.OpenAt is { } openAt && request.CloseAt is { } closeAt
-            && !AssignmentSchedule.FitsDuration(openAt, closeAt, exam.DurationMinutes))
-        {
-            return Result.Failure<ExamAssignmentDto>(
-                $"Đề này cho làm bài {exam.DurationMinutes} phút, dài hơn khung giờ vừa chọn. "
-                + "Hãy nới khung giờ ra, hoặc rút ngắn thời gian làm bài ở phần sửa đề.");
-        }
-
-        var outcome = AssignmentSchedule.Reschedule([assignment], request.OpenAt, request.CloseAt);
-
-        if (outcome.Updated > 0)
-        {
-            var notices = await StageScheduleNoticesAsync(exam, outcome.Changes, now, cancellationToken);
-
-            // Không gọi Update(): dòng đã được theo dõi từ lúc khoá, và Update() sẽ đánh dấu luôn đề, học sinh
-            // đã nạp kèm là Modified rồi ghi đè chúng bằng bản vừa đọc.
-            await _unitOfWork.SaveChangesAsync(cancellationToken);
-            await _scheduleNotifier.CollectUnreadCountsAsync(notices, cancellationToken);
-            await transaction.CommitAsync(cancellationToken);
-
-            await _scheduleNotifier.PublishAsync(notices, cancellationToken);
-        }
-
-        return Result.Success(assignment.ToDto(now));
-    }
-
-    /// <inheritdoc />
-    public async Task<Result> RevokeAsync(
-        int examId,
-        int assignmentId,
-        CancellationToken cancellationToken = default)
-    {
-        var found = await FindOwnedExamAsync(examId, cancellationToken);
-        if (found.IsFailure)
-        {
-            return Result.Failure(found.Error!, found.ErrorCode);
-        }
-
-        var assignment = await _unitOfWork.ExamAssignments.GetDetailAsync(assignmentId, cancellationToken);
-
-        // Kiểm cả assignmentId lẫn examId khớp nhau: thiếu vế thứ hai thì đổi số trên thanh địa chỉ
-        // là thu hồi được bài của một đề khác.
-        if (assignment is null || assignment.ExamId != examId)
-        {
-            return Result.NotFound(AssignmentNotFoundMessage);
-        }
-
-        if (assignment.Attempt is not null)
-        {
-            return Result.Conflict(
-                "Học sinh này đã bắt đầu làm bài nên không thu hồi được nữa. "
-                + "Thu hồi lúc này là xoá luôn phần bài em đã làm.");
-        }
-
-        // Bản đề riêng của em này đi theo nhờ cascade khai ở ExamPaperConfiguration
-        // (Assignment 1-1 Paper, DeleteBehavior.Cascade). Bản đề chung của cả lớp không gắn với
-        // assignment nào nên không bị đụng tới — những em khác vẫn đang làm trên đó.
-        //
-        // Một lệnh xoá thì SaveChanges đã tự nguyên tử, không cần mở transaction riêng.
-        _unitOfWork.ExamAssignments.Remove(assignment);
+        _unitOfWork.ExamAssignments.RemoveRange(revocable);
         await _unitOfWork.SaveChangesAsync(cancellationToken);
+        await transaction.CommitAsync(cancellationToken);
 
-        return Result.Success();
+        return Result.Success(new RevokeClassResponse
+        {
+            RevokedCount = revocable.Count,
+            KeptStartedCount = started
+        });
     }
 
     /// <summary>Kết quả gom và sàng lọc danh sách học sinh được chọn.</summary>
@@ -618,7 +535,7 @@ public sealed class ExamAssignmentService : IExamAssignmentService
         /// <summary>Những em thật sự giao được: có thật, đúng vai trò, đang hoạt động, thuộc lớp của giáo viên.</summary>
         public required IReadOnlyList<User> InScope { get; init; }
 
-        /// <summary>Em nào đến từ lớp nào. Vắng mặt nghĩa là giáo viên chọn đích danh em đó.</summary>
+        /// <summary>Em nào đến từ lớp nào: mọi em trong <see cref="InScope"/> đều có mặt.</summary>
         public required IReadOnlyDictionary<int, int> ViaGroup { get; init; }
 
         /// <summary>Các lớp trong request mà giáo viên này được giao bài — cũng là các lớp được phép sửa khung giờ.</summary>
@@ -647,7 +564,7 @@ public sealed class ExamAssignmentService : IExamAssignmentService
     }
 
     /// <summary>
-    /// Gom học sinh chọn lẻ với học sinh của các nhóm đã chọn, khử trùng lặp, rồi sàng bốn lớp.
+    /// Gom học sinh của các lớp đã chọn, khử trùng lặp, rồi sàng bốn lớp.
     /// </summary>
     /// <remarks>
     /// Thứ tự sàng có ý nghĩa: <b>ngoài phạm vi</b> (id không tồn tại đếm chung vào đây) → <b>đã rời
@@ -658,9 +575,9 @@ public sealed class ExamAssignmentService : IExamAssignmentService
         AssignExamRequest request,
         CancellationToken cancellationToken)
     {
-        // HashSet ngay từ đầu: màn hình giao bài cho chọn một em rồi chọn luôn cả nhóm chứa em đó,
-        // nên trùng lặp là tình huống thường gặp chứ không phải ngoại lệ.
-        var requestedIds = new HashSet<int>(request.StudentIds ?? []);
+        // Người nhận chỉ đến từ các lớp được chọn. HashSet để một em lọt vào hai lớp (không xảy ra vì
+        // User.GroupId là khoá đơn, nhưng dữ liệu bẩn thì có) vẫn chỉ được giao một lần.
+        var requestedIds = new HashSet<int>();
         // Hai danh sách lớp gộp làm một ở bước chọn người nhận: khác nhau chỉ ở khung giờ, còn phạm vi, đếm
         // lớp bị loại và ghi dấu "giao qua lớp nào" là như nhau. Validator đã chặn một lớp nằm ở cả hai.
         var requestedGroupIds = (request.GroupIds ?? [])

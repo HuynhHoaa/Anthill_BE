@@ -25,7 +25,7 @@ public sealed record ScheduleNotice(ExamAssignment Assignment, bool WindowChange
         return new ScheduleNotice(assignment, windowChanged, durationChanged);
     }
 
-    /// <summary>Một lần dời khung giờ của chính lượt giao — gửi lại lớp kèm giờ, hoặc dời giờ một em chọn lẻ.</summary>
+    /// <summary>Một lần dời khung giờ của chính lượt giao — gửi lại lớp kèm giờ.</summary>
     /// <remarks>
     /// Đặt giờ riêng trùng khít lịch đề, hay gỡ giờ riêng vốn trùng lịch đề, không dời em đi phút nào nên
     /// không sinh thông báo. Thời lượng không đổi ở đường này.

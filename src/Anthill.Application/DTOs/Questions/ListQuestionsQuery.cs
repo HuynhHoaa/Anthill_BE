@@ -31,4 +31,11 @@ public sealed class ListQuestionsQuery : PaginationParams
     /// họ do claim <c>subject_id</c> quyết định, không do tham số URL (§6).
     /// </summary>
     public int? SubjectId { get; set; }
+
+    /// <summary>
+    /// Mã các lớp, ngăn cách bằng dấu phẩy (<c>"18,19"</c>): bỏ khỏi kết quả những câu mà học sinh của các lớp đó đã nhận ở các đề
+    /// trước, để giáo viên chọn câu cho đề mới mà không lặp lại câu cũ. Chỉ giáo viên dùng được, và chỉ với lớp mình được phân
+    /// công và đã công bố (lớp khác trả <b>400</b>, không âm thầm bỏ qua). Bỏ trống là không lọc.
+    /// </summary>
+    public string? ExcludeAssignedToGroupIds { get; set; }
 }

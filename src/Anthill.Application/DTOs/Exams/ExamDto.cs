@@ -48,9 +48,9 @@ public sealed record ExamDto
     public required decimal PointHard { get; init; }
 
     /// <summary>
-    /// Tổng điểm của đề theo ma trận: số câu mỗi mức × điểm mức đó. Chuẩn là 100 nhưng server không bắt
-    /// buộc: giáo viên được lưu một đề chưa đủ 100 sau khi giao diện hỏi xác nhận, và đề có từ trước luật
-    /// này (ví dụ 9 câu × 1 điểm) giữ nguyên điểm cũ.
+    /// Tổng điểm của đề theo ma trận: số câu mỗi mức × điểm mức đó. Chuẩn là 10 nhưng server không bắt
+    /// buộc: giáo viên được lưu một đề chưa đủ 10 sau khi giao diện hỏi xác nhận, và đề có từ trước luật
+    /// này (chấm trên 100, hay 9 câu × 1 điểm) giữ nguyên điểm cũ.
     /// </summary>
     public required decimal TotalScore { get; init; }
 
@@ -62,7 +62,26 @@ public sealed record ExamDto
     /// Bật: mỗi học sinh một bản đề riêng. Giá trị này được chốt ở bước <b>giao bài</b> (§4.6),
     /// nên ở đây nó chỉ để đọc — biết đề đã giao theo kiểu nào.
     /// </summary>
+    /// <summary>
+    /// Đề soạn theo danh sách câu hỏi cụ thể (xem <c>GET /api/exams/{id}/questions</c>) chứ không theo ma
+    /// trận. Khi <c>true</c>, số câu, tỷ lệ và điểm theo mức chỉ là số liệu dẫn xuất từ danh sách, còn
+    /// <c>totalScore</c> là tổng điểm từng câu.
+    /// </summary>
+    public required bool UsesQuestionList { get; init; }
+
     public required bool RandomizePerStudent { get; init; }
+
+    /// <summary>
+    /// Số đề nhỏ mỗi lớp nhận (1 = cả lớp một đề). Từ 2 trở lên thì <see cref="TotalQuestions"/>, ba tỷ lệ và
+    /// <see cref="TotalScore"/> là của <b>một đề nhỏ</b>.
+    /// </summary>
+    public required int PaperCount { get; init; }
+
+    /// <summary>
+    /// Số đơn vị 0,01 điểm cộng thêm cho các câu mức cao nhất của mỗi đề nhỏ để đề nhỏ cộng đúng 10 (0 với đề một đề).
+    /// <see cref="TotalScore"/> đã tính phần này.
+    /// </summary>
+    public required int PaperBonusUnits { get; init; }
 
     public required bool ShowResultAfterSubmit { get; init; }
 
@@ -104,7 +123,7 @@ public sealed record ExamDto
     public required bool ScheduleLocked { get; init; }
 
     /// <summary>
-    /// Khung giờ đang áp cho từng lớp đã giao, rồi tới các nhóm học sinh chọn lẻ theo từng khung giờ.
+    /// Khung giờ đang áp cho từng lớp đã giao, rồi (dữ liệu cũ) tới các nhóm học sinh giao lẻ theo từng khung giờ.
     /// Mảng rỗng khi đề chưa giao cho ai.
     /// </summary>
     /// <remarks>

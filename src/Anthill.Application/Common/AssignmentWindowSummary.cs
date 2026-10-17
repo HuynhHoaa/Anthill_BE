@@ -56,7 +56,8 @@ public static class AssignmentWindowSummary
                 asOfUtc));
         }
 
-        // Học sinh chọn lẻ không có "giờ của lớp" để đại diện: mỗi em có thể một giờ, nên mỗi khung giờ có
+        // Học sinh giao lẻ (dữ liệu cũ, từ thời còn giao riêng từng em) không có "giờ của lớp" để đại diện:
+        // mỗi em có thể một giờ, nên mỗi khung giờ có
         // hiệu lực là một dòng. Gom theo giờ ĐÃ PHÂN GIẢI, để em đặt giờ riêng trùng khít lịch đề không tách
         // thành một dòng trông y hệt dòng bên cạnh.
         var individuals = examRows

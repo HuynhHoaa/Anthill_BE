@@ -76,6 +76,12 @@ public sealed record ExamAssignmentDto
     /// </summary>
     public required bool ScheduleLocked { get; init; }
 
-    /// <summary>Lớp mà bài được giao qua đó. NULL (vắng khỏi JSON) khi giáo viên chọn đích danh em này.</summary>
+    /// <summary>Lớp mà bài được giao qua đó. NULL (vắng khỏi JSON) chỉ với dữ liệu cũ, từ thời còn giao riêng từng em.</summary>
     public int? AssignedViaGroupId { get; init; }
+
+    /// <summary>
+    /// Mã đề của em này (<c>"A"</c>, <c>"B"</c>…) khi đề được chia thành nhiều đề. Vắng khỏi JSON với đề không chia.
+    /// Chỉ giáo viên và quản trị viên thấy; học sinh không nhận trường này.
+    /// </summary>
+    public string? PaperLabel { get; init; }
 }

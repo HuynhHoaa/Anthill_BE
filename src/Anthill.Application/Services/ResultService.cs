@@ -211,7 +211,7 @@ public sealed class ResultService : IResultService
         // bài 30 câu — mất dấu đúng những câu đáng chú ý nhất.
         var selections = withAnswers.Answers
             .GroupBy(answer => answer.ExamPaperQuestionId)
-            .ToDictionary(group => group.Key, group => group.First().SelectedAnswerId);
+            .ToDictionary(group => group.Key, group => (IReadOnlyList<int>)group.First().SelectedAnswerIds);
 
         var questions = paper.Questions
             .OrderBy(question => question.Ordinal)
@@ -246,6 +246,7 @@ public sealed class ResultService : IResultService
             CorrectCount = canSeeScore ? withAnswers.CorrectCount : null,
             CanSeeAnswers = answers.CanSee,
             AnswersVisibleAt = answers.VisibleAt,
+            PaperLabel = isOwningTeacher && paper.VariantIndex is { } variantIndex ? PaperLabels.Of(variantIndex) : null,
             Questions = questions
         });
     }
@@ -254,17 +255,16 @@ public sealed class ResultService : IResultService
     /// Một câu trong bài đã làm. Đáp án đúng chỉ được gắn vào khi người gọi đủ điều kiện xem.
     /// </summary>
     /// <remarks>
-    /// Hai trường <c>CorrectAnswerId</c> và <c>IsCorrect</c> để NULL thì biến mất khỏi JSON nhờ
+    /// Hai trường <c>CorrectAnswerIds</c> và <c>IsCorrect</c> để NULL thì biến mất khỏi JSON nhờ
     /// cấu hình bỏ qua giá trị null toàn cục. Đó là điều khác biệt then chốt so với việc trả về
     /// rồi nhờ giao diện giấu: dữ liệu không rời server thì không ai mở tab Network ra xem được.
     /// </remarks>
     private static AttemptDetailQuestionDto ToDetailQuestion(
         ExamPaperQuestion question,
-        IReadOnlyDictionary<int, int?> selections,
+        IReadOnlyDictionary<int, IReadOnlyList<int>> selections,
         bool canSeeAnswers)
     {
-        var correct = question.Answers.FirstOrDefault(answer => answer.IsCorrect);
-        var selected = selections.TryGetValue(question.Id, out var value) ? value : null;
+        IReadOnlyList<int> selected = selections.TryGetValue(question.Id, out var value) ? value : [];
 
         return new AttemptDetailQuestionDto
         {
@@ -273,6 +273,7 @@ public sealed class ResultService : IResultService
             Content = question.ContentSnapshot,
             ImageUrl = question.ImageUrlSnapshot,
             Point = question.Point,
+            AllowMultiple = question.AllowMultiple,
 
             Answers = question.Answers
                 .OrderBy(answer => answer.Ordinal)
@@ -285,9 +286,11 @@ public sealed class ResultService : IResultService
                 })
                 .ToList(),
 
-            SelectedAnswerId = selected,
-            CorrectAnswerId = canSeeAnswers ? correct?.Id : null,
-            IsCorrect = canSeeAnswers ? selected is not null && selected == correct?.Id : null
+            SelectedAnswerIds = selected,
+            CorrectAnswerIds = canSeeAnswers
+                ? question.Answers.Where(answer => answer.IsCorrect).OrderBy(answer => answer.Ordinal).Select(answer => answer.Id).ToList()
+                : null,
+            IsCorrect = canSeeAnswers ? AttemptGrading.IsCorrect(question, selected) : null
         };
     }
 
