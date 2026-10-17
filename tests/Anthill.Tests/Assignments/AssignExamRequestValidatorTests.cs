@@ -102,41 +102,32 @@ public class AssignExamRequestValidatorTests
     [Fact]
     public void Khong_chon_gi_ca_bi_tu_choi()
     {
-        ErrorsOf(new AssignExamRequest()).Should().Contain(message => message.Contains("ít nhất một học sinh"));
-    }
-}
-
-/// <summary>Dời giờ cho một em chọn đích danh: đủ cặp là giờ riêng, trống cả cặp là về lịch đề.</summary>
-public class UpdateAssignmentScheduleRequestValidatorTests
-{
-    private static readonly DateTime Open = new(2026, 9, 15, 1, 0, 0, DateTimeKind.Utc);
-    private static readonly DateTime Close = new(2026, 9, 15, 2, 30, 0, DateTimeKind.Utc);
-
-    private readonly UpdateAssignmentScheduleRequestValidator _validator = new();
-
-    [Fact]
-    public void Du_cap_gio_la_hop_le()
-    {
-        _validator.Validate(new UpdateAssignmentScheduleRequest { OpenAt = Open, CloseAt = Close })
-            .IsValid.Should().BeTrue();
+        ErrorsOf(new AssignExamRequest()).Should().Contain(message => message.Contains("ít nhất một lớp"));
     }
 
     [Fact]
-    public void Trong_ca_cap_la_ve_lich_de_va_hop_le()
+    public void Giao_rieng_tung_hoc_sinh_bi_tu_choi()
     {
-        _validator.Validate(new UpdateAssignmentScheduleRequest()).IsValid.Should().BeTrue();
+        // Bài kiểm tra chỉ giao theo lớp. Chỉ danh sách em, không có lớp nào: cả hai lỗi cùng hiện.
+        var request = new AssignExamRequest { StudentIds = [11, 12] };
+
+        ErrorsOf(request).Should().Contain(message => message.Contains("chỉ giao theo lớp"));
+        _validator.Validate(request).IsValid.Should().BeFalse();
     }
 
     [Fact]
-    public void Nua_cap_bi_tu_choi()
+    public void Gui_kem_danh_sach_hoc_sinh_cung_voi_lop_cung_bi_tu_choi()
     {
-        _validator.Validate(new UpdateAssignmentScheduleRequest { CloseAt = Close }).IsValid.Should().BeFalse();
+        // Không được lặng lẽ bỏ qua danh sách em rồi báo "đã giao": đó là cái bẫy mà quy tắc này sinh ra để chặn.
+        var request = new AssignExamRequest { GroupIds = [7], StudentIds = [11] };
+
+        ErrorsOf(request).Should().Contain(message => message.Contains("chỉ giao theo lớp"));
     }
 
     [Fact]
-    public void Gio_dong_truoc_gio_mo_bi_tu_choi()
+    public void Danh_sach_hoc_sinh_rong_hoac_null_khong_phai_la_loi()
     {
-        _validator.Validate(new UpdateAssignmentScheduleRequest { OpenAt = Close, CloseAt = Open })
-            .IsValid.Should().BeFalse();
+        _validator.Validate(new AssignExamRequest { GroupIds = [7], StudentIds = [] }).IsValid.Should().BeTrue();
+        _validator.Validate(new AssignExamRequest { GroupIds = [7], StudentIds = null! }).IsValid.Should().BeTrue();
     }
 }
