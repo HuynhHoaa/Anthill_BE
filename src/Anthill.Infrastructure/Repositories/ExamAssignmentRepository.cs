@@ -30,6 +30,9 @@ public class ExamAssignmentRepository : GenericRepository<ExamAssignment>, IExam
             .ThenBy(a => a.Id)
             .ToListAsync(cancellationToken);
 
+    public async Task<bool> AnyViaGroupAsync(int groupId, CancellationToken cancellationToken = default) =>
+        await DbSet.AnyAsync(assignment => assignment.AssignedViaGroupId == groupId, cancellationToken);
+
     public async Task<IReadOnlyList<ExamAssignment>> GetByGroupAsync(
         int groupId,
         CancellationToken cancellationToken = default) =>

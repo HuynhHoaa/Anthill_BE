@@ -313,6 +313,8 @@ expect_status "sua ten lop khoa → 409" 409 "$(call PUT "/api/student-groups/$G
 expect_status "go cong bo lop khoa → 409" 409 "$(call POST "/api/student-groups/$GB/unpublish" "$ADMIN")"
 expect_status "giao bai cho lop khoa → 409" 409 "$(call POST "/api/exams/$EID/assignments" "$TEACHER" "{\"studentIds\":[],\"groupIds\":[$GB],\"notify\":false}")"
 expect_status "  cau tu choi noi ro lop da khoa" true "$(body_mentions 'đã khoá')"
+expect_status "thu hoi bai cua lop khoa → 409" 409 "$(call DELETE "/api/exams/$EID/assignments/classes/$GB" "$TEACHER")"
+expect_status "  cau tu choi noi ro lop da khoa" true "$(body_mentions 'đã khoá')"
 expect_status "  lop khoa van doc duoc danh sach thanh vien" 1 "$(call GET "/api/student-groups/$GB/students" "$ADMIN" > /dev/null; count_all)"
 
 section "14. Em trong lop khoa van hoc cac lop khac"

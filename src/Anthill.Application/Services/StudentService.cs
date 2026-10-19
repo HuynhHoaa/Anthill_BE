@@ -105,12 +105,14 @@ public sealed class StudentService : IStudentService
                 query,
                 cancellationToken);
 
+        var visibleGroupIds = await VisibleGroupIdsAsync(cancellationToken);
+
         // Một truy vấn GROUP BY cho cả trang thay vì hai truy vấn mỗi học sinh.
         var stats = await _unitOfWork.ExamAttempts.GetStatsByStudentsAsync(
             page.Items.Select(student => student.Id),
+            StatsScopeFor(visibleGroupIds),
             cancellationToken);
 
-        var visibleGroupIds = await VisibleGroupIdsAsync(cancellationToken);
         var items = page.Map(student => ToDto(student, stats, visibleGroupIds));
 
         return Result.Success(items);
@@ -837,10 +839,15 @@ public sealed class StudentService : IStudentService
         IReadOnlyCollection<StudentGroup>? groups,
         CancellationToken cancellationToken)
     {
-        var stats = await _unitOfWork.ExamAttempts.GetStatsByStudentsAsync([student.Id], cancellationToken);
+        var visibleGroupIds = await VisibleGroupIdsAsync(cancellationToken);
+        var stats = await _unitOfWork.ExamAttempts.GetStatsByStudentsAsync([student.Id], StatsScopeFor(visibleGroupIds), cancellationToken);
 
-        return ToDto(student, stats, await VisibleGroupIdsAsync(cancellationToken), groups);
+        return ToDto(student, stats, visibleGroupIds, groups);
     }
+
+    /// <summary>Phạm vi số liệu của người xem: quản trị viên thấy hết (<c>null</c>), giáo viên chỉ thấy bài của lớp mình dạy và đề mình soạn.</summary>
+    private StudentStatsScope? StatsScopeFor(IReadOnlySet<int>? visibleGroupIds) =>
+        visibleGroupIds is null ? null : new StudentStatsScope(visibleGroupIds, _currentUser.RequireUserId());
 
     private StudentDto ToDto(
         User student,

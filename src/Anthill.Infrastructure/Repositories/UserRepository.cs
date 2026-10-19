@@ -142,15 +142,16 @@ public class UserRepository : GenericRepository<User>, IUserRepository
         CancellationToken cancellationToken = default)
     {
         // Phạm vi đặt TRƯỚC mọi bộ lọc người dùng gửi lên và nằm trong cùng mệnh đề WHERE, nên không
-        // tổ hợp groupId / status / search nào nới được nó ra. groupId của lớp khác hay groupId = 0
-        // chỉ còn giao với tập rỗng.
+        // tổ hợp groupId / status / search nào nới được nó ra. groupId = 0 chỉ còn giao với tập rỗng. Một em học nhiều lớp
+        // nên groupId của lớp khác KHÔNG tự giao với tập rỗng nữa (em học cả lớp mình lẫn lớp đồng nghiệp): bộ lọc phải
+        // tự giới hạn ở lớp giáo viên này dạy, nếu không nó thành cách dò xem em nào đang học lớp của người khác.
         var query = DbSet
             .AsNoTracking()
             .Include(u => u.Groups)
             .Where(u => u.Role == UserRole.Student)
             .Where(TeacherStudentScope.InTaughtClass(teacherId));
 
-        return await ApplyStudentFilters(query, search, groupId, status)
+        return await ApplyStudentFilters(query, search, groupId, status, teacherScopeId: teacherId)
             .ToPagedResultAsync(pagination, cancellationToken);
     }
 
@@ -175,7 +176,8 @@ public class UserRepository : GenericRepository<User>, IUserRepository
         IQueryable<User> query,
         string? search,
         int? groupId,
-        UserStatus? status)
+        UserStatus? status,
+        int? teacherScopeId = null)
     {
         if (groupId.HasValue)
         {
@@ -185,7 +187,11 @@ public class UserRepository : GenericRepository<User>, IUserRepository
             var requestedGroupId = groupId.Value;
             query = requestedGroupId == StudentGroupDefaults.UnassignedId
                 ? query.Where(u => !u.Groups.Any())
-                : query.Where(u => u.Groups.Any(g => g.Id == requestedGroupId));
+                : teacherScopeId is { } teacherId
+                    ? query.Where(u => u.Groups.Any(g => g.Id == requestedGroupId
+                                                          && g.IsPublished
+                                                          && g.Teachers.Any(assignment => assignment.TeacherId == teacherId)))
+                    : query.Where(u => u.Groups.Any(g => g.Id == requestedGroupId));
         }
 
         if (status.HasValue)

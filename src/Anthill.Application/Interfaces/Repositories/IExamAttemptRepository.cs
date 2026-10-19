@@ -93,11 +93,13 @@ public interface IExamAttemptRepository : IGenericRepository<ExamAttempt>
     /// <remarks>
     /// <c>AverageScore</c> chia tổng điểm (thang 10) các bài đã chấm cho <c>Assigned</c> — số bài ĐÃ GIAO cho em, nên bài chưa làm tính
     /// 0 điểm, đúng như bảng điểm xuất ra Excel. <c>Assigned = 0</c> nghĩa là em chưa được giao bài nào (chưa có điểm trung bình).
+    /// <paramref name="scope"/> bỏ trống là mọi bài của em (quản trị viên); với giáo viên là chỉ bài giao qua lớp họ dạy hoặc do họ soạn.
     /// <c>Started</c> đếm mọi lượt làm bài ở bất kỳ trạng thái nào, kể cả đang làm dở hay đã hết giờ: một em
     /// đã bước vào phòng thi một lần là em đã bắt đầu làm bài, và đó là điều kiện khoá chuyển lớp.
     /// </remarks>
     Task<IReadOnlyDictionary<int, (int Completed, decimal AverageScore, int Started, int Assigned)>> GetStatsByStudentsAsync(
         IEnumerable<int> studentIds,
+        StudentStatsScope? scope = null,
         CancellationToken cancellationToken = default);
 
     /// <summary>

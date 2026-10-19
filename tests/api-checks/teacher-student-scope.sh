@@ -183,4 +183,16 @@ expect_status "  co em chua phan lop" yes "$(contains_id "$S_NONE")"
 expect_status "ho so em lop khac → 200" 200 "$(call GET "/api/students/$S_FOREIGN" "$ADMIN")"
 expect_status "ho so em lop nhap → 200" 200 "$(call GET "/api/students/$S_DRAFT" "$ADMIN")"
 
+# Mot em hoc nhieu lop: bo loc theo lop cua dong nghiep khong con giao voi tap rong tu nhien, nen no phai tu gioi han o lop minh day,
+# neu khong giao vien do duoc em nao dang hoc lop cua nguoi khac.
+section "Em hoc ca lop minh lan lop dong nghiep: loc theo lop dong nghiep khong de lo ai"
+expect_status "xep em chua phan lop vao lop cua giao vien → 200" 200 "$(call POST "/api/student-groups/$MINE/students" "$ADMIN" "{\"studentIds\":[$S_NONE]}")"
+expect_status "xep em do vao ca lop cua dong nghiep → 200" 200 "$(call POST "/api/student-groups/$FOREIGN/students" "$ADMIN" "{\"studentIds\":[$S_NONE]}")"
+expect_status "giao vien loc theo lop cua dong nghiep → 200" 200 "$(call GET "$LIST&groupId=$FOREIGN" "$TEACHER")"
+expect_json   "  total = 0 (khong do duoc em nao dang hoc lop cua dong nghiep)" total 0
+expect_status "giao vien loc theo lop minh → 200" 200 "$(call GET "$LIST&groupId=$MINE" "$TEACHER")"
+expect_status "  van thay em hoc ca hai lop" yes "$(contains_id "$S_NONE")"
+expect_status "quan tri vien loc theo lop dong nghiep van thay em → 200" 200 "$(call GET "$LIST&groupId=$FOREIGN" "$ADMIN")"
+expect_status "  co em hoc ca hai lop" yes "$(contains_id "$S_NONE")"
+
 summary

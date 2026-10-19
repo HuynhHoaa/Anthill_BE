@@ -503,6 +503,20 @@ public sealed class ExamAssignmentService : IExamAssignmentService
             return Result.Failure<RevokeClassResponse>(found.Error!, found.ErrorCode);
         }
 
+        // Cùng phạm vi với giao bài: chỉ giáo viên đang dạy một lớp đã công bố mới đụng được tới bài của lớp đó. Lớp mình không dạy
+        // (hay không có) trả cùng một câu 404 như lớp chưa được giao đề, để không dò được lớp của người khác.
+        var teachable = await _unitOfWork.StudentGroups.GetTeachableByIdsAsync([groupId], CurrentUserId, cancellationToken);
+        if (teachable.Count == 0)
+        {
+            return Result.NotFound<RevokeClassResponse>(ClassNotAssignedMessage);
+        }
+
+        // Lớp đã khoá là lớp chỉ đọc: không giao thêm và cũng không thu hồi bài.
+        if (teachable[0].IsLocked)
+        {
+            return Result.Conflict<RevokeClassResponse>($"Lớp {teachable[0].Name} đã khoá nên không thu hồi bài được.");
+        }
+
         await using var transaction = await _unitOfWork.BeginTransactionAsync(cancellationToken);
 
         if (await _unitOfWork.Exams.LockForEditAsync(examId, cancellationToken) is null)

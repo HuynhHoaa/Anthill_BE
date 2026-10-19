@@ -264,6 +264,15 @@ public sealed class StudentGroupService : IStudentGroupService
             });
         }
 
+        // Khoá ngoại từ bài giao về lớp là SetNull: xoá lớp rỗng mà còn bài đã làm hoặc đã hết hạn thì các bài đó lặng lẽ mất tên lớp và
+        // kỳ học (rơi về "Chưa phân kỳ"), cùng lịch sử lớp đi theo. Lớp có lịch sử bài thì giữ lại; muốn dừng lớp thì khoá.
+        if (await _unitOfWork.ExamAssignments.AnyViaGroupAsync(group.Id, cancellationToken))
+        {
+            return Result.Conflict(
+                "Lớp đã có bài kiểm tra được giao (đã làm hoặc đã hết hạn) nên không xoá được: xoá sẽ làm các bài đó mất tên lớp và kỳ học. "
+                + "Hãy khoá lớp thay vì xoá.");
+        }
+
         _unitOfWork.StudentGroups.Remove(group);
         await _unitOfWork.SaveChangesAsync(cancellationToken);
 
@@ -1032,6 +1041,7 @@ public sealed class StudentGroupService : IStudentGroupService
 
         var stats = await _unitOfWork.ExamAttempts.GetStatsByStudentsAsync(
             students.Select(student => student.Id),
+            visibleGroupIds is null ? null : new StudentStatsScope(visibleGroupIds, CurrentUserId),
             cancellationToken);
 
         return students

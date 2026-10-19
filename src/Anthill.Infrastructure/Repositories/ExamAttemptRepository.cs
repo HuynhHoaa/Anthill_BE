@@ -243,6 +243,7 @@ public class ExamAttemptRepository : GenericRepository<ExamAttempt>, IExamAttemp
     /// </remarks>
     public async Task<IReadOnlyDictionary<int, (int Completed, decimal AverageScore, int Started, int Assigned)>> GetStatsByStudentsAsync(
         IEnumerable<int> studentIds,
+        StudentStatsScope? scope = null,
         CancellationToken cancellationToken = default)
     {
         var ids = studentIds.Distinct().ToList();
@@ -254,16 +255,35 @@ public class ExamAttemptRepository : GenericRepository<ExamAttempt>, IExamAttemp
         // Số bài đã giao cho mỗi em: mẫu số của điểm trung bình. Bài đã giao mà chưa làm tính 0 điểm (giống bảng điểm xuất ra Excel),
         // nên chỉ chia cho số bài đã chấm thì một em bỏ hết bài sẽ không có điểm nào, một em làm đúng một bài trong mười bài sẽ hiện
         // điểm cao nguyên của bài đó.
-        var assignedByStudent = await Context.Set<ExamAssignment>()
+        var assignments = Context.Set<ExamAssignment>()
             .AsNoTracking()
-            .Where(assignment => ids.Contains(assignment.StudentId))
+            .Where(assignment => ids.Contains(assignment.StudentId));
+
+        var attempts = DbSet
+            .AsNoTracking()
+            .Where(a => ids.Contains(a.Assignment.StudentId));
+
+        if (scope is not null)
+        {
+            // Giáo viên chỉ được tính bài giao qua lớp mình dạy hoặc do mình soạn: em học nhiều lớp nên điểm các môn của
+            // đồng nghiệp không được lọt vào trung bình mà giáo viên này thấy.
+            var groupIds = scope.GroupIds.ToList();
+            var teacherId = scope.TeacherId;
+
+            assignments = assignments.Where(assignment =>
+                (assignment.AssignedViaGroupId != null && groupIds.Contains(assignment.AssignedViaGroupId.Value))
+                || assignment.Exam.CreatedByUserId == teacherId);
+            attempts = attempts.Where(a =>
+                (a.Assignment.AssignedViaGroupId != null && groupIds.Contains(a.Assignment.AssignedViaGroupId.Value))
+                || a.Assignment.Exam.CreatedByUserId == teacherId);
+        }
+
+        var assignedByStudent = await assignments
             .GroupBy(assignment => assignment.StudentId)
             .Select(group => new { StudentId = group.Key, Count = group.Count() })
             .ToDictionaryAsync(row => row.StudentId, row => row.Count, cancellationToken);
 
-        var rows = await DbSet
-            .AsNoTracking()
-            .Where(a => ids.Contains(a.Assignment.StudentId))
+        var rows = await attempts
             .GroupBy(a => a.Assignment.StudentId)
             .Select(g => new
             {
