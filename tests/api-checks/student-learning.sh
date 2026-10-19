@@ -177,15 +177,4 @@ expect_status "em B loc chua phan ky: khong co lop nao → rong" 0 "$(call GET "
 expect_status "em A bo ky khoi lop mot → 200" 200 "$(call PUT "/api/student-groups/$G1" "$ADMIN" "{\"name\":\"Lop SL mot $STAMP\",\"termId\":null}")"
 expect_status "  /api/my/terms chi con muc chua phan ky" "0" "$(call GET /api/my/terms "$TOK1" > /dev/null; J "' '.join(str(t['id']) for t in d)")"
 
-# Khoa ngoai tu bai giao ve lop la SetNull: xoa lop da roi het hoc sinh ma van con bai da het han thi cac bai do mat ten lop va ky.
-section "Xoa lop: lop con bai da giao (het han) thi khong xoa duoc, het bai moi xoa duoc"
-GX=$(new_class "$ADMIN" "$TEACHER" "Lop SL xoa $STAMP") || fail_fast "tao lop xoa"; GROUP_IDS+=("$GX")
-SX=$(new_student "${STAMP}x" "Hoc sinh SL X" "$GX"); STUDENTS+=("$SX")
-new_exam "SL de het han lop xoa $STAMP" "$GX" true "2020-01-01T00:00:00Z" "2020-01-02T00:00:00Z"; E_DEL=$NEW_EXAM_ID
-expect_status "go em ra khoi lop (bai het han van con) → 200" 200 "$(call DELETE "/api/student-groups/$GX/students/$SX" "$ADMIN" "$REMOVE_BODY")"
-expect_status "xoa lop con bai da giao → 409" 409 "$(call DELETE "/api/student-groups/$GX" "$ADMIN")"
-expect_status "  noi ro vi sao va goi y khoa lop" yes "$(python -X utf8 -c "import sys; t=open(sys.argv[1],encoding='utf-8').read(); print('yes' if 'bài kiểm tra' in t and 'khoá lớp' in t else 'no')" "$(to_native_path "$BODY_FILE")")"
-expect_status "xoa de (chua ai lam) → 200" 200 "$(call DELETE "/api/exams/$E_DEL" "$TEACHER")"
-expect_status "het bai da giao thi xoa lop → 200" 200 "$(call DELETE "/api/student-groups/$GX" "$ADMIN")"
-
 summary

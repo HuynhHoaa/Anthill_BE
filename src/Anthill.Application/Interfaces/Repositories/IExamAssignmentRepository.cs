@@ -21,9 +21,6 @@ public interface IExamAssignmentRepository : IGenericRepository<ExamAssignment>
     /// </summary>
     Task<IReadOnlyList<ExamAssignment>> GetByGroupAsync(int groupId, CancellationToken cancellationToken = default);
 
-    /// <summary>Còn lượt giao bài nào đi qua lớp này không (đã làm, đang làm hay hết hạn) — lớp có lịch sử bài thì không xoá được.</summary>
-    Task<bool> AnyViaGroupAsync(int groupId, CancellationToken cancellationToken = default);
-
     /// <summary>Nạp kèm Exam và Attempt.</summary>
     Task<ExamAssignment?> GetByExamAndStudentAsync(int examId, int studentId, CancellationToken cancellationToken = default);
 
