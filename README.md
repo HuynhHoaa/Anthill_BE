@@ -53,7 +53,7 @@ Giới hạn đã biết:
 
 ## API
 
-73 endpoint REST trong 13 controller cộng một hub SignalR; danh sách đầy đủ ở
+92 endpoint REST trong 15 controller cộng một hub SignalR; danh sách đầy đủ ở
 [hợp đồng API](docs/Anthill_API_Contract.md) và Swagger. Mọi endpoint yêu cầu JWT trừ
 `POST /api/auth/login` và `POST /api/auth/refresh`.
 
@@ -226,7 +226,7 @@ trống, và được tự chuyển sang chuỗi kết nối Npgsql. Hai điều
 
 ## Kiểm thử
 
-**Unit test** — `tests/Anthill.Tests/`, 704 test:
+**Unit test** — `tests/Anthill.Tests/`, 854 test:
 
 ```bash
 dotnet test
@@ -234,26 +234,30 @@ dotnet test
 
 Chúng kiểm tra logic thuần, không cần database: chia blueprint, xáo đề có seed, vòng đời đề, luật sửa đề,
 hạn giờ và điều kiện bắt đầu làm bài, chấm điểm, lịch theo lớp, cổng xem đáp án, ẩn danh hoá, phạm vi học
-sinh của giáo viên, kiểm phiên đăng nhập, luật validator.
+sinh của giáo viên, kiểm phiên đăng nhập, luật validator, đọc và dựng file Excel (file nhập, file mẫu và bảng xuất bảng điểm; kể cả file hỏng, bom zip và chuỗi bắt đầu bằng `=` không bao giờ thành công thức), ô gộp (merge) trong file nhập, chia file nhập cả trường thành giáo viên / lớp / học sinh, chuẩn hoá chuỗi nhập liệu.
 
-**Bộ kiểm HTTP** — `tests/api-checks/`, hơn 1600 phép kiểm trong 27 script; chi tiết từng bộ ở
+**Bộ kiểm HTTP** — `tests/api-checks/`, hơn 2700 phép kiểm trong 35 script; chi tiết từng bộ ở
 [tests/api-checks/README.md](tests/api-checks/README.md). Chúng chạy trên API thật để kiểm thứ unit test
 không với tới: 401/403/404, phân quyền theo vai trò, phạm vi dữ liệu, transaction. Có một bộ cho mỗi bước
 từ `step2` tới `step8`, và các bộ cho phần thêm sau đó: lớp do quản trị viên lập, luồng từ lớp tới học
 sinh, lịch theo lớp, luật sửa đề, xoá mềm, trạng thái tài khoản, thu hồi phiên, phạm vi học sinh của giáo
-viên, nhắc hạn, đổi lịch, và các lỗi từ đợt rà soát (`audit-fixes.sh`).
+viên, nhắc hạn, đổi lịch, học sinh học nhiều lớp, khoá lớp, lý do bắt buộc khi gỡ / chuyển / khoá và lịch sử học sinh (`class-membership.sh`), xuất bảng điểm ra Excel (`grade-sheet.sh`), ngân hàng câu hỏi
+của quản trị viên (`admin-question-bank.sh`), quản lý tài khoản giáo viên (`teacher-management.sh`), nhập học sinh,
+giáo viên và lớp từ Excel (`excel-import.sh`), nhập cả trường từ một file (`school-import.sh`), lớp học và bảng điểm của học sinh (`student-learning.sh`), kỳ học (`terms.sh`), và các lỗi từ đợt rà soát (`audit-fixes.sh`).
 
 Cần API đang chạy, database đã migrate và đã có tài khoản demo (script đăng nhập bằng chúng), cùng
 `bash`, `curl` và `python` (`lib.sh` dùng python để đọc JSON, `session-revocation.sh` dùng nó làm một
 client WebSocket tối giản bằng thư viện chuẩn; trên Windows chạy trong Git Bash).
 
-Riêng `exam-edit-rules.sh` cần thêm `psql`: hệ thống không có endpoint tạo giáo viên, nên script chép
-tài khoản giáo viên demo thẳng trong database để có một đồng nghiệp cùng môn và một giáo viên chưa gán
-môn. Script tìm `psql` trong `PATH`, không có thì lấy bản đứng cuối theo tên thư mục ở
+Riêng `exam-edit-rules.sh` cần thêm `psql`: API bắt buộc giáo viên có môn, nên để có một giáo viên chưa gán
+môn và một đồng nghiệp cùng môn, script chép tài khoản giáo viên demo thẳng trong database. Script tìm `psql` trong `PATH`, không có thì lấy bản đứng cuối theo tên thư mục ở
 `C:\Program Files\PostgreSQL\*\bin`.
 Thông tin kết nối lấy từ `PGHOST`/`PGPORT`/`PGDATABASE`/`PGUSER`/`PGPASSWORD` nếu `PGPASSWORD` đã đặt;
 không thì đọc `ConnectionStrings:DefaultConnection` trong user-secrets của `src/Anthill.Api`
 (`dotnet user-secrets list`). Thiếu cả hai thì phép kiểm đó báo hỏng chứ không lặng lẽ bỏ qua.
+
+Riêng `excel-import.sh` và `school-import.sh` cần thêm thư viện Python `openpyxl` (`pip install openpyxl`): `xlsx_tool.py` dựng file `.xlsx` thử,
+kể cả vài file xấu (bom zip, byte ngẫu nhiên) mà API phải từ chối.
 
 Địa chỉ mặc định là `http://localhost:5002`, đổi bằng biến `HOST`:
 
@@ -289,7 +293,7 @@ không cần tắt tiến trình đó khi chạy script.
 
 | File | Nội dung |
 |---|---|
-| [docs/Anthill_API_Contract.md](docs/Anthill_API_Contract.md) | Hợp đồng API: 73 endpoint, quy tắc bảo mật, lược đồ database, quy tắc nghiệp vụ |
+| [docs/Anthill_API_Contract.md](docs/Anthill_API_Contract.md) | Hợp đồng API: 92 endpoint, quy tắc bảo mật, lược đồ database, quy tắc nghiệp vụ |
 | [docs/Anthill_BE_Tech_Structure.md](docs/Anthill_BE_Tech_Structure.md) | Cấu trúc thư mục từng project |
 | [docs/Anthill_Requirement.md](docs/Anthill_Requirement.md) | Đặc tả nghiệp vụ |
 | [docs/Anthill_Workflow_Deploy.md](docs/Anthill_Workflow_Deploy.md) | Quy trình làm việc và phương án deploy |

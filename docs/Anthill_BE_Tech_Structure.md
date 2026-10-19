@@ -48,6 +48,7 @@ Gợi ý stack:
 | Realtime | SignalR |
 | API Documentation | Swagger |
 | Validation | FluentValidation |
+| Excel (đọc file nhập, dựng file mẫu) | ClosedXML, sau cổng `ISpreadsheetService` |
 | Architecture | Clean Architecture rút gọn |
 | Data Access | Repository + UnitOfWork |
 
@@ -129,6 +130,7 @@ Anthill_BE/
 │       ├── Realtime/
 │       ├── Authentication/
 │       ├── FileStorage/
+│       ├── Spreadsheets/
 │       ├── Services/
 │       └── DependencyInjection.cs
 │
@@ -147,6 +149,9 @@ Anthill.Api/
 │   ├── AuthController.cs
 │   ├── StudentsController.cs
 │   ├── StudentGroupsController.cs
+│   ├── TermsController.cs            # danh mục kỳ học (chỉ admin)
+│   ├── TeachersController.cs         # tài khoản giáo viên (chỉ admin)
+│   ├── ImportsController.cs          # nhập học sinh, giáo viên, lớp từ Excel: file mẫu + nhập (dryRun), multipart
 │   ├── QuestionsController.cs
 │   ├── ExamsController.cs
 │   ├── ExamAssignmentsController.cs
@@ -156,6 +161,13 @@ Anthill.Api/
 │
 ├── Hubs/
 │   └── NotificationHub.cs
+│
+├── Filters/
+│   ├── ValidationFilter.cs
+│   └── UploadSizeLimitAttribute.cs   # chặn file quá lớn trước khi đọc form: ảnh câu hỏi (theo cấu hình) và file Excel (5 MB)
+│
+├── Requests/
+│   └── ImportForms.cs               # thân multipart có IFormFile; chỉ tầng Api biết ASP.NET Core, controller bóc thành Stream
 │
 ├── Middlewares/
 │   ├── ExceptionMiddleware.cs
@@ -188,8 +200,14 @@ Anthill.Application/
 │
 ├── DTOs/
 │   ├── Auth/
-│   ├── Students/
+│   ├── Students/                     # StudentDto.Groups: các lớp em đang học (StudentGroupRefDto)
 │   ├── StudentGroups/
+│   ├── Terms/                        # AcademicTermDto, SaveAcademicTermRequest
+│   ├── MyLearning/                   # MyGroupDto, MyTermDto, TranscriptDto: việc học của chính học sinh
+│   ├── Files/                        # ExportedFileDto: file do server dựng sẵn để tải về
+│   ├── Accounts/                     # lịch sử tài khoản (học sinh và giáo viên dùng chung)
+│   ├── Teachers/
+│   ├── Imports/                      # kết quả và lựa chọn khi nhập từ Excel
 │   ├── Questions/
 │   ├── Exams/
 │   ├── ExamAssignments/
@@ -202,12 +220,17 @@ Anthill.Application/
 │   │   ├── IAuthService.cs
 │   │   ├── IStudentService.cs
 │   │   ├── IStudentGroupService.cs
+│   │   ├── ITeacherService.cs
+│   │   ├── ITermService.cs               # kỳ học: danh sách, thêm, sửa, xoá (chỉ admin)
+│   │   ├── IMyLearningService.cs         # lớp học, kỳ học và bảng điểm của học sinh đang đăng nhập
+│   │   ├── IImportServices.cs        # IStudentImportService, ITeacherImportService, IGroupImportService
 │   │   ├── IQuestionService.cs
 │   │   ├── IExamService.cs
 │   │   ├── IExamGeneratorService.cs
 │   │   ├── IExamAssignmentService.cs
 │   │   ├── IExamAttemptService.cs
 │   │   ├── IResultService.cs
+│   │   ├── IGradeSheetService.cs         # xuất bảng điểm ra Excel: học sinh của mình, giáo viên của lớp mình dạy
 │   │   ├── IDashboardService.cs
 │   │   └── IFileService.cs
 │   │
@@ -215,12 +238,18 @@ Anthill.Application/
 │   │   ├── IGenericRepository.cs
 │   │   ├── IUserRepository.cs
 │   │   ├── IStudentGroupRepository.cs
+│   │   ├── IAcademicTermRepository.cs    # kỳ học: xếp kỳ hiện tại lên đầu, đếm lớp mỗi kỳ, tên có bị trùng không
+│   │   ├── IAccountChangeRepository.cs   # lịch sử học sinh và giáo viên: chỉ thêm và đọc
+│   │   ├── IGroupChangeRepository.cs     # lịch sử lớp: chỉ thêm và đọc
 │   │   ├── IQuestionRepository.cs
 │   │   ├── IExamRepository.cs
 │   │   ├── IExamAssignmentRepository.cs
 │   │   ├── IExamAttemptRepository.cs
 │   │   ├── IStudentAnswerRepository.cs
 │   │   └── INotificationRepository.cs
+│   │
+│   ├── Files/
+│   │   └── ISpreadsheetService.cs        # cổng đọc file nhập, dựng file mẫu và dựng bảng xuất (bảng điểm); thư viện thật nằm ở Infrastructure
 │   │
 │   ├── UnitOfWork/
 │   │   └── IUnitOfWork.cs
@@ -231,22 +260,38 @@ Anthill.Application/
 ├── Services/
 │   ├── AuthService.cs
 │   ├── StudentService.cs
-│   ├── StudentGroupService.cs
+│   ├── StudentGroupService.cs        # một giáo viên mỗi lớp, đổi người kèm lý do, lịch sử lớp, bài đã giao cho lớp
+│   ├── TeacherService.cs             # tạo / sửa / khoá / cấp lại mật khẩu giáo viên
+│   ├── TermService.cs                # kỳ học: tối đa một kỳ hiện tại (tắt kỳ cũ rồi bật kỳ mới trong một transaction), không xoá kỳ còn lớp
+│   ├── MyLearningService.cs          # lớp học của tôi, các kỳ em có lớp (mục "Chưa phân kỳ" id 0), bảng điểm lọc theo kỳ
+│   ├── StudentImportService.cs       # nhập học sinh từ Excel: mã là khoá nhận diện, cùng luật vào lớp với xếp tay
+│   ├── TeacherImportService.cs
+│   ├── GroupImportService.cs
+│   ├── SchoolImportService.cs        # nhập tổng hợp từ MỘT file: chia dòng rồi chạy ba bộ nhập trên trong một transaction (nhập thử = chạy thật rồi rollback)
 │   ├── QuestionService.cs
 │   ├── ExamService.cs
 │   ├── ExamGeneratorService.cs
 │   ├── ExamAssignmentService.cs
 │   ├── ExamAttemptService.cs
 │   ├── ResultService.cs
+│   ├── GradeSheetService.cs          # dựng bảng điểm: điểm quy thang 10, ô trống không tính trung bình, học sinh đi qua cổng xem điểm
 │   └── DashboardService.cs
 │
 ├── Common/
 │   ├── ApiResponse.cs
 │   ├── Result.cs
 │   ├── PagedResult.cs
-│   └── PaginationParams.cs
+│   ├── PaginationParams.cs
+│   ├── SchoolImportPlanner.cs        # thuần logic: từ các dòng "học sinh + lớp + chủ nhiệm" dựng danh sách giáo viên, lớp, học sinh; bắt xung đột
+│   ├── ImportText.cs                 # chuẩn hoá chuỗi từ Excel: NFC, gộp khoảng trắng, bỏ dấu để so khớp, số điện thoại mất số 0
+│   ├── ImportIssueCollector.cs       # gom dòng lỗi: số dòng hỏng đếm đủ, danh sách trả về cắt ở 500
+│   └── ImportLimits.cs               # trần 5 MB và câu từ chối chung cho file quá lớn
 │
 ├── Validators/
+│   ├── ReasonRules.cs                # một bộ luật lý do (10–512 ký tự) cho khoá, xoá, gỡ, chuyển lớp và đổi giáo viên
+│   ├── SaveAcademicTermRequestValidator.cs   # tên kỳ bắt buộc ≤ 100 ký tự, ngày kết thúc không trước ngày bắt đầu
+│   ├── CreateTeacherRequestValidator.cs
+│   ├── ChangeTeacherRequestValidator.cs
 │   ├── CreateQuestionRequestValidator.cs
 │   ├── CreateExamRequestValidator.cs
 │   └── SubmitExamRequestValidator.cs
@@ -273,7 +318,11 @@ Anthill.Domain/
 │
 ├── Entities/
 │   ├── User.cs
-│   ├── StudentGroup.cs
+│   ├── StudentGroup.cs               # cờ IsLocked / LockedAt: lớp khoá là lớp chỉ đọc; AcademicTermId: kỳ học (tuỳ chọn)
+│   ├── AcademicTerm.cs               # kỳ học: tên, ngày (không bắt buộc), cờ kỳ hiện tại (chỉ mục duy nhất có điều kiện: tối đa một)
+│   ├── StudentGroupMember.cs         # học sinh ↔ lớp, nhiều-nhiều: một em học nhiều lớp cùng lúc
+│   ├── AccountChange.cs              # lịch sử khoá / xoá / xếp / gỡ / chuyển lớp của học sinh và khoá của giáo viên, kèm lý do; chỉ thêm
+│   ├── GroupChange.cs                # lịch sử lớp: lập lớp, đổi giáo viên, khoá và mở khoá kèm lý do; chỉ thêm
 │   ├── Question.cs
 │   ├── AnswerOption.cs
 │   ├── Exam.cs
@@ -289,6 +338,8 @@ Anthill.Domain/
 │   ├── UserStatus.cs
 │   ├── QuestionDifficulty.cs
 │   ├── QuestionStatus.cs
+│   ├── AccountChangeKind.cs
+│   ├── GroupChangeKind.cs
 │   ├── ExamStatus.cs
 │   ├── ExamAssignmentStatus.cs
 │   ├── ExamAttemptStatus.cs
@@ -319,7 +370,10 @@ Anthill.Infrastructure/
 │   ├── AppDbContext.cs
 │   ├── Configurations/
 │   │   ├── UserConfiguration.cs
-│   │   ├── StudentGroupConfiguration.cs
+│   │   ├── AcademicTermConfiguration.cs   # tên duy nhất, chỉ mục duy nhất IsCurrent = TRUE, khoá ngoại từ lớp là Restrict
+│   │   ├── StudentGroupConfiguration.cs   # cả bảng nối StudentGroupMember (khoá chính ghép, chỉ mục theo học sinh)
+│   │   ├── AccountChangeConfiguration.cs
+│   │   ├── GroupChangeConfiguration.cs
 │   │   ├── QuestionConfiguration.cs
 │   │   ├── AnswerOptionConfiguration.cs
 │   │   ├── ExamConfiguration.cs
@@ -337,6 +391,9 @@ Anthill.Infrastructure/
 │   ├── GenericRepository.cs
 │   ├── UserRepository.cs
 │   ├── StudentGroupRepository.cs
+│   ├── AcademicTermRepository.cs
+│   ├── AccountChangeRepository.cs
+│   ├── GroupChangeRepository.cs
 │   ├── QuestionRepository.cs
 │   ├── ExamRepository.cs
 │   ├── ExamAssignmentRepository.cs
@@ -357,6 +414,9 @@ Anthill.Infrastructure/
 ├── FileStorage/
 │   ├── LocalFileStorageService.cs
 │   └── FileStorageOptions.cs
+│
+├── Spreadsheets/
+│   └── ClosedXmlSpreadsheetService.cs   # chặn bom zip, không tính công thức, dò hàng tiêu đề, dựng file mẫu có ô chọn
 │
 ├── Services/
 │   └── DateTimeService.cs
