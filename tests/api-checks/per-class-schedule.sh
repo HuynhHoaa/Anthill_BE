@@ -32,9 +32,9 @@ cleanup() {
   for id in "${EXAM_IDS[@]}"; do call DELETE "/api/exams/$id" "$TEACHER" > /dev/null; done
   # Go hoc sinh khoi lop truoc: lop con thanh vien thi khong xoa duoc (409).
   for member in "${MEMBERS[@]}"; do
-    call DELETE "/api/student-groups/${member%/*}/students/${member#*/}" "$ADMIN" > /dev/null
+    call DELETE "/api/student-groups/${member%/*}/students/${member#*/}" "$ADMIN" "$REMOVE_BODY" > /dev/null
   done
-  for id in "${STUDENT_IDS[@]}"; do call PATCH "/api/students/$id/status" "$ADMIN" '{"status":"locked"}' > /dev/null; done
+  for id in "${STUDENT_IDS[@]}"; do call PATCH "/api/students/$id/status" "$ADMIN" "$LOCK_BODY" > /dev/null; done
   for id in "${GROUP_IDS[@]}";   do call DELETE "/api/student-groups/$id" "$ADMIN" > /dev/null; done
   printf '  da don (de da co bai nop thi khong xoa duoc — dung thiet ke, khong phai loi don dep)\n'
 }
@@ -163,7 +163,7 @@ TEACHER_ID=$(call GET /api/auth/me "$TEACHER" > /dev/null; json_field id)
 # khong bao gio don duoc lop va hoc sinh no tao ra.
 build_class() {
   local name="$1" suffix="$2" code
-  code=$(call POST /api/student-groups "$ADMIN" "{\"name\":\"$name\"}")
+  code=$(call POST /api/student-groups "$ADMIN" "{\"name\":\"$name\",\"teacherId\":$DEMO_TEACHER_ID}")
   [[ "$code" != "200" ]] && fail_fast "tao lop $name: HTTP $code — $(body)"
   BUILT_GID=$(json_field id); GROUP_IDS+=("$BUILT_GID")
 
@@ -171,7 +171,6 @@ build_class() {
   [[ "$code" != "200" ]] && fail_fast "tao hoc sinh $suffix: HTTP $code — $(body)"
   BUILT_SID=$(json_field id); STUDENT_IDS+=("$BUILT_SID"); MEMBERS+=("$BUILT_GID/$BUILT_SID")
 
-  call POST "/api/student-groups/$BUILT_GID/teachers" "$ADMIN" "{\"teacherIds\":[$TEACHER_ID]}" > /dev/null
   call POST "/api/student-groups/$BUILT_GID/publish" "$ADMIN" > /dev/null
 }
 
@@ -476,12 +475,14 @@ expect_status "  assignedViaGroupId ghi dung lop" "$G_KETHUA" "$(row_of_student 
 section "Xoa lop da tung giao bai khong lam hong bai cua em"
 build_class "Lop xoa $STAMP" "${STAMP}x"; G_XOA=$BUILT_GID; SID_XOA=$BUILT_SID
 TOK_XOA=$(login_and_clear_must_change "p${STAMP}x" "123456" "Px$STAMP")
-expect_status "giao lop xoa, 2..4 gio nua → 200" 200 "$(assign "$EID" "$G_XOA" 2 4)"
+# Khung da dong (4..2 gio truoc): em chua lam bai nao nen bai hien la "het han", va go em khoi lop KHONG thu hoi no — bai het
+# han ma em khong lam la bang chung em da vang mat. Neu khung con mo thi go em se thu hoi bai (xem class-membership.sh).
+expect_status "giao lop xoa, khung da dong 4..2 gio truoc → 200" 200 "$(assign "$EID" "$G_XOA" -4 -2)"
 call GET /api/my/exams "$TOK_XOA" > /dev/null
 OPEN_XOA=$(field_of_exam openAt "$EID")
 call GET "/api/exams/$EID/assignments" "$TEACHER" > /dev/null
 expect_status "  cot lop giao bai duoc ghi va doc lai" "$G_XOA" "$(row_of_student assignedViaGroupId "$SID_XOA")"
-expect_status "go em khoi lop → 200" 200 "$(call DELETE "/api/student-groups/$G_XOA/students/$SID_XOA" "$ADMIN")"
+expect_status "go em khoi lop → 200" 200 "$(call DELETE "/api/student-groups/$G_XOA/students/$SID_XOA" "$ADMIN" "$REMOVE_BODY")"
 # Khoa ngoai Restrict thi day la 500 tu vi pham 23503; SET NULL thi lop xoa duoc.
 expect_status "xoa lop da tung giao bai → 200" 200 "$(call DELETE "/api/student-groups/$G_XOA" "$ADMIN")"
 expect_status "em doc lai danh sach → 200" 200 "$(call GET /api/my/exams "$TOK_XOA")"

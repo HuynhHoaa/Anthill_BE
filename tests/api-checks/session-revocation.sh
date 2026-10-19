@@ -47,8 +47,8 @@ cleanup() {
   if [[ -n "$SID" ]]; then
     # Tai khoan cho xoa khong khoa duoc, nen khoi phuc truoc (409 neu dang hoat dong — vo hai).
     call POST "/api/students/$SID/restore" "$ADMIN" > /dev/null
-    [[ -n "$GID" ]] && call DELETE "/api/student-groups/$GID/students/$SID" "$ADMIN" > /dev/null
-    call PATCH "/api/students/$SID/status" "$ADMIN" '{"status":"locked"}' > /dev/null
+    [[ -n "$GID" ]] && call DELETE "/api/student-groups/$GID/students/$SID" "$ADMIN" "$REMOVE_BODY" > /dev/null
+    call PATCH "/api/students/$SID/status" "$ADMIN" "$LOCK_BODY" > /dev/null
   fi
   [[ -n "$GID" ]] && call DELETE "/api/student-groups/$GID" "$ADMIN" > /dev/null
   printf '  da don (hoc sinh %s de lai o trang thai khoa — khong xoa duoc bang API, dung thiet ke)\n' "${SID:-?}"
@@ -173,7 +173,7 @@ race_against() {
 
 lock_student() {
   expect_status "  quan tri vien khoa giua loat PUT → 200" 200 \
-    "$(call PATCH "/api/students/$SID/status" "$ADMIN" '{"status":"locked"}')"
+    "$(call PATCH "/api/students/$SID/status" "$ADMIN" "$LOCK_BODY")"
 }
 
 RACE_PW=""
@@ -211,7 +211,7 @@ expect_status "khong token: bai duoc giao → 401" 401 "$(call GET /api/my/exams
 expect_json   "  van la cau het han chung" message "$EXPIRED_MSG"
 
 section "Khoa tai khoan"
-expect_status "khoa → 200" 200 "$(call PATCH "/api/students/$SID/status" "$ADMIN" '{"status":"locked"}')"
+expect_status "khoa → 200" 200 "$(call PATCH "/api/students/$SID/status" "$ADMIN" "$LOCK_BODY")"
 token_dead "token cu" "$T0" "$LOCKED_MSG"
 # Request mo ket noi WebSocket di qua cung buoc xac thuc; bi chan truoc khi SignalR tra id.
 expect_status "token cu: mo ket noi hub → 401" 401 \
@@ -472,7 +472,7 @@ expect_hub_closed() {
 }
 
 TH=$(login "$USERNAME" "$CURRENT_PW")
-expect_hub_closed "khoa" "$TH" PATCH "api/students/$SID/status" "$ADMIN" '{"status":"locked"}'
+expect_hub_closed "khoa" "$TH" PATCH "api/students/$SID/status" "$ADMIN" "$LOCK_BODY"
 expect_status "  mo khoa cho buoc sau → 200" 200 "$(call PATCH "/api/students/$SID/status" "$ADMIN" '{"status":"active"}')"
 
 TH=$(login "$USERNAME" "$CURRENT_PW")
@@ -491,7 +491,7 @@ expect_hub_closed "dua vao dien xoa" "$TH" POST "api/students/$SID/request-delet
 expect_status "  khoi phuc cho buoc sau → 200" 200 "$(call POST "/api/students/$SID/restore" "$ADMIN")"
 
 # Doi chung: cat theo tai khoan, khong cat bua. Ket noi cua giao vien van song khi hoc sinh bi khoa.
-HUB_OUT=$(hub_watch "$TEACHER" PATCH "api/students/$SID/status" "$ADMIN" '{"status":"locked"}')
+HUB_OUT=$(hub_watch "$TEACHER" PATCH "api/students/$SID/status" "$ADMIN" "$LOCK_BODY")
 expect_status "giao vien: ket noi mo → ok" ok "$(hub_line TRUOC)"
 expect_status "giao vien: hoc sinh bi khoa → 200" 200 "$(hub_line HANH_DONG)"
 expect_status "giao vien: ket noi van mo sau 5 giay" mo "$(hub_line SAU)"

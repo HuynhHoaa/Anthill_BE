@@ -23,9 +23,9 @@ cleanup() {
   local member
   for id in "${EXAM_IDS[@]}"; do call DELETE "/api/exams/$id" "$TEACHER" > /dev/null; done
   for member in "${MEMBERS[@]}"; do
-    call DELETE "/api/student-groups/${member%/*}/students/${member#*/}" "$ADMIN" > /dev/null
+    call DELETE "/api/student-groups/${member%/*}/students/${member#*/}" "$ADMIN" "$REMOVE_BODY" > /dev/null
   done
-  for id in "${STUDENT_IDS[@]}"; do call PATCH "/api/students/$id/status" "$ADMIN" '{"status":"locked"}' > /dev/null; done
+  for id in "${STUDENT_IDS[@]}"; do call PATCH "/api/students/$id/status" "$ADMIN" "$LOCK_BODY" > /dev/null; done
   for id in "${GROUP_IDS[@]}";   do call DELETE "/api/student-groups/$id" "$ADMIN" > /dev/null; done
   printf '  da don\n'
 }
@@ -92,13 +92,12 @@ TEACHER_ID=$(call GET /api/auth/me "$TEACHER" > /dev/null; json_field id)
 
 build_class() {
   local name="$1" suffix="$2" code
-  code=$(call POST /api/student-groups "$ADMIN" "{\"name\":\"$name\"}")
+  code=$(call POST /api/student-groups "$ADMIN" "{\"name\":\"$name\",\"teacherId\":$DEMO_TEACHER_ID}")
   [[ "$code" != "200" ]] && fail_fast "tao lop $name: HTTP $code — $(body)"
   BUILT_GID=$(json_field id); GROUP_IDS+=("$BUILT_GID")
   code=$(call POST /api/students "$ADMIN" "{\"fullName\":\"HS $suffix\",\"email\":\"r$suffix@kiemthu.vn\",\"username\":\"r$suffix\",\"code\":\"R$suffix\",\"password\":\"123456\",\"groupId\":$BUILT_GID}")
   [[ "$code" != "200" ]] && fail_fast "tao hoc sinh $suffix: HTTP $code — $(body)"
   BUILT_SID=$(json_field id); STUDENT_IDS+=("$BUILT_SID"); MEMBERS+=("$BUILT_GID/$BUILT_SID")
-  call POST "/api/student-groups/$BUILT_GID/teachers" "$ADMIN" "{\"teacherIds\":[$TEACHER_ID]}" > /dev/null
   call POST "/api/student-groups/$BUILT_GID/publish" "$ADMIN" > /dev/null
 }
 

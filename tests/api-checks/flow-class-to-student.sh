@@ -22,8 +22,8 @@ cleanup() {
   section "Don du lieu"
   for id in "${EXAM_IDS[@]}";  do call DELETE "/api/exams/$id" "$TEACHER" > /dev/null; done
   for id in "${STUDENT_IDS[@]}"; do
-    call DELETE "/api/student-groups/${GROUP_IDS[0]}/students/$id" "$ADMIN" > /dev/null
-    call PATCH "/api/students/$id/status" "$ADMIN" '{"status":"locked"}' > /dev/null
+    call DELETE "/api/student-groups/${GROUP_IDS[0]}/students/$id" "$ADMIN" "$REMOVE_BODY" > /dev/null
+    call PATCH "/api/students/$id/status" "$ADMIN" "$LOCK_BODY" > /dev/null
   done
   for id in "${GROUP_IDS[@]}"; do call DELETE "/api/student-groups/$id" "$ADMIN" > /dev/null; done
   printf '  da don (de da co bai nop thi giu lai — dung thiet ke)\n'
@@ -33,7 +33,7 @@ trap cleanup EXIT
 fail_fast() { echo "  Dung du lieu nen that bai: $1" >&2; exit 1; }
 
 section "1. Quan tri vien lap lop va xep hoc sinh"
-code=$(call POST /api/student-groups "$ADMIN" "{\"name\":\"Lop E2E $STAMP\",\"description\":\"Kiem chung luong giao bai theo lop\"}")
+code=$(call POST /api/student-groups "$ADMIN" "{\"name\":\"Lop E2E $STAMP\",\"description\":\"Kiem chung luong giao bai theo lop\",\"teacherId\":$DEMO_TEACHER_ID}")
 [[ "$code" != "200" ]] && fail_fast "tao lop: HTTP $code — $(body)"
 GID=$(json_field id); GROUP_IDS+=("$GID")
 expect_status "tao lop → 200" 200 "$code"
@@ -46,9 +46,7 @@ for i in 0 1 2; do
 done
 expect_status "xep du 3 hoc sinh vao lop" 3 "${#STUDENT_IDS[@]}"
 
-section "2. Phan cong giao vien va cong bo lop"
-expect_status "phan cong giao vien → 200" 200 \
-  "$(call GET /api/auth/me "$TEACHER" > /dev/null; call POST "/api/student-groups/$GID/teachers" "$ADMIN" "{\"teacherIds\":[$(call GET /api/auth/me "$TEACHER" > /dev/null; json_field id)]}")"
+section "2. Cong bo lop (giao vien phu trach da chon ngay luc lap lop)"
 expect_status "cong bo lop → 200" 200 "$(call POST "/api/student-groups/$GID/publish" "$ADMIN")"
 expect_json   "  si so = 3" studentCount 3
 

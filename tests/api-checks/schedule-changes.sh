@@ -33,9 +33,9 @@ cleanup() {
   for id in "${EXAM_IDS[@]}"; do call DELETE "/api/exams/$id" "$TEACHER" > /dev/null; done
   # Go hoc sinh khoi lop truoc: lop con thanh vien thi khong xoa duoc (409).
   for member in "${MEMBERS[@]}"; do
-    call DELETE "/api/student-groups/${member%/*}/students/${member#*/}" "$ADMIN" > /dev/null
+    call DELETE "/api/student-groups/${member%/*}/students/${member#*/}" "$ADMIN" "$REMOVE_BODY" > /dev/null
   done
-  for id in "${STUDENT_IDS[@]}"; do call PATCH "/api/students/$id/status" "$ADMIN" '{"status":"locked"}' > /dev/null; done
+  for id in "${STUDENT_IDS[@]}"; do call PATCH "/api/students/$id/status" "$ADMIN" "$LOCK_BODY" > /dev/null; done
   for id in "${GROUP_IDS[@]}";   do call DELETE "/api/student-groups/$id" "$ADMIN" > /dev/null; done
   printf '  da don (de da co bai nop thi khong xoa duoc — dung thiet ke, khong phai loi don dep)\n'
 }
@@ -153,11 +153,10 @@ TEACHER_ID=$(call GET /api/auth/me "$TEACHER" > /dev/null; json_field id)
 # Goi TRUC TIEP, khong trong $( ): subshell nuot mat moi phep gan.
 build_class() {
   local name="$1" suffix="$2" code
-  code=$(call POST /api/student-groups "$ADMIN" "{\"name\":\"$name\"}")
+  code=$(call POST /api/student-groups "$ADMIN" "{\"name\":\"$name\",\"teacherId\":$DEMO_TEACHER_ID}")
   [[ "$code" != "200" ]] && fail_fast "tao lop $name: HTTP $code — $(body)"
   BUILT_GID=$(json_field id); GROUP_IDS+=("$BUILT_GID")
   add_student "$BUILT_GID" "$suffix"
-  call POST "/api/student-groups/$BUILT_GID/teachers" "$ADMIN" "{\"teacherIds\":[$TEACHER_ID]}" > /dev/null
   call POST "/api/student-groups/$BUILT_GID/publish" "$ADMIN" > /dev/null
 }
 

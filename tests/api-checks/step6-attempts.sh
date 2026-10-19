@@ -44,9 +44,9 @@ cleanup() {
   # Gỡ khỏi lớp và xoá lớp là việc của quản trị viên: token giáo viên nhận 403 và để sót lớp thử.
   for id in "${STUDENTS[@]}"; do
     if [[ -n "$GROUP_ID" ]]; then
-      [[ "$(call DELETE "/api/student-groups/$GROUP_ID/students/$id" "$ADMIN")" == "200" ]] && members=$((members + 1))
+      [[ "$(call DELETE "/api/student-groups/$GROUP_ID/students/$id" "$ADMIN" "$REMOVE_BODY")" == "200" ]] && members=$((members + 1))
     fi
-    [[ "$(call PATCH "/api/students/$id/status" "$ADMIN" '{"status":"locked"}')" == "200" ]] && locked=$((locked + 1))
+    [[ "$(call PATCH "/api/students/$id/status" "$ADMIN" "$LOCK_BODY")" == "200" ]] && locked=$((locked + 1))
   done
 
   for id in "${GROUP_IDS[@]}"; do

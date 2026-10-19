@@ -29,8 +29,8 @@ cleanup() {
   # Tai khoan cho xoa khong khoa duoc nua (dung la dieu bo kiem nay chung minh), nen khoi phuc truoc.
   for id in $SID $OTHER $LEAVER $STAYER $LONE; do
     call POST "/api/students/$id/restore" "$ADMIN" > /dev/null
-    for gid in $GID $CID $LONE_GID; do call DELETE "/api/student-groups/$gid/students/$id" "$ADMIN" > /dev/null; done
-    call PATCH "/api/students/$id/status" "$ADMIN" '{"status":"locked"}' > /dev/null
+    for gid in $GID $CID $LONE_GID; do call DELETE "/api/student-groups/$gid/students/$id" "$ADMIN" "$REMOVE_BODY" > /dev/null; done
+    call PATCH "/api/students/$id/status" "$ADMIN" "$LOCK_BODY" > /dev/null
   done
   for gid in $GID $CID $LONE_GID; do call DELETE "/api/student-groups/$gid" "$ADMIN" > /dev/null; done
   printf '  da don\n'
@@ -92,7 +92,7 @@ field_by_id()  { python "$HELPERS" field_by_id "$(to_native_path "$BODY_FILE")" 
 field_where()  { python "$HELPERS" field_where "$(to_native_path "$BODY_FILE")" "$1" "$2" "$3"; }
 
 section "Dung du lieu nen"
-code=$(call POST /api/student-groups "$ADMIN" "{\"name\":\"Lop rao $STAMP\"}")
+code=$(call POST /api/student-groups "$ADMIN" "{\"name\":\"Lop rao $STAMP\",\"teacherId\":$DEMO_TEACHER_ID}")
 [[ "$code" != "200" ]] && fail_fast "tao lop: HTTP $code — $(body)"
 GID=$(json_field id)
 
@@ -114,7 +114,7 @@ expect_status "PATCH status=pendingDeletion → 400" 400 \
 expect_status "tao hoc sinh voi status=deleted → 400" 400 \
   "$(call POST /api/students "$ADMIN" "{\"fullName\":\"X\",\"email\":\"x$STAMP@kiemthu.vn\",\"username\":\"x$STAMP\",\"code\":\"X$STAMP\",\"password\":\"123456\",\"status\":\"deleted\"}")"
 expect_status "khoa van dung binh thuong → 200" 200 \
-  "$(call PATCH "/api/students/$OTHER/status" "$ADMIN" '{"status":"locked"}')"
+  "$(call PATCH "/api/students/$OTHER/status" "$ADMIN" "$LOCK_BODY")"
 expect_json   "  status = locked" status locked
 expect_status "mo khoa van dung binh thuong → 200" 200 \
   "$(call PATCH "/api/students/$OTHER/status" "$ADMIN" '{"status":"active"}')"
@@ -128,7 +128,7 @@ expect_json   "  status = pendingDeletion" status pendingDeletion
 expect_status "PATCH status=active len tai khoan cho xoa → 409" 409 \
   "$(call PATCH "/api/students/$SID/status" "$ADMIN" '{"status":"active"}')"
 expect_status "PATCH status=locked len tai khoan cho xoa → 409" 409 \
-  "$(call PATCH "/api/students/$SID/status" "$ADMIN" '{"status":"locked"}')"
+  "$(call PATCH "/api/students/$SID/status" "$ADMIN" "$LOCK_BODY")"
 expect_status "sua ho so tai khoan cho xoa → 409" 409 \
   "$(call PUT "/api/students/$SID" "$ADMIN" "{\"fullName\":\"Doi ten\",\"email\":\"g${STAMP}a@kiemthu.vn\",\"username\":\"g${STAMP}a\",\"code\":\"G${STAMP}a\",\"groupId\":0}")"
 expect_status "cap lai mat khau cho tai khoan cho xoa → 409" 409 \
@@ -243,10 +243,10 @@ expect_status "em roi truong → 200" 200 \
 expect_status "doc lop → 200" 200 "$(call GET "/api/student-groups/$LONE_GID" "$ADMIN")"
 expect_json   "  si so = 0" studentCount 0
 expect_status "xoa lop con em cho xoa → 409" 409 "$(call DELETE "/api/student-groups/$LONE_GID" "$ADMIN")"
-expect_status "go em khoi lop → 200" 200 "$(call DELETE "/api/student-groups/$LONE_GID/students/$LONE" "$ADMIN")"
+expect_status "go em khoi lop → 200" 200 "$(call DELETE "/api/student-groups/$LONE_GID/students/$LONE" "$ADMIN" "$REMOVE_BODY")"
 expect_status "xoa lop da rong → 200" 200 "$(call DELETE "/api/student-groups/$LONE_GID" "$ADMIN")"
 expect_status "doc lai em do → 200" 200 "$(call GET "/api/students/$LONE" "$ADMIN")"
-expect_json   "  ve chua phan nhom" groupId 0
+expect_json   "  ve chua phan nhom" groups "[]"
 expect_json   "  van dang cho xoa" status pendingDeletion
 
 section "Khoi phuc la loi duy nhat, va xoa sach dau vet"
@@ -255,6 +255,6 @@ expect_json   "  status = active" status active
 expect_status "  khong con deletionReason" absent "$(has_field deletionReason)"
 expect_status "  khong con deletionScheduledAt" absent "$(has_field deletionScheduledAt)"
 expect_status "khoi phuc xong thi khoa duoc nhu thuong → 200" 200 \
-  "$(call PATCH "/api/students/$SID/status" "$ADMIN" '{"status":"locked"}')"
+  "$(call PATCH "/api/students/$SID/status" "$ADMIN" "$LOCK_BODY")"
 
 summary
