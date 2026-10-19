@@ -174,13 +174,17 @@ public static class DbSeeder
             Status = UserStatus.Active,
             SubjectId = seed.SubjectId,
             Code = seed.Code,
-            GroupId = seed.GroupId,
             Phone = seed.Phone,
             AvatarColor = seed.AvatarColor,
 
             // Tài khoản demo phải dùng được ngay, không chặn bằng màn hình đổi mật khẩu.
             MustChangePassword = false
         };
+
+        if (seed.GroupId is { } groupId)
+        {
+            user.GroupMemberships.Add(new StudentGroupMember { StudentGroupId = groupId, JoinedAt = DateTime.UtcNow });
+        }
 
         await context.Users.AddAsync(user, cancellationToken);
         return user;

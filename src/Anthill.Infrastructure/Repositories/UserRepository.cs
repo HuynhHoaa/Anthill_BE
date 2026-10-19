@@ -35,7 +35,7 @@ public class UserRepository : GenericRepository<User>, IUserRepository
         // quả cố định (luôn cùng một dòng, luôn cùng một tài khoản) thay vì trồi sụt giữa các lần gọi.
         return await DbSet
             .Include(u => u.Subject)
-            .Include(u => u.Group)
+            .Include(u => u.Groups)
             .Where(u => u.Email.ToLower() == key
                         || u.Username.ToLower() == key
                         || (u.Code != null && u.Code.ToLower() == key))
@@ -46,7 +46,7 @@ public class UserRepository : GenericRepository<User>, IUserRepository
     public async Task<User?> GetProfileAsync(int userId, CancellationToken cancellationToken = default) =>
         await DbSet
             .Include(u => u.Subject)
-            .Include(u => u.Group)
+            .Include(u => u.Groups)
             .FirstOrDefaultAsync(u => u.Id == userId, cancellationToken);
 
     public async Task<User?> GetByEmailAsync(string email, CancellationToken cancellationToken = default)
@@ -126,7 +126,7 @@ public class UserRepository : GenericRepository<User>, IUserRepository
     {
         var query = DbSet
             .AsNoTracking()
-            .Include(u => u.Group)
+            .Include(u => u.Groups)
             .Where(u => u.Role == UserRole.Student);
 
         return await ApplyStudentFilters(query, search, groupId, status)
@@ -146,7 +146,7 @@ public class UserRepository : GenericRepository<User>, IUserRepository
         // chỉ còn giao với tập rỗng.
         var query = DbSet
             .AsNoTracking()
-            .Include(u => u.Group)
+            .Include(u => u.Groups)
             .Where(u => u.Role == UserRole.Student)
             .Where(TeacherStudentScope.InTaughtClass(teacherId));
 
@@ -159,7 +159,7 @@ public class UserRepository : GenericRepository<User>, IUserRepository
         int teacherId,
         CancellationToken cancellationToken = default) =>
         await DbSet
-            .Include(u => u.Group)
+            .Include(u => u.Groups)
             .Where(u => u.Id == studentId && u.Role == UserRole.Student)
             .Where(TeacherStudentScope.CanReadProfile(teacherId))
             .FirstOrDefaultAsync(cancellationToken);
@@ -182,9 +182,10 @@ public class UserRepository : GenericRepository<User>, IUserRepository
             // 0 là UNASSIGNED_GROUP_ID của frontend, nghĩa là "chưa phân nhóm" — không phải một
             // nhóm có id bằng 0. Không tách nhánh này thì ô lọc "Chưa phân nhóm" luôn trả về rỗng,
             // và đó là loại lỗi trông hệt như "lớp này thật sự không có ai".
-            query = groupId.Value == StudentGroupDefaults.UnassignedId
-                ? query.Where(u => u.GroupId == null)
-                : query.Where(u => u.GroupId == groupId.Value);
+            var requestedGroupId = groupId.Value;
+            query = requestedGroupId == StudentGroupDefaults.UnassignedId
+                ? query.Where(u => !u.Groups.Any())
+                : query.Where(u => u.Groups.Any(g => g.Id == requestedGroupId));
         }
 
         if (status.HasValue)
@@ -210,7 +211,8 @@ public class UserRepository : GenericRepository<User>, IUserRepository
         CancellationToken cancellationToken = default) =>
         await DbSet
             .AsNoTracking()
-            .Where(u => u.Role == UserRole.Student && u.GroupId == groupId)
+            .Include(u => u.Groups)
+            .Where(u => u.Role == UserRole.Student && u.Groups.Any(g => g.Id == groupId))
             .OrderBy(u => u.Code)
             .ThenBy(u => u.Id)
             .ToListAsync(cancellationToken);
@@ -230,6 +232,7 @@ public class UserRepository : GenericRepository<User>, IUserRepository
         }
 
         return await DbSet
+            .Include(u => u.Groups)
             .Where(u => u.Role == UserRole.Student && ids.Contains(u.Id))
             .ToListAsync(cancellationToken);
     }
@@ -239,13 +242,13 @@ public class UserRepository : GenericRepository<User>, IUserRepository
         CancellationToken cancellationToken = default) =>
         await DbSet
             .AsNoTracking()
-            .Include(u => u.Group)
+            .Include(u => u.Groups)
             // Không liệt kê tài khoản chờ xoá hay đã xoá: sau 60 ngày chúng hiện ra dưới tên
             // "Học sinh đã xoá" cùng mã deleted-N, và "Chọn tất cả" sẽ đưa chúng trở lại lớp.
             .Where(u => u.Role == UserRole.Student
                         && u.Status != UserStatus.PendingDeletion
                         && u.Status != UserStatus.Deleted
-                        && (u.GroupId == null || u.GroupId != groupId))
+                        && !u.Groups.Any(g => g.Id == groupId))
             .OrderBy(u => u.Code)
             .ThenBy(u => u.Id)
             .ToListAsync(cancellationToken);
@@ -304,17 +307,77 @@ public class UserRepository : GenericRepository<User>, IUserRepository
             .ToListAsync(cancellationToken);
     }
 
-    public async Task<IReadOnlyList<User>> GetAssignableTeachersAsync(
-        int groupId,
-        CancellationToken cancellationToken = default) =>
+    public async Task<IReadOnlyList<User>> GetTeachersAsync(CancellationToken cancellationToken = default) =>
         await DbSet
             .AsNoTracking()
             .Include(u => u.Subject)
-            .Where(u => u.Role == UserRole.Teacher
-                        && !u.TeachingGroups.Any(t => t.StudentGroupId == groupId))
+            .Where(u => u.Role == UserRole.Teacher)
             .OrderBy(u => u.FullName)
             .ThenBy(u => u.Id)
             .ToListAsync(cancellationToken);
+
+    public async Task<PagedResult<User>> GetTeachersPagedAsync(
+        string? search,
+        UserStatus? status,
+        int? subjectId,
+        PaginationParams pagination,
+        CancellationToken cancellationToken = default)
+    {
+        var query = DbSet
+            .AsNoTracking()
+            .Include(u => u.Subject)
+            .Where(u => u.Role == UserRole.Teacher);
+
+        if (status.HasValue)
+        {
+            query = query.Where(u => u.Status == status.Value);
+        }
+
+        if (subjectId.HasValue)
+        {
+            query = query.Where(u => u.SubjectId == subjectId.Value);
+        }
+
+        if (SearchText.ToLikePattern(search) is { } pattern)
+        {
+            query = query.Where(u =>
+                EF.Functions.ILike(EF.Functions.Unaccent(u.FullName), pattern)
+                || EF.Functions.ILike(u.Email, pattern)
+                || EF.Functions.ILike(u.Phone ?? string.Empty, pattern));
+        }
+
+        // Theo tên cho dễ tìm; ThenBy(Id) để phân trang ổn định.
+        return await query
+            .OrderBy(u => u.FullName)
+            .ThenBy(u => u.Id)
+            .ToPagedResultAsync(pagination, cancellationToken);
+    }
+
+    public async Task<IReadOnlyList<User>> FindByIdentifiersAsync(
+        IReadOnlyCollection<string> identifiers,
+        CancellationToken cancellationToken = default)
+    {
+        if (identifiers.Count == 0)
+        {
+            return [];
+        }
+
+        var found = new List<User>();
+
+        // Chia lô để một lần gửi không mang hàng chục nghìn tham số; mỗi lô là một truy vấn `= ANY(@mang)`.
+        foreach (var batch in identifiers.Chunk(2000))
+        {
+            var keys = batch.ToList();
+            found.AddRange(await DbSet
+                .Where(u => keys.Contains(u.Email.ToLower())
+                            || keys.Contains(u.Username.ToLower())
+                            || (u.Code != null && keys.Contains(u.Code.ToLower())))
+                .ToListAsync(cancellationToken));
+        }
+
+        // Một tài khoản khớp ở nhiều lô (email ở lô này, mã ở lô kia) chỉ tính một lần.
+        return found.DistinctBy(user => user.Id).ToList();
+    }
 
     public async Task<IReadOnlyList<User>> GetTeachersByIdsAsync(
         IEnumerable<int> teacherIds,
@@ -337,7 +400,7 @@ public class UserRepository : GenericRepository<User>, IUserRepository
     public async Task<int> CountStudentsInGroupAsync(int groupId, CancellationToken cancellationToken = default) =>
         await DbSet.CountAsync(
             u => u.Role == UserRole.Student
-                 && u.GroupId == groupId
+                 && u.Groups.Any(g => g.Id == groupId)
                  && u.Status != UserStatus.PendingDeletion
                  && u.Status != UserStatus.Deleted,
             cancellationToken);
@@ -352,13 +415,14 @@ public class UserRepository : GenericRepository<User>, IUserRepository
             return new Dictionary<int, int>();
         }
 
-        var counts = await DbSet
-            .Where(u => u.Role == UserRole.Student
-                        && u.GroupId != null
-                        && ids.Contains(u.GroupId!.Value)
-                        && u.Status != UserStatus.PendingDeletion
-                        && u.Status != UserStatus.Deleted)
-            .GroupBy(u => u.GroupId!.Value)
+        // Đếm trên bảng thành viên: một em học hai lớp được tính vào sĩ số của cả hai.
+        var counts = await Context.Set<StudentGroupMember>()
+            .AsNoTracking()
+            .Where(m => ids.Contains(m.StudentGroupId)
+                        && m.Student.Role == UserRole.Student
+                        && m.Student.Status != UserStatus.PendingDeletion
+                        && m.Student.Status != UserStatus.Deleted)
+            .GroupBy(m => m.StudentGroupId)
             .Select(g => new { GroupId = g.Key, Count = g.Count() })
             .ToListAsync(cancellationToken);
 

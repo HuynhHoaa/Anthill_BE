@@ -31,9 +31,10 @@ public class ExamAttemptRepository : GenericRepository<ExamAttempt>, IExamAttemp
             .Include(a => a.Assignment)
                 .ThenInclude(assignment => assignment.Student)
 
-                    // Nhóm lớp: bản tóm tắt kết quả có cột nhóm, mà không nạp thì EF trả về null
-                    // lặng lẽ — dự án không bật lazy loading proxy — và cột đó luôn rỗng.
-                    .ThenInclude(student => student.Group)
+            // Lớp mà bài được giao qua: bản tóm tắt kết quả có cột nhóm, mà không nạp thì EF trả về null
+            // lặng lẽ — dự án không bật lazy loading proxy — và cột đó luôn rỗng.
+            .Include(a => a.Assignment)
+                .ThenInclude(assignment => assignment.AssignedViaGroup)
             .Include(a => a.Assignment)
                 .ThenInclude(assignment => assignment.Paper)
             .FirstOrDefaultAsync(a => a.Id == attemptId, cancellationToken);
@@ -193,6 +194,16 @@ public class ExamAttemptRepository : GenericRepository<ExamAttempt>, IExamAttemp
         return await OrderForDisplay(query).ToPagedResultAsync(pagination, cancellationToken);
     }
 
+    public async Task<IReadOnlyList<ExamAttempt>> GetFinishedByStudentAsync(
+        int studentId,
+        CancellationToken cancellationToken = default) =>
+        await ResultsQuery()
+            .Where(a => a.Assignment.StudentId == studentId
+                        && (a.Status == AssignmentStatus.Submitted || a.Status == AssignmentStatus.Graded))
+            .OrderByDescending(a => a.SubmittedAt)
+            .ThenByDescending(a => a.Id)
+            .ToListAsync(cancellationToken);
+
     public async Task<int> CountCompletedByStudentAsync(int studentId, CancellationToken cancellationToken = default) =>
         await DbSet.CountAsync(
             a => a.Assignment.StudentId == studentId
@@ -230,15 +241,25 @@ public class ExamAttemptRepository : GenericRepository<ExamAttempt>, IExamAttemp
     /// <see cref="GetAverageScoreByStudentAsync"/> (H7) — một học sinh làm nhiều đề khác điểm tối
     /// đa thì tổng điểm thô không chia đều ra một trung bình có nghĩa.
     /// </remarks>
-    public async Task<IReadOnlyDictionary<int, (int Completed, decimal AverageScore)>> GetStatsByStudentsAsync(
+    public async Task<IReadOnlyDictionary<int, (int Completed, decimal AverageScore, int Started, int Assigned)>> GetStatsByStudentsAsync(
         IEnumerable<int> studentIds,
         CancellationToken cancellationToken = default)
     {
         var ids = studentIds.Distinct().ToList();
         if (ids.Count == 0)
         {
-            return new Dictionary<int, (int, decimal)>();
+            return new Dictionary<int, (int, decimal, int, int)>();
         }
+
+        // Số bài đã giao cho mỗi em: mẫu số của điểm trung bình. Bài đã giao mà chưa làm tính 0 điểm (giống bảng điểm xuất ra Excel),
+        // nên chỉ chia cho số bài đã chấm thì một em bỏ hết bài sẽ không có điểm nào, một em làm đúng một bài trong mười bài sẽ hiện
+        // điểm cao nguyên của bài đó.
+        var assignedByStudent = await Context.Set<ExamAssignment>()
+            .AsNoTracking()
+            .Where(assignment => ids.Contains(assignment.StudentId))
+            .GroupBy(assignment => assignment.StudentId)
+            .Select(group => new { StudentId = group.Key, Count = group.Count() })
+            .ToDictionaryAsync(row => row.StudentId, row => row.Count, cancellationToken);
 
         var rows = await DbSet
             .AsNoTracking()
@@ -247,6 +268,7 @@ public class ExamAttemptRepository : GenericRepository<ExamAttempt>, IExamAttemp
             .Select(g => new
             {
                 StudentId = g.Key,
+                Started = g.Count(),
                 Completed = g.Sum(a =>
                     a.Status == AssignmentStatus.Submitted || a.Status == AssignmentStatus.Graded ? 1 : 0),
                 GradedCount = g.Sum(a => a.Status == AssignmentStatus.Graded && a.MaxScore > 0 ? 1 : 0),
@@ -255,14 +277,24 @@ public class ExamAttemptRepository : GenericRepository<ExamAttempt>, IExamAttemp
             })
             .ToListAsync(cancellationToken);
 
-        var statsByStudent = rows.ToDictionary(
-            row => row.StudentId,
-            row => (
-                Completed: row.Completed,
-                AverageScore: row.GradedCount == 0 ? 0m : Round2(row.NormalizedScoreSum / row.GradedCount)));
+        var statsByStudent = rows.ToDictionary(row => row.StudentId);
 
-        // Học sinh chưa làm bài nào vẫn phải có mặt với (0, 0).
-        return ids.ToDictionary(id => id, id => statsByStudent.GetValueOrDefault(id, (0, 0m)));
+        // Học sinh chưa làm bài nào vẫn phải có mặt; nếu đã được giao bài thì điểm trung bình là 0 chứ không phải "chưa có".
+        return ids.ToDictionary(
+            id => id,
+            id =>
+            {
+                var assigned = assignedByStudent.GetValueOrDefault(id, 0);
+                if (!statsByStudent.TryGetValue(id, out var row))
+                {
+                    return (0, 0m, 0, assigned);
+                }
+
+                // Phòng dữ liệu lệch (lượt đã chấm mà bản ghi giao bài đã mất): mẫu số không bao giờ nhỏ hơn số bài đã chấm.
+                var denominator = Math.Max(assigned, row.GradedCount);
+                var average = denominator == 0 ? 0m : Round2(row.NormalizedScoreSum / denominator);
+                return (row.Completed, average, row.Started, Math.Max(assigned, row.GradedCount));
+            });
     }
 
     public async Task<int> CountSubmittedSinceAsync(
@@ -327,7 +359,7 @@ public class ExamAttemptRepository : GenericRepository<ExamAttempt>, IExamAttemp
 
         if (examId.HasValue) assignedQuery = assignedQuery.Where(a => a.ExamId == examId.Value);
         if (studentId.HasValue) assignedQuery = assignedQuery.Where(a => a.StudentId == studentId.Value);
-        if (groupId.HasValue) assignedQuery = assignedQuery.Where(a => a.Student.GroupId == groupId.Value);
+        if (groupId.HasValue) assignedQuery = assignedQuery.Where(a => a.AssignedViaGroupId == groupId.Value);
 
         if (SearchText.ToLikePattern(search) is { } assignedPattern)
         {
@@ -396,7 +428,7 @@ public class ExamAttemptRepository : GenericRepository<ExamAttempt>, IExamAttemp
     {
         if (examId.HasValue) query = query.Where(a => a.Assignment.ExamId == examId.Value);
         if (studentId.HasValue) query = query.Where(a => a.Assignment.StudentId == studentId.Value);
-        if (groupId.HasValue) query = query.Where(a => a.Assignment.Student.GroupId == groupId.Value);
+        if (groupId.HasValue) query = query.Where(a => a.Assignment.AssignedViaGroupId == groupId.Value);
         if (status.HasValue) query = query.Where(a => a.Status == status.Value);
 
         if (SearchText.ToLikePattern(search) is { } pattern)
@@ -417,7 +449,8 @@ public class ExamAttemptRepository : GenericRepository<ExamAttempt>, IExamAttemp
                 .ThenInclude(assignment => assignment.Exam)
             .Include(a => a.Assignment)
                 .ThenInclude(assignment => assignment.Student)
-                    .ThenInclude(student => student.Group);
+            .Include(a => a.Assignment)
+                .ThenInclude(assignment => assignment.AssignedViaGroup);
 
     /// <summary>
     /// Mới nhất trước, sắp theo <c>StartedAt</c> chứ không theo <c>SubmittedAt</c>: cột nộp bài

@@ -22,10 +22,12 @@ public class QuestionRepository : GenericRepository<Question>, IQuestionReposito
         QuestionStatus? status,
         PaginationParams pagination,
         CancellationToken cancellationToken = default,
-        IReadOnlyCollection<int>? excludeQuestionIds = null)
+        IReadOnlyCollection<int>? excludeQuestionIds = null,
+        bool includePrivateOfOthers = false)
     {
-        var query = InScope(DbSet.AsNoTracking(), subjectId, currentUserId)
+        var query = InScope(DbSet.AsNoTracking(), subjectId, currentUserId, includePrivateOfOthers)
             .Include(q => q.CreatedBy)
+            .Include(q => q.Subject)
             .Include(q => q.Answers.OrderBy(a => a.Ordinal));
 
         var filtered = ApplyFilters(query, search, topic, difficulty, status);
@@ -51,8 +53,9 @@ public class QuestionRepository : GenericRepository<Question>, IQuestionReposito
     public async Task<IReadOnlyList<string>> GetTopicsAsync(
         int? subjectId,
         int currentUserId,
-        CancellationToken cancellationToken = default) =>
-        await InScope(DbSet.AsNoTracking(), subjectId, currentUserId)
+        CancellationToken cancellationToken = default,
+        bool includePrivateOfOthers = false) =>
+        await InScope(DbSet.AsNoTracking(), subjectId, currentUserId, includePrivateOfOthers)
             .Select(q => q.Topic)
             .Distinct()
             .OrderBy(topic => topic)
@@ -68,9 +71,10 @@ public class QuestionRepository : GenericRepository<Question>, IQuestionReposito
         int currentUserId,
         string? topic = null,
         QuestionStatus? status = null,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        bool includePrivateOfOthers = false)
     {
-        var query = InScope(DbSet.AsNoTracking(), subjectId, currentUserId);
+        var query = InScope(DbSet.AsNoTracking(), subjectId, currentUserId, includePrivateOfOthers);
         query = ApplyFilters(query, search: null, topic, difficulty: null, status);
 
         var counts = await query
@@ -123,6 +127,7 @@ public class QuestionRepository : GenericRepository<Question>, IQuestionReposito
         return await InScope(DbSet.AsNoTracking(), subjectId, currentUserId)
             .Where(q => ids.Contains(q.Id))
             .Include(q => q.CreatedBy)
+            .Include(q => q.Subject)
             .Include(q => q.Answers.OrderBy(a => a.Ordinal))
             .ToListAsync(cancellationToken);
     }
@@ -144,13 +149,32 @@ public class QuestionRepository : GenericRepository<Question>, IQuestionReposito
     /// cùng buổi</b> (§6), tức là giữa các đồng nghiệp cùng dạy. Quản trị viên không đứng lớp nên
     /// không nằm trong mối lo đó, và §6 vốn đã cho họ quyền <i>ghi</i> trên mọi câu; che phần đọc
     /// trong khi mở phần ghi là một hàng rào không bảo vệ được gì.
+    /// <para>
+    /// <paramref name="includePrivateOfOthers"/> là cùng quy tắc đó cho trường hợp quản trị viên
+    /// <b>thu hẹp về một môn</b>: lúc đó <paramref name="subjectId"/> khác NULL nên không còn tín hiệu
+    /// "đây là quản trị viên", mà cũng không thể để việc lọc theo môn làm mất các câu riêng tư mà
+    /// ngân hàng không lọc vẫn hiện ra.
+    /// </para>
     /// </remarks>
-    private static IQueryable<Question> InScope(IQueryable<Question> query, int? subjectId, int currentUserId) =>
-        subjectId is null
-            ? query
+    private static IQueryable<Question> InScope(
+        IQueryable<Question> query,
+        int? subjectId,
+        int currentUserId,
+        bool includePrivateOfOthers = false)
+    {
+        if (subjectId is null)
+        {
+            return query;
+        }
+
+        var subject = subjectId.Value;
+
+        return includePrivateOfOthers
+            ? query.Where(q => q.SubjectId == subject)
             : query.Where(q =>
-                q.SubjectId == subjectId.Value
+                q.SubjectId == subject
                 && (q.Visibility == QuestionVisibility.Shared || q.CreatedByUserId == currentUserId));
+    }
 
     private static IQueryable<Question> ApplyFilters(
         IQueryable<Question> query,

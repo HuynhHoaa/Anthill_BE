@@ -1,3 +1,4 @@
+using Anthill.Application.Interfaces.Files;
 using Anthill.Application.Interfaces.Repositories;
 using Anthill.Application.Interfaces.Security;
 using Anthill.Application.Interfaces.Services;
@@ -6,6 +7,7 @@ using Anthill.Infrastructure.Authentication;
 using Anthill.Infrastructure.FileStorage;
 using Anthill.Infrastructure.Persistence;
 using Anthill.Infrastructure.Repositories;
+using Anthill.Infrastructure.Spreadsheets;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -30,6 +32,9 @@ public static class DependencyInjection
         services.AddRepositories();
         services.AddSecurity(configuration);
         services.AddFileStorage(configuration);
+
+        // Không giữ trạng thái: một thể hiện cho cả tiến trình. Nằm sau cổng để Application không phải biết thư viện Excel.
+        services.AddSingleton<ISpreadsheetService, ClosedXmlSpreadsheetService>();
 
         return services;
     }
@@ -121,6 +126,7 @@ public static class DependencyInjection
 
         services.AddScoped<IUserRepository, UserRepository>();
         services.AddScoped<ISubjectRepository, SubjectRepository>();
+        services.AddScoped<IAcademicTermRepository, AcademicTermRepository>();
         services.AddScoped<IStudentGroupRepository, StudentGroupRepository>();
         services.AddScoped<IQuestionRepository, QuestionRepository>();
         services.AddScoped<IExamRepository, ExamRepository>();
@@ -128,6 +134,8 @@ public static class DependencyInjection
         services.AddScoped<IExamAttemptRepository, ExamAttemptRepository>();
         services.AddScoped<IStudentAnswerRepository, StudentAnswerRepository>();
         services.AddScoped<INotificationRepository, NotificationRepository>();
+        services.AddScoped<IAccountChangeRepository, AccountChangeRepository>();
+        services.AddScoped<IGroupChangeRepository, GroupChangeRepository>();
 
         return services;
     }

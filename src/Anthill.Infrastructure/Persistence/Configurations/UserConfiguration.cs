@@ -109,19 +109,10 @@ public class UserConfiguration : IEntityTypeConfiguration<User>
         builder.HasIndex(u => u.Role)
             .HasDatabaseName("IX_Users_Role");
 
-        builder.HasIndex(u => u.GroupId)
-            .HasDatabaseName("IX_Users_GroupId");
-
         // Xoá một môn không được kéo theo giáo viên của môn đó.
         builder.HasOne(u => u.Subject)
             .WithMany(s => s.Teachers)
             .HasForeignKey(u => u.SubjectId)
             .OnDelete(DeleteBehavior.Restrict);
-
-        // Xoá nhóm lớp chỉ gỡ học sinh khỏi nhóm, không đụng tới tài khoản (§4.4).
-        builder.HasOne(u => u.Group)
-            .WithMany(g => g.Students)
-            .HasForeignKey(u => u.GroupId)
-            .OnDelete(DeleteBehavior.SetNull);
     }
 }
