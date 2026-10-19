@@ -5,7 +5,7 @@ namespace Anthill.Domain.Entities;
 
 /// <summary>
 /// Một bảng dùng chung cho cả ba vai trò. Các cột chỉ có nghĩa với một vai trò
-/// (<see cref="SubjectId"/>, <see cref="Code"/>, <see cref="GroupId"/>) đều nullable.
+/// (<see cref="SubjectId"/>, <see cref="Code"/>) đều nullable; các lớp của học sinh nằm ở <see cref="Groups"/>.
 /// </summary>
 public class User : BaseEntity
 {
@@ -32,9 +32,6 @@ public class User : BaseEntity
 
     /// <summary>Mã học sinh, duy nhất. NULL với Admin và Teacher.</summary>
     public string? Code { get; set; }
-
-    /// <summary>Nhóm lớp của học sinh. Gỡ khỏi nhóm là đặt về NULL, không xoá tài khoản.</summary>
-    public int? GroupId { get; set; }
 
     public string? Phone { get; set; }
 
@@ -80,7 +77,14 @@ public class User : BaseEntity
     /// <summary>Mốc dữ liệu cá nhân thật sự bị xoá. NULL nghĩa là chưa xoá.</summary>
     public DateTime? DeletedAt { get; set; }
 
-    public StudentGroup? Group { get; set; }
+    /// <summary>
+    /// Các lớp học sinh đang là thành viên — một em học được nhiều lớp cùng lúc. Rỗng nghĩa là chưa có lớp nào. Gỡ khỏi một lớp
+    /// là xoá dòng thành viên, không đụng tới tài khoản.
+    /// </summary>
+    public ICollection<StudentGroup> Groups { get; set; } = new List<StudentGroup>();
+
+    /// <summary>Bảng nối của <see cref="Groups"/>, để ghi và đọc ngày vào lớp.</summary>
+    public ICollection<StudentGroupMember> GroupMemberships { get; set; } = new List<StudentGroupMember>();
 
     /// <summary>Lớp do quản trị viên này lập ra. Chỉ để ghi nhận, không mang ý nghĩa phân quyền.</summary>
     public ICollection<StudentGroup> CreatedGroups { get; set; } = new List<StudentGroup>();

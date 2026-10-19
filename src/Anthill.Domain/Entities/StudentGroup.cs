@@ -8,10 +8,9 @@ namespace Anthill.Domain.Entities;
 /// <remarks>
 /// <para>
 /// Lớp là <b>đơn vị hành chính</b>, do quản trị viên lập ra — không phải nhóm học do từng giáo viên
-/// tự gom. Điều đó đến từ chính lược đồ: <c>User.GroupId</c> là một khoá ngoại đơn, nên một học
-/// sinh chỉ thuộc đúng một lớp. Nếu để mỗi giáo viên sở hữu lớp của riêng mình thì hai giáo viên
-/// cùng dạy một em sẽ tranh nhau em đó — người thêm sau kéo em ra khỏi lớp của người trước, và
-/// mọi bài người trước đã giao mất chỗ dựa.
+/// tự gom. Một học sinh học được <b>nhiều lớp cùng lúc</b> (<see cref="Students"/> qua bảng
+/// <see cref="StudentGroupMember"/>): thêm em vào một lớp không kéo em ra khỏi lớp khác, nên hai giáo viên
+/// cùng dạy một em không còn tranh nhau em đó.
 /// </para>
 /// <para>
 /// Giáo viên được <b>phân công</b> vào lớp qua <see cref="Teachers"/> chứ không tự chọn. Nhờ vậy
@@ -50,7 +49,28 @@ public class StudentGroup : BaseEntity
     /// <summary>NULL khi lớp còn là bản nháp.</summary>
     public DateTime? PublishedAt { get; set; }
 
+    /// <summary>
+    /// Lớp đã khoá: chỉ đọc. Không xếp thêm em, không giao bài mới, không đổi giáo viên hay sửa lớp; thành viên, lịch sử và bảng
+    /// điểm giữ nguyên, và các em trong lớp vẫn học các lớp khác bình thường. Bài đã giao trước đó không bị thu hồi.
+    /// </summary>
+    /// <remarks>
+    /// Không phải "kết thúc lớp": không có gì bị ẩn hay thả ra. Lý do khoá nằm ở lịch sử lớp (<see cref="GroupChange"/>).
+    /// </remarks>
+    public bool IsLocked { get; set; }
+
+    /// <summary>NULL khi lớp không bị khoá.</summary>
+    public DateTime? LockedAt { get; set; }
+
+    /// <summary>Kỳ học của lớp; NULL là chưa phân kỳ. Chỉ là nhãn gom lớp, xem <see cref="AcademicTerm"/>.</summary>
+    public int? AcademicTermId { get; set; }
+
+    public AcademicTerm? AcademicTerm { get; set; }
+
+    /// <summary>Học sinh của lớp (kể cả tài khoản chờ xoá, cho tới khi được gỡ ra).</summary>
     public ICollection<User> Students { get; set; } = new List<User>();
+
+    /// <summary>Bảng nối của <see cref="Students"/>.</summary>
+    public ICollection<StudentGroupMember> Memberships { get; set; } = new List<StudentGroupMember>();
 
     /// <summary>Giáo viên được phân công phụ trách lớp này.</summary>
     public ICollection<StudentGroupTeacher> Teachers { get; set; } = new List<StudentGroupTeacher>();
