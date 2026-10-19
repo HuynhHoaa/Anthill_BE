@@ -32,6 +32,7 @@ public sealed class AuthService : IAuthService
         "Họ tên, email và số điện thoại chỉ quản trị viên mới đổi được.";
     private const string TeacherContactLockedMessage =
         "Email và số điện thoại chỉ quản trị viên mới đổi được.";
+    private const string AdminEmailLockedMessage = "Email của tài khoản không đổi được.";
     private const string StudentAvatarLockedMessage = "Học sinh không tự đổi ảnh đại diện được.";
 
     /// <summary>Tên hai trường của <see cref="ChangePasswordRequest"/> đúng như trong JSON.</summary>
@@ -219,27 +220,24 @@ public sealed class AuthService : IAuthService
         //  - giáo viên: email và số điện thoại. Họ tên vẫn tự sửa; môn giảng dạy không có trong request nên
         //    không có đường nào để đổi (quản trị viên gắn bằng SubjectId).
         // Form hồ sơ luôn gửi đủ ba trường, vì vậy gửi lại đúng giá trị đang có là hợp lệ — chỉ giá trị khác đi
-        // mới bị chặn. Quản trị viên không bị khoá: họ chính là bên quản lý.
+        // mới bị chặn. Quản trị viên chỉ bị khoá email: họ là bên quản lý họ tên và số điện thoại, còn email của chính
+        // tài khoản thì không ai tự đổi.
         var isStudent = account.Role == UserRole.Student;
-        var contactLocked = account.Role != UserRole.Admin;
+        var isAdmin = account.Role == UserRole.Admin;
 
         var lockedFields = ProfileEditPolicy.LockedFieldsChanged(
             account.Role, account.FullName, account.Email, account.Phone, fullName, email, phone);
         if (lockedFields.Count > 0)
         {
-            var lockedMessage = isStudent ? StudentIdentityLockedMessage : TeacherContactLockedMessage;
+            var lockedMessage = isStudent
+                ? StudentIdentityLockedMessage
+                : isAdmin ? AdminEmailLockedMessage : TeacherContactLockedMessage;
             var locked = lockedFields.ToDictionary(field => field, _ => new[] { lockedMessage });
 
             return Result.Failure<UserProfileDto>(lockedMessage, ErrorCode.Validation, locked);
         }
 
-        // So trùng trên chuỗi ĐÃ trim, loại trừ chính mình — nếu không, người dùng lưu lại hồ sơ mà
-        // không đổi email sẽ tự báo trùng với chính mình (§5). Chỉ quản trị viên đổi được email nên chỉ cần
-        // kiểm ở nhánh đó.
-        if (!contactLocked && await _unitOfWork.Users.IsEmailTakenAsync(email, account.Id, cancellationToken))
-        {
-            return Result.Conflict<UserProfileDto>("Email này đã được một tài khoản khác sử dụng.");
-        }
+        // Không ai tự đổi được email nên không có chuyện trùng email ở đây (email đổi ở trang quản lý của quản trị viên).
 
         // Danh sách trắng của §5 gồm bốn trường: fullName, email, phone, subject. Môn (subject) KHÔNG có mặt
         // trong UpdateProfileRequest nên không tồn tại đường nào để đổi. Id, Role, Username, Code, GroupId,
@@ -250,9 +248,9 @@ public sealed class AuthService : IAuthService
             account.FullName = fullName;
         }
 
-        if (!contactLocked)
+        // Email không bao giờ đổi qua đường này. Số điện thoại chỉ quản trị viên tự sửa; giáo viên và học sinh đã bị chặn ở trên.
+        if (isAdmin)
         {
-            account.Email = email;
             account.Phone = phone;
         }
 
@@ -440,16 +438,14 @@ public sealed class AuthService : IAuthService
     }
 
     /// <summary>
-    /// Dựng hồ sơ trả về. Tên nhóm và tên môn đọc từ navigation nếu chỗ gọi đã nạp kèm; chỉ khi thiếu
-    /// mới truy vấn thêm, nên đường ghi (nạp entity trần) không phải trả giá bằng lazy loading.
+    /// Dựng hồ sơ trả về. Tên môn đọc từ navigation nếu chỗ gọi đã nạp kèm, chỉ khi thiếu mới truy vấn thêm; các lớp của học
+    /// sinh luôn hỏi riêng (một truy vấn nhỏ), nên đường ghi (nạp entity trần) không phải trả giá bằng lazy loading.
     /// </summary>
     private async Task<UserProfileDto> BuildProfileDtoAsync(User user, CancellationToken cancellationToken)
     {
-        var groupName = user.Group?.Name;
-        if (groupName is null && user.GroupId is { } groupId)
-        {
-            groupName = (await _unitOfWork.StudentGroups.GetByIdAsync(groupId, cancellationToken))?.Name;
-        }
+        var groups = user.Role == UserRole.Student
+            ? await _unitOfWork.StudentGroups.GetByStudentAsync(user.Id, cancellationToken)
+            : null;
 
         var subjectName = user.Subject?.Name;
         if (subjectName is null && user.SubjectId is { } subjectId)
@@ -457,7 +453,7 @@ public sealed class AuthService : IAuthService
             subjectName = (await _unitOfWork.Subjects.GetByIdAsync(subjectId, cancellationToken))?.Name;
         }
 
-        return user.ToProfileDto(groupName, subjectName);
+        return user.ToProfileDto(groups, subjectName);
     }
 
     /// <summary>

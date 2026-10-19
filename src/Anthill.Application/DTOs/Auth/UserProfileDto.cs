@@ -28,10 +28,10 @@ public sealed record UserProfileDto
     /// <summary>Mã học sinh. NULL với giáo viên và quản trị viên.</summary>
     public string? Code { get; init; }
 
-    /// <summary>Tên nhóm lớp, dữ liệu JOIN nên <b>chỉ đọc</b>. Client gửi lên thì bỏ qua (§5).</summary>
-    public string? Group { get; init; }
-
-    public int? GroupId { get; init; }
+    /// <summary>
+    /// Các lớp học sinh đang học, dữ liệu JOIN nên <b>chỉ đọc</b>; client gửi lên thì bỏ qua (§5). Chỉ có với học sinh.
+    /// </summary>
+    public IReadOnlyList<Students.StudentGroupRefDto>? Groups { get; init; }
 
     public string? Phone { get; init; }
 

@@ -43,6 +43,8 @@ public sealed class ResultService : IResultService
 
     private bool IsStudent => _currentUser.IsInRole(UserRole.Student);
 
+    private bool IsAdmin => _currentUser.IsInRole(UserRole.Admin);
+
     /// <inheritdoc />
     public async Task<Result<PagedResult<ResultSummaryDto>>> ListAsync(
         ListResultsQuery query,
@@ -319,9 +321,24 @@ public sealed class ResultService : IResultService
                 : Result.NotFound<(ExamAttempt, bool)>(NotFoundMessage);
         }
 
-        // Giáo viên và quản trị viên: chỉ đề do chính mình tạo. Quản trị viên không tạo đề nào nên
-        // nhánh này tự nhiên loại họ ra, đúng như §4.8 xếp bảng kết quả vào phần của giáo viên.
-        return attempt.Assignment.Exam.CreatedByUserId == CurrentUserId
+        // Quản trị viên là người quan sát của cả trường: đọc được bài làm của mọi học sinh, thấy điểm và đáp án như
+        // giáo viên sở hữu đề, nhưng chỉ đọc — không có endpoint ghi nào ở đây. Bảng kết quả (danh sách, thống kê) vẫn
+        // là phần của giáo viên; quản trị viên đi tới bài làm từ trang của từng học sinh.
+        if (IsAdmin)
+        {
+            return Result.Success((attempt, true));
+        }
+
+        // Giáo viên: đề do chính mình tạo, hoặc bài của một em được giao qua lớp mà mình đang dạy (lớp đã công bố). Vế sau là của
+        // giáo viên nhận lớp giữa chừng: người phụ trách một lớp cần xem được bài làm của các em, kể cả đề giáo viên trước đã giao.
+        // Đề do giáo viên khác giao cho một lớp mà mình không dạy vẫn là 404.
+        if (attempt.Assignment.Exam.CreatedByUserId == CurrentUserId)
+        {
+            return Result.Success((attempt, true));
+        }
+
+        return attempt.Assignment.AssignedViaGroupId is { } groupId
+               && await _unitOfWork.StudentGroups.IsTeachingAsync(groupId, CurrentUserId, cancellationToken)
             ? Result.Success((attempt, true))
             : Result.NotFound<(ExamAttempt, bool)>(NotFoundMessage);
     }

@@ -6,7 +6,7 @@ namespace Anthill.Application.DTOs.Students;
 /// </summary>
 /// <remarks>
 /// <para>
-/// Ba trường cuối là <b>dữ liệu dẫn xuất</b> (§5): <c>group</c> đọc qua JOIN, còn
+/// Ba trường cuối là <b>dữ liệu dẫn xuất</b> (§5): <c>groups</c> đọc qua JOIN, còn
 /// <c>completedExams</c> và <c>averageScore</c> tính từ bảng lượt làm bài. Client gửi lên thì bỏ
 /// qua — chúng không có mặt trong request nào cả, nên không tồn tại đường để gửi.
 /// </para>
@@ -36,13 +36,13 @@ public sealed record StudentDto
     public required string Code { get; init; }
 
     /// <summary>
-    /// Tên nhóm lớp, JOIN từ <c>StudentGroups</c>. Học sinh chưa thuộc nhóm nào nhận nhãn
-    /// "Chưa phân nhóm" thay vì chuỗi rỗng — frontend khai báo trường này không nullable.
+    /// Các lớp em đang học (một em học được nhiều lớp cùng lúc), theo tên. Mảng rỗng là chưa có lớp nào.
     /// </summary>
-    public required string Group { get; init; }
-
-    /// <summary>0 nghĩa là chưa thuộc nhóm nào, xem <see cref="Common.StudentGroupDefaults"/>.</summary>
-    public required int GroupId { get; init; }
+    /// <remarks>
+    /// Giáo viên chỉ nhận những lớp <b>mình dạy</b> (đã công bố): lớp của đồng nghiệp mà em cùng học không phải chuyện giáo
+    /// viên này được biết. Quản trị viên nhận đủ.
+    /// </remarks>
+    public required IReadOnlyList<StudentGroupRefDto> Groups { get; init; }
 
     /// <summary>Chữ thường: <c>"active" | "locked" | "pendingDeletion" | "deleted"</c>, khớp union <c>StudentStatus</c> của frontend.</summary>
     public required string Status { get; init; }
@@ -74,6 +74,22 @@ public sealed record StudentDto
     /// <summary>Số lượt ở trạng thái submitted hoặc graded (§5).</summary>
     public required int CompletedExams { get; init; }
 
-    /// <summary>Trung bình điểm trên các lượt đã chấm, làm tròn 1 chữ số (§5). Bằng 0 khi chưa làm bài nào.</summary>
+    /// <summary>
+    /// Trung bình điểm thang 10 trên mọi bài ĐÃ GIAO cho em: bài chưa làm tính 0 điểm (giống bảng điểm xuất ra Excel). Chỉ có nghĩa khi
+    /// <see cref="AssignedExams"/> lớn hơn 0; bằng 0 khi chưa được giao bài nào.
+    /// </summary>
     public required decimal AverageScore { get; init; }
+
+    /// <summary>Số bài đã giao cho em. Bằng 0 thì em chưa có điểm trung bình để hiện (khác với điểm trung bình bằng 0).</summary>
+    public int AssignedExams { get; init; }
+
+    /// <summary>
+    /// Em đã bắt đầu ít nhất một bài kiểm tra, ở bất kỳ trạng thái nào (đang làm dở, đã nộp, đã hết giờ).
+    /// </summary>
+    /// <remarks>
+    /// Khác <see cref="CompletedExams"/> ở chỗ đếm cả lượt chưa nộp, nên giao diện hiện được "Đang làm bài" cho em đã vào
+    /// thi mà chưa nộp. Không còn là điều kiện khoá lớp: em học được nhiều lớp cùng lúc nên chuyển hay gỡ không cần biết em
+    /// đã làm bài chưa.
+    /// </remarks>
+    public required bool HasStartedExams { get; init; }
 }

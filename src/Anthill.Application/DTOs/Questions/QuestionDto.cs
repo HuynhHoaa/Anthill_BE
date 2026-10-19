@@ -61,6 +61,12 @@ public sealed record QuestionDto
 
     public required int CreatedByUserId { get; init; }
 
+    /// <summary>Môn của câu hỏi — ranh giới của ngân hàng dùng chung. Quản trị viên đọc cả ngân hàng nên cần biết câu nào thuộc môn nào.</summary>
+    public required int SubjectId { get; init; }
+
+    /// <summary>Tên môn; rỗng khi navigation chưa được nạp (đường ghi trần), cùng quy ước với <see cref="CreatedBy"/>.</summary>
+    public required string Subject { get; init; }
+
     /// <summary>Chữ thường: <c>"shared" | "private"</c>.</summary>
     public required string Visibility { get; init; }
 

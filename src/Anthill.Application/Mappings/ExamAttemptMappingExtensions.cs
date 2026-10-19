@@ -139,7 +139,9 @@ public static class ExamAttemptMappingExtensions
             Score = canSeeScore ? attempt!.Score : null,
             MaxScore = canSeeScore ? attempt!.MaxScore : null,
             CorrectCount = canSeeScore ? attempt!.CorrectCount : null,
-            AssignedAt = assignment.AssignedAt.ToUtc()
+            AssignedAt = assignment.AssignedAt.ToUtc(),
+            GroupId = assignment.AssignedViaGroupId,
+            GroupName = assignment.AssignedViaGroup?.Name
         };
     }
 

@@ -15,6 +15,12 @@ public interface IExamAssignmentRepository : IGenericRepository<ExamAssignment>
     /// </summary>
     Task<IReadOnlyList<ExamAssignment>> GetByExamAsync(int examId, CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// Mọi lượt giao bài đã đi qua một lớp (<c>AssignedViaGroupId</c>), kèm đề, người soạn đề và lượt làm bài — để tóm tắt
+    /// lịch sử bài kiểm tra của lớp. Không lọc theo lớp hiện tại của em: em đã rời lớp mà vẫn giữ bài đã làm thì vẫn đếm.
+    /// </summary>
+    Task<IReadOnlyList<ExamAssignment>> GetByGroupAsync(int groupId, CancellationToken cancellationToken = default);
+
     /// <summary>Nạp kèm Exam và Attempt.</summary>
     Task<ExamAssignment?> GetByExamAndStudentAsync(int examId, int studentId, CancellationToken cancellationToken = default);
 
@@ -104,6 +110,19 @@ public interface IExamAssignmentRepository : IGenericRepository<ExamAssignment>
     /// khoảnh khắc đã qua. Phải gọi bên trong transaction.
     /// </remarks>
     Task<IReadOnlyList<ExamAssignment>> LockByExamAsync(int examId, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Khoá ghi (<c>FOR UPDATE</c>) mọi dòng giao bài của <b>một học sinh</b> rồi trả về chúng cùng đề và lượt
+    /// làm bài đọc <b>sau</b> khi đã cầm khoá.
+    /// </summary>
+    /// <remarks>
+    /// Dành cho việc gỡ một em khỏi lớp hay chuyển lớp: phải biết em đã bắt đầu bài nào chưa và thu hồi những
+    /// bài chưa bắt đầu mà không bị một lần bấm "Vào thi" chen ngang. Khoá này xung đột với
+    /// <see cref="LockForStartAsync"/>, nên hoặc em vào thi trước (lượt của em hiện ra ở phép đọc dưới đây và
+    /// bài đó được giữ lại), hoặc em phải chờ lệnh này commit rồi thấy bài đã bị gỡ. Dòng giao bài được khoá
+    /// theo thứ tự <c>Id</c>, cùng thứ tự với <see cref="LockByExamAsync"/>. Phải gọi bên trong transaction.
+    /// </remarks>
+    Task<IReadOnlyList<ExamAssignment>> LockByStudentAsync(int studentId, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Khoá ghi (<c>FOR UPDATE</c>) một dòng giao bài trước khi tạo lượt làm bài, rồi trả về nó cùng đề

@@ -20,4 +20,7 @@ public sealed record SaveStudentGroupRequest
 
     /// <summary>Tuỳ chọn. Chuỗi rỗng nghĩa là xoá trắng mô tả.</summary>
     public string? Description { get; init; }
+
+    /// <summary>Kỳ học của lớp. Gửi <c>null</c> là bỏ phân kỳ (form luôn gửi đủ các trường).</summary>
+    public int? TermId { get; init; }
 }

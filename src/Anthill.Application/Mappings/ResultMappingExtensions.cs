@@ -110,7 +110,7 @@ public static class ResultMappingExtensions
 
             // Vế dự phòng cùng lý do với ExamAssignmentMappingExtensions.ToDto: repository luôn nạp Student.
             StudentStatus = (student?.Status ?? UserStatus.Active).ToStatusString(),
-            Group = student?.Group?.Name ?? string.Empty,
+            Group = assignment.AssignedViaGroup?.Name ?? string.Empty,
             Status = attempt.Status.ToAssignmentStatusString(),
             StartedAt = attempt.StartedAt.ToUtc(),
             SubmittedAt = attempt.SubmittedAt.ToUtc(),

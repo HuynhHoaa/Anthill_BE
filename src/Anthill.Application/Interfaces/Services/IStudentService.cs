@@ -1,4 +1,5 @@
 using Anthill.Application.Common;
+using Anthill.Application.DTOs.Accounts;
 using Anthill.Application.DTOs.Students;
 using Anthill.Domain.Enums;
 
@@ -38,7 +39,11 @@ public interface IStudentService
         CreateStudentRequest request,
         CancellationToken cancellationToken = default);
 
-    /// <summary>Cập nhật hồ sơ, nhóm, trạng thái. <b>Không nhận mật khẩu.</b></summary>
+    /// <summary>
+    /// Cập nhật hồ sơ. <b>Không nhận mật khẩu</b>, và <b>không đổi lớp hay trạng thái</b>: hai việc đó đi qua đường
+    /// riêng có lý do (<see cref="SetStatusAsync"/>, chuyển lớp ở <c>IStudentGroupService</c>). Gửi <c>groupId</c>
+    /// hay <c>status</c> khác giá trị đang có thì trả <c>400</c>; gửi đúng giá trị đang có thì hợp lệ.
+    /// </summary>
     Task<Result<StudentDto>> UpdateAsync(
         int id,
         UpdateStudentRequest request,
@@ -48,9 +53,23 @@ public interface IStudentService
     /// Khoá hoặc mở khoá. Khoá phải xoay <c>SecurityStamp</c> để token còn hạn mất hiệu lực
     /// ngay (§5) — nếu không, học sinh vừa bị khoá vẫn dùng tiếp tới khi token tự hết hạn.
     /// </summary>
+    /// <param name="reason">Bắt buộc khi khoá (đã kiểm ở validator); bỏ qua khi mở khoá.</param>
     Task<Result<StudentDto>> SetStatusAsync(
         int id,
         UserStatus status,
+        string? reason,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>Lịch sử khoá, xoá, gỡ khỏi lớp, chuyển lớp của một học sinh, mới nhất trước.</summary>
+    Task<Result<IReadOnlyList<AccountChangeDto>>> ListChangesAsync(
+        int id,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Mọi bài đã giao cho một học sinh, cả bài em chưa làm hay đã bỏ lỡ. Chỉ quản trị viên.
+    /// </summary>
+    Task<Result<IReadOnlyList<StudentExamDto>>> ListExamsAsync(
+        int id,
         CancellationToken cancellationToken = default);
 
     /// <summary>

@@ -159,6 +159,17 @@ public sealed class ExamAssignmentService : IExamAssignmentService
 
         var targets = await ResolveTargetsAsync(request, cancellationToken);
 
+        // Lớp đã khoá là lớp chỉ đọc: không giao thêm bài. Từ chối rõ ràng, nêu tên lớp, thay vì lặng lẽ bỏ lớp đó ra và để
+        // giáo viên tưởng cả lô đã được giao.
+        var lockedGroups = targets.OwnedGroups.Where(group => group.IsLocked).Select(group => group.Name).ToList();
+        if (lockedGroups.Count > 0)
+        {
+            return Result.Conflict<AssignExamResponse>(
+                lockedGroups.Count == 1
+                    ? $"Lớp {lockedGroups[0]} đã khoá nên không giao thêm bài được. Hãy bỏ lớp đó ra khỏi lựa chọn."
+                    : $"Các lớp {string.Join(", ", lockedGroups)} đã khoá nên không giao thêm bài được. Hãy bỏ các lớp đó ra khỏi lựa chọn.");
+        }
+
         // Trần thật, tính sau khi đã bung các nhóm ra. Validator chỉ chặn được phần thô vì nó
         // không biết mỗi nhóm có bao nhiêu em.
         if (targets.InScope.Count > Validators.AssignExamRequestValidator.MaxTargetsPerRequest)
@@ -575,8 +586,7 @@ public sealed class ExamAssignmentService : IExamAssignmentService
         AssignExamRequest request,
         CancellationToken cancellationToken)
     {
-        // Người nhận chỉ đến từ các lớp được chọn. HashSet để một em lọt vào hai lớp (không xảy ra vì
-        // User.GroupId là khoá đơn, nhưng dữ liệu bẩn thì có) vẫn chỉ được giao một lần.
+        // Người nhận chỉ đến từ các lớp được chọn. HashSet để một em học hai lớp cùng được chọn vẫn chỉ được giao một lần.
         var requestedIds = new HashSet<int>();
         // Hai danh sách lớp gộp làm một ở bước chọn người nhận: khác nhau chỉ ở khung giờ, còn phạm vi, đếm
         // lớp bị loại và ghi dấu "giao qua lớp nào" là như nhau. Validator đã chặn một lớp nằm ở cả hai.
@@ -598,10 +608,10 @@ public sealed class ExamAssignmentService : IExamAssignmentService
         // sự im lặng mà AssignExamResponse nói là nó sinh ra để tránh.
         var outOfScopeGroups = requestedGroupIds.Count - ownedGroups.Count;
 
-        // Ghi lại em nào đến từ lớp nào ngay tại đây. Tra ngược qua User.GroupId về sau là sai:
-        // học sinh chuyển lớp giữa kỳ thì GroupId đổi theo, và lúc đó không còn cách nào biết bài
-        // này vốn được giao cho em với tư cách thành viên lớp nào — mà đó là thứ quyết định em làm
-        // bài vào khung giờ nào.
+        // Ghi lại em nào đến từ lớp nào ngay tại đây. Tra ngược qua danh sách lớp hiện tại của em về sau là sai:
+        // em học nhiều lớp, và chuyển lớp hay bị gỡ khỏi lớp giữa kỳ thì danh sách đó đổi theo, lúc ấy không còn
+        // cách nào biết bài này vốn được giao cho em với tư cách thành viên lớp nào — mà đó là thứ quyết định em
+        // làm bài vào khung giờ nào.
         var viaGroup = new Dictionary<int, int>();
 
         foreach (var group in ownedGroups)
@@ -611,9 +621,9 @@ public sealed class ExamAssignmentService : IExamAssignmentService
             {
                 requestedIds.Add(member.Id);
 
-                // Em thuộc nhiều lớp là chuyện không xảy ra (User.GroupId là khoá đơn), nhưng nếu
-                // cùng một em lọt vào hai lớp được chọn thì lấy lớp đầu tiên — nhất quán giữa các
-                // lần chạy vì ownedGroups đã sắp thứ tự.
+                // Em học nhiều lớp và cùng lúc lọt vào hai lớp được chọn thì lấy lớp đầu tiên — nhất quán giữa
+                // các lần chạy vì ownedGroups đã sắp thứ tự. Em đã được giao đề này qua một lớp khác từ trước thì
+                // không được giao lại (alreadyAssigned), nên khung giờ của lớp đầu tiên giao cho em là khung giờ thắng.
                 viaGroup.TryAdd(member.Id, group.Id);
             }
         }

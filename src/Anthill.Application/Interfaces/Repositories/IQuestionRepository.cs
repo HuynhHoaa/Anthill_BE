@@ -15,6 +15,11 @@ namespace Anthill.Application.Interfaces.Repositories;
 /// <c>User.SubjectId</c> của họ là NULL — nên không có giá trị nào để so. NULL ở đây nghĩa là
 /// "mọi môn", cùng quy ước với <c>IStudentGroupRepository.GetOwnedAsync</c>.
 /// <para>
+/// Quản trị viên thu hẹp về một môn thì <c>subjectId</c> khác NULL, nên ba phương thức đó nhận thêm
+/// <c>includePrivateOfOthers</c>: bật lên thì bỏ mệnh đề <c>Visibility</c>, để lọc theo môn không làm
+/// mất những câu riêng tư mà ngân hàng không lọc vẫn hiện.
+/// </para>
+/// <para>
 /// <see cref="GetBlueprintCandidatesAsync"/> cố ý <b>không</b> nullable: sinh đề luôn diễn ra
 /// trong đúng một môn của người tạo đề, và một đề rút câu từ mọi môn là vô nghĩa.
 /// </para>
@@ -31,7 +36,8 @@ public interface IQuestionRepository : IGenericRepository<Question>
         QuestionStatus? status,
         PaginationParams pagination,
         CancellationToken cancellationToken = default,
-        IReadOnlyCollection<int>? excludeQuestionIds = null);
+        IReadOnlyCollection<int>? excludeQuestionIds = null,
+        bool includePrivateOfOthers = false);
 
     Task<Question?> GetWithAnswersAsync(int questionId, CancellationToken cancellationToken = default);
 
@@ -39,7 +45,8 @@ public interface IQuestionRepository : IGenericRepository<Question>
     Task<IReadOnlyList<string>> GetTopicsAsync(
         int? subjectId,
         int currentUserId,
-        CancellationToken cancellationToken = default);
+        CancellationToken cancellationToken = default,
+        bool includePrivateOfOthers = false);
 
     /// <summary>
     /// Số câu theo từng mức độ. Gộp ba lời gọi mà frontend đang bắn song song ở màn hình
@@ -50,7 +57,8 @@ public interface IQuestionRepository : IGenericRepository<Question>
         int currentUserId,
         string? topic = null,
         QuestionStatus? status = null,
-        CancellationToken cancellationToken = default);
+        CancellationToken cancellationToken = default,
+        bool includePrivateOfOthers = false);
 
     /// <summary>
     /// Toàn bộ câu đủ điều kiện đưa vào đề ở một mức độ, kèm đáp án. Việc bốc ngẫu nhiên

@@ -10,7 +10,7 @@ namespace Anthill.Application.Common;
 /// Họ tên, email và số điện thoại là thông tin do <b>nhà trường</b> (quản trị viên) quản lý:
 /// </para>
 /// <list type="bullet">
-/// <item><description>quản trị viên: sửa được cả ba;</description></item>
+/// <item><description>quản trị viên: sửa được họ tên và số điện thoại, <b>không</b> đổi được email (không ai tự đổi email của mình);</description></item>
 /// <item><description>giáo viên: chỉ sửa được họ tên — email và số điện thoại do quản trị viên đổi;</description></item>
 /// <item><description>học sinh: không sửa được trường nào.</description></item>
 /// </list>
@@ -46,7 +46,7 @@ public static class ProfileEditPolicy
     {
         if (role == UserRole.Admin)
         {
-            return [];
+            return string.Equals(email, currentEmail, StringComparison.OrdinalIgnoreCase) ? [] : [EmailField];
         }
 
         var locked = new List<string>();

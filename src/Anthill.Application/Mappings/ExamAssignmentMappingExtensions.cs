@@ -1,5 +1,7 @@
 using Anthill.Application.Common;
 using Anthill.Application.DTOs.ExamAssignments;
+using Anthill.Application.DTOs.StudentGroups;
+using Anthill.Application.DTOs.Students;
 using Anthill.Application.Interfaces.Realtime;
 using Anthill.Domain.Entities;
 using Anthill.Domain.Enums;
@@ -69,7 +71,9 @@ public static class ExamAssignmentMappingExtensions
             // Repository luôn nạp kèm Student; vế dự phòng chỉ để dựng DTO được khi navigation vắng,
             // cùng kiểu với hai trường tên và mã ngay trên — không có tài khoản thì không có gì để gắn nhãn.
             StudentStatus = (assignment.Student?.Status ?? UserStatus.Active).ToStatusString(),
-            Group = assignment.Student?.Group?.Name ?? string.Empty,
+            // Lớp mà bài này được giao qua đó. Một em học nhiều lớp nên không còn "lớp của em" để đọc ra; bài giao lẻ cũ
+            // (không gắn lớp nào) để trống.
+            Group = assignment.AssignedViaGroup?.Name ?? string.Empty,
             Status = status.ToAssignmentStatusString(),
             AttemptId = attempt?.Id,
 
@@ -86,6 +90,86 @@ public static class ExamAssignmentMappingExtensions
             ScheduleLocked = AssignmentSchedule.IsScheduleLocked(openAt, closeAt, asOfUtc),
             AssignedViaGroupId = assignment.AssignedViaGroupId,
             PaperLabel = assignment.Paper?.VariantIndex is { } variant ? PaperLabels.Of(variant) : null
+        };
+    }
+
+    /// <summary>
+    /// Một dòng trong danh sách bài đã giao cho một học sinh, đúng như quản trị viên xem: điểm luôn hiện, và bài em
+    /// chưa làm vẫn có mặt với trạng thái <c>assigned</c> hay <c>expired</c>.
+    /// </summary>
+    /// <remarks>
+    /// <paramref name="assignment"/> phải được nạp kèm <c>Exam</c>, <c>Exam.CreatedBy</c>, <c>Attempt</c> và
+    /// <c>AssignedViaGroup</c>. Khung giờ là giờ thật của em (lịch riêng của lớp nếu có), như thẻ bài em nhìn thấy.
+    /// </remarks>
+    public static StudentExamDto ToStudentExamDto(this ExamAssignment assignment, DateTime asOfUtc)
+    {
+        ArgumentNullException.ThrowIfNull(assignment);
+
+        var attempt = assignment.Attempt;
+        var (openAt, closeAt) = AssignmentSchedule.Resolve(assignment);
+        var graded = attempt is { Status: AssignmentStatus.Graded };
+
+        return new StudentExamDto
+        {
+            AssignmentId = assignment.Id,
+            ExamId = assignment.ExamId,
+            Title = assignment.Exam.Title,
+            TeacherName = assignment.Exam.CreatedBy?.FullName ?? string.Empty,
+            Group = assignment.AssignedViaGroup?.Name,
+            Status = assignment.ResolveStatus(asOfUtc).ToAssignmentStatusString(),
+            OpenAt = openAt.ToUtc(),
+            CloseAt = closeAt.ToUtc(),
+            AttemptId = attempt?.Id,
+            StartedAt = attempt?.StartedAt.ToUtc(),
+            SubmittedAt = attempt?.SubmittedAt.ToUtc(),
+
+            // Điểm chỉ có nghĩa sau khi đã chấm: một bài đang làm dở mà trả 0 thì đọc y hệt bài sai hết.
+            Score = graded ? attempt!.Score : null,
+            MaxScore = graded ? attempt!.MaxScore : null,
+            CorrectCount = graded ? attempt!.CorrectCount : null,
+            AssignedAt = assignment.AssignedAt.ToUtc()
+        };
+    }
+
+    /// <summary>
+    /// Tóm tắt một đề theo MỘT lớp: các bản ghi giao bài của đề đó mà lớp này đã giao đi.
+    /// </summary>
+    /// <remarks>
+    /// <paramref name="rows"/> phải cùng <c>ExamId</c> và được nạp kèm <c>Exam</c>, <c>Exam.CreatedBy</c> và <c>Attempt</c>.
+    /// Điểm trung bình chia cho SỐ EM ĐƯỢC GIAO bài này: em chưa làm tính 0 điểm (giống bảng điểm xuất ra Excel), nên một đề mới chỉ có
+    /// hai em nộp trong lớp ba mươi em không hiện điểm trung bình cao ảo. Điểm của bài đang làm dở chưa chấm là 0 cho tới khi nộp.
+    /// </remarks>
+    public static GroupExamDto ToGroupExamDto(this IGrouping<int, ExamAssignment> rows, DateTime asOfUtc)
+    {
+        ArgumentNullException.ThrowIfNull(rows);
+
+        var ordered = rows.OrderBy(row => row.Id).ToList();
+        var first = ordered[0];
+        var exam = first.Exam;
+
+        // Mọi em được giao qua cùng một lớp theo cùng khung giờ (em vào lớp sau nhận giờ của lớp), nên lấy khoảng rộng
+        // nhất để phòng trường hợp lệch do dữ liệu cũ.
+        var windows = ordered.Select(AssignmentSchedule.Resolve).ToList();
+        var openAt = windows.Min(window => window.OpenAt);
+        var closeAt = windows.Max(window => window.CloseAt);
+
+        var attempts = ordered.Where(row => row.Attempt is not null).Select(row => row.Attempt!).ToList();
+        var graded = attempts.Where(attempt => attempt.Status == AssignmentStatus.Graded).ToList();
+
+        return new GroupExamDto
+        {
+            ExamId = exam.Id,
+            Title = exam.Title,
+            TeacherName = exam.CreatedBy?.FullName ?? string.Empty,
+            OpenAt = openAt.ToUtc(),
+            CloseAt = closeAt.ToUtc(),
+            Lifecycle = first.ResolveLifecycle(asOfUtc).ToLifecycleString(),
+            AssignedCount = ordered.Count,
+            StartedCount = attempts.Count,
+            SubmittedCount = attempts.Count(attempt => attempt.Status is AssignmentStatus.Submitted or AssignmentStatus.Graded),
+            AverageScore = ordered.Count == 0 ? null : Math.Round(graded.Sum(attempt => attempt.Score) / ordered.Count, 2),
+            MaxScore = graded.Count == 0 ? null : graded.Max(attempt => attempt.MaxScore),
+            AssignedAt = ordered.Min(row => row.AssignedAt).ToUtc()
         };
     }
 

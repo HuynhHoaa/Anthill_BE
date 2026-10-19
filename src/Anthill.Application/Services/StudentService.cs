@@ -1,4 +1,5 @@
 using Anthill.Application.Common;
+using Anthill.Application.DTOs.Accounts;
 using Anthill.Application.DTOs.Students;
 using Anthill.Application.Interfaces.Realtime;
 using Anthill.Application.Interfaces.Security;
@@ -33,6 +34,14 @@ namespace Anthill.Application.Services;
 public sealed class StudentService : IStudentService
 {
     private const string NotFoundMessage = "Không tìm thấy học sinh.";
+
+    private const string GroupChangeViaUpdateMessage =
+        "Thêm hoặc gỡ lớp không làm được ở form sửa hồ sơ. Hãy vào trang lớp để xếp thêm em, hoặc dùng Gỡ khỏi lớp / Chuyển lớp, kèm lý do.";
+
+    private const string StatusChangeViaUpdateMessage =
+        "Khoá hoặc mở khoá tài khoản không làm được ở form sửa hồ sơ. Hãy dùng nút Khoá tài khoản, kèm lý do.";
+
+    private const string LockReasonRequiredMessage = "Vui lòng nhập lý do khoá tài khoản.";
 
     private readonly IUnitOfWork _unitOfWork;
     private readonly IPasswordHasher _passwordHasher;
@@ -101,7 +110,8 @@ public sealed class StudentService : IStudentService
             page.Items.Select(student => student.Id),
             cancellationToken);
 
-        var items = page.Map(student => ToDto(student, stats));
+        var visibleGroupIds = await VisibleGroupIdsAsync(cancellationToken);
+        var items = page.Map(student => ToDto(student, stats, visibleGroupIds));
 
         return Result.Success(items);
     }
@@ -109,7 +119,7 @@ public sealed class StudentService : IStudentService
     /// <inheritdoc />
     public async Task<Result<StudentDto>> GetAsync(int id, CancellationToken cancellationToken = default)
     {
-        // Cả hai đường đều nạp kèm Group nên tên nhóm có sẵn, không phải truy vấn thêm.
+        // Cả hai đường đều nạp kèm Groups nên các lớp của em có sẵn, không phải truy vấn thêm.
         //
         // Giáo viên: em ngoài phạm vi trả đúng câu "không tìm thấy" của id không tồn tại, không phải
         // 403 — 403 là xác nhận rằng id đó là một học sinh có thật (§4.2). Phạm vi ở đây rộng hơn
@@ -126,7 +136,7 @@ public sealed class StudentService : IStudentService
             return Result.NotFound<StudentDto>(NotFoundMessage);
         }
 
-        return Result.Success(await BuildDtoAsync(student!, student!.Group?.Name, cancellationToken));
+        return Result.Success(await BuildDtoAsync(student!, groups: null, cancellationToken));
     }
 
     /// <inheritdoc />
@@ -152,6 +162,13 @@ public sealed class StudentService : IStudentService
             return Result.Failure<StudentDto>(groupResult.Error!, groupResult.ErrorCode);
         }
 
+        var joinedGroup = groupResult.Value;
+        if (joinedGroup is { IsLocked: true })
+        {
+            return Result.Conflict<StudentDto>(
+                $"Lớp {joinedGroup.Name} đã khoá nên không xếp thêm em vào được. Hãy mở khoá lớp trước.");
+        }
+
         var student = new User
         {
             FullName = fields.FullName,
@@ -163,7 +180,6 @@ public sealed class StudentService : IStudentService
             SecurityStamp = NewSecurityStamp(),
             Role = UserRole.Student,
             Status = ParseStatusOrDefault(request.Status, UserStatus.Active),
-            GroupId = groupResult.Value,
             AvatarColor = AvatarPalette.ForKey(fields.Username),
 
             // §5: mật khẩu do quản trị viên cấp thì ép đổi ở lần đăng nhập đầu. Người tạo tài khoản
@@ -174,6 +190,23 @@ public sealed class StudentService : IStudentService
             // CreatedAt do BaseEntity đặt bằng DateTime.UtcNow — không nhận từ client (§5).
         };
 
+        if (joinedGroup is not null)
+        {
+            // Em vào lớp ngay khi tạo: một dòng thành viên và một dòng lịch sử, cùng lần lưu với tài khoản.
+            student.GroupMemberships.Add(new StudentGroupMember { StudentGroupId = joinedGroup.Id, JoinedAt = DateTime.UtcNow });
+
+            await _unitOfWork.AccountChanges.AddAsync(
+                new AccountChange
+                {
+                    Account = student,
+                    Kind = AccountChangeKind.AddedToGroup,
+                    ToGroupId = joinedGroup.Id,
+                    ToGroupName = joinedGroup.Name,
+                    ActorUserId = _currentUser.UserId
+                },
+                cancellationToken);
+        }
+
         await _unitOfWork.Users.AddAsync(student, cancellationToken);
         await _unitOfWork.SaveChangesAsync(cancellationToken);
 
@@ -181,7 +214,8 @@ public sealed class StudentService : IStudentService
         return Result.Success(student.ToStudentDto(
             completedExams: 0,
             averageScore: 0m,
-            groupName: await ReadGroupNameAsync(student.GroupId, cancellationToken),
+            startedExams: 0,
+            groups: joinedGroup is null ? Array.Empty<StudentGroup>() : new[] { joinedGroup },
             includePhone: true));
     }
 
@@ -228,14 +262,32 @@ public sealed class StudentService : IStudentService
             return Result.Conflict<StudentDto>(conflict);
         }
 
-        var groupResult = await ResolveGroupAsync(request.GroupId, cancellationToken);
-        if (groupResult.IsFailure)
+        // Lớp và trạng thái không đổi được qua đường sửa hồ sơ: gỡ khỏi lớp và khoá tài khoản bắt buộc kèm lý do, mà một PUT ghi
+        // đè cả hồ sơ thì không chỗ nào để nhận lý do. Không gửi trường nào thì coi như giữ nguyên; gửi đúng giá trị đang có
+        // (một trong các lớp em đang học, hoặc 0 khi em chưa học lớp nào) là hợp lệ để form cũ không vỡ.
+        if (request.GroupId is not null)
         {
-            return Result.Failure<StudentDto>(groupResult.Error!, groupResult.ErrorCode);
+            var groupResult = await ResolveGroupAsync(request.GroupId, cancellationToken);
+            if (groupResult.IsFailure)
+            {
+                return Result.Failure<StudentDto>(groupResult.Error!, groupResult.ErrorCode);
+            }
+
+            var current = await _unitOfWork.StudentGroups.GetByStudentAsync(account.Id, cancellationToken);
+            var matches = groupResult.Value is { } requested
+                ? current.Any(group => group.Id == requested.Id)
+                : current.Count == 0;
+
+            if (!matches)
+            {
+                return Result.Failure<StudentDto>(GroupChangeViaUpdateMessage);
+            }
         }
 
-        var newStatus = ParseStatusOrDefault(request.Status, account.Status);
-        var stampBefore = account.SecurityStamp;
+        if (ParseStatusOrDefault(request.Status, account.Status) != account.Status)
+        {
+            return Result.Failure<StudentDto>(StatusChangeViaUpdateMessage);
+        }
 
         account.FullName = fields.FullName;
         account.Email = fields.Email;
@@ -246,21 +298,15 @@ public sealed class StudentService : IStudentService
         {
             account.Phone = Normalize(request.Phone);
         }
-        account.GroupId = groupResult.Value;
         account.UpdatedAt = DateTime.UtcNow;
-
-        // Khoá tài khoản qua đường PUT vẫn phải đá mọi phiên đang mở, hệt như PATCH status —
-        // hai đường vào cùng một hành động thì không được có hai hệ quả khác nhau.
-        ApplyStatus(account, newStatus);
 
         _unitOfWork.Users.Update(account);
         await _unitOfWork.SaveChangesAsync(cancellationToken);
         await transaction.CommitAsync(cancellationToken);
-        CloseConnectionsIfStampRotated(account, stampBefore);
 
         return Result.Success(await BuildDtoAsync(
             account,
-            await ReadGroupNameAsync(account.GroupId, cancellationToken),
+            await ReadGroupsAsync(account.Id, cancellationToken),
             cancellationToken));
     }
 
@@ -268,8 +314,16 @@ public sealed class StudentService : IStudentService
     public async Task<Result<StudentDto>> SetStatusAsync(
         int id,
         UserStatus status,
+        string? reason,
         CancellationToken cancellationToken = default)
     {
+        // Validator đã chặn ở tầng Api; kiểm lại ở đây để service đứng vững cả khi được gọi từ chỗ khác. Khoá mà
+        // không có lý do là điều không được phép xảy ra ở bất kỳ đâu.
+        if (status == UserStatus.Locked && string.IsNullOrWhiteSpace(reason))
+        {
+            return Result.Failure<StudentDto>(LockReasonRequiredMessage);
+        }
+
         await using var transaction = await _unitOfWork.BeginTransactionAsync(cancellationToken);
 
         var student = await _unitOfWork.Users.LockForUpdateAsync(id, cancellationToken);
@@ -298,6 +352,15 @@ public sealed class StudentService : IStudentService
             account.UpdatedAt = DateTime.UtcNow;
 
             _unitOfWork.Users.Update(account);
+
+            // Ai khoá, lúc nào, vì sao — để người xem hồ sơ sau này hiểu. Mở khoá không mang lý do.
+            await _unitOfWork.AccountChanges.AddAsync(
+                NewChange(
+                    account.Id,
+                    status == UserStatus.Locked ? AccountChangeKind.Locked : AccountChangeKind.Unlocked,
+                    status == UserStatus.Locked ? reason!.Trim() : null),
+                cancellationToken);
+
             await _unitOfWork.SaveChangesAsync(cancellationToken);
             await transaction.CommitAsync(cancellationToken);
             CloseConnectionsIfStampRotated(account, stampBefore);
@@ -307,7 +370,7 @@ public sealed class StudentService : IStudentService
         // cùng gửi lệnh khoá, đều nên nhận về cùng một câu trả lời thành công.
         return Result.Success(await BuildDtoAsync(
             account,
-            await ReadGroupNameAsync(account.GroupId, cancellationToken),
+            await ReadGroupsAsync(account.Id, cancellationToken),
             cancellationToken));
     }
 
@@ -359,13 +422,19 @@ public sealed class StudentService : IStudentService
         account.SecurityStamp = Guid.NewGuid().ToString("N");
 
         _unitOfWork.Users.Update(account);
+
+        // Lý do còn nằm ở cột DeletionReason của tài khoản, nhưng cột đó bị xoá khi khôi phục; dòng lịch sử thì ở lại.
+        await _unitOfWork.AccountChanges.AddAsync(
+            NewChange(account.Id, AccountChangeKind.DeletionRequested, account.DeletionReason),
+            cancellationToken);
+
         await _unitOfWork.SaveChangesAsync(cancellationToken);
         await transaction.CommitAsync(cancellationToken);
         _connections.CloseConnectionsOf(account.Id);
 
         return Result.Success(await BuildDtoAsync(
             account,
-            await ReadGroupNameAsync(account.GroupId, cancellationToken),
+            await ReadGroupsAsync(account.Id, cancellationToken),
             cancellationToken));
     }
 
@@ -417,13 +486,52 @@ public sealed class StudentService : IStudentService
         account.DeletionRequestedByUserId = null;
 
         _unitOfWork.Users.Update(account);
+
+        await _unitOfWork.AccountChanges.AddAsync(
+            NewChange(account.Id, AccountChangeKind.Restored, reason: null),
+            cancellationToken);
+
         await _unitOfWork.SaveChangesAsync(cancellationToken);
         await transaction.CommitAsync(cancellationToken);
 
         return Result.Success(await BuildDtoAsync(
             account,
-            await ReadGroupNameAsync(account.GroupId, cancellationToken),
+            await ReadGroupsAsync(account.Id, cancellationToken),
             cancellationToken));
+    }
+
+    /// <inheritdoc />
+    public async Task<Result<IReadOnlyList<AccountChangeDto>>> ListChangesAsync(
+        int id,
+        CancellationToken cancellationToken = default)
+    {
+        var student = await _unitOfWork.Users.GetByIdAsync(id, cancellationToken);
+        if (!IsStudent(student))
+        {
+            return Result.NotFound<IReadOnlyList<AccountChangeDto>>(NotFoundMessage);
+        }
+
+        var rows = await _unitOfWork.AccountChanges.GetByAccountAsync(id, cancellationToken);
+
+        return Result.Success<IReadOnlyList<AccountChangeDto>>(rows.Select(change => change.ToDto()).ToList());
+    }
+
+    /// <inheritdoc />
+    public async Task<Result<IReadOnlyList<StudentExamDto>>> ListExamsAsync(
+        int id,
+        CancellationToken cancellationToken = default)
+    {
+        var student = await _unitOfWork.Users.GetByIdAsync(id, cancellationToken);
+        if (!IsStudent(student))
+        {
+            return Result.NotFound<IReadOnlyList<StudentExamDto>>(NotFoundMessage);
+        }
+
+        var asOf = DateTime.UtcNow;
+        var assignments = await _unitOfWork.ExamAssignments.GetForStudentAsync(id, cancellationToken);
+
+        return Result.Success<IReadOnlyList<StudentExamDto>>(
+            assignments.Select(assignment => assignment.ToStudentExamDto(asOf)).ToList());
     }
 
     /// <inheritdoc />
@@ -470,6 +578,10 @@ public sealed class StudentService : IStudentService
 
             StudentAnonymizer.Anonymize(account, now, token);
             _unitOfWork.Users.Update(account);
+
+            // Rời khỏi mọi lớp: sĩ số các lớp phải phản ánh số em đang thật sự học ở đó.
+            _unitOfWork.StudentGroups.RemoveMembers(
+                await _unitOfWork.StudentGroups.GetMembershipsOfStudentAsync(account.Id, cancellationToken));
             purged.Add(account.Id);
 
             await RedactSubmissionNotificationsAsync(account.Id, previousFullName, cancellationToken);
@@ -656,26 +768,26 @@ public sealed class StudentService : IStudentService
     }
 
     /// <summary>
-    /// Đổi <c>groupId</c> client gửi thành giá trị lưu xuống cột, sau khi xác minh nhóm có thật.
+    /// Đổi <c>groupId</c> client gửi thành lớp thật, sau khi xác minh lớp có thật. <c>null</c> hay <c>0</c> là không chọn lớp.
     /// </summary>
     /// <remarks>
     /// Không kiểm thì một id lạ đi thẳng xuống database và vỡ ở khoá ngoại thành lỗi 500. Trả
     /// <c>Validation</c> chứ không phải <c>NotFound</c>: thứ không tìm thấy là <b>một tham số</b>
     /// bên trong request, không phải bản thân tài nguyên mà URL trỏ tới.
     /// </remarks>
-    private async Task<Result<int?>> ResolveGroupAsync(int? clientGroupId, CancellationToken cancellationToken)
+    private async Task<Result<StudentGroup?>> ResolveGroupAsync(int? clientGroupId, CancellationToken cancellationToken)
     {
         var groupId = StudentGroupDefaults.ToStoredGroupId(clientGroupId);
         if (groupId is null)
         {
-            return Result.Success<int?>(null);
+            return Result.Success<StudentGroup?>(null);
         }
 
-        var exists = await _unitOfWork.StudentGroups.GetByIdAsync(groupId.Value, cancellationToken) is not null;
+        var group = await _unitOfWork.StudentGroups.GetByIdAsync(groupId.Value, cancellationToken);
 
-        return exists
-            ? Result.Success<int?>(groupId)
-            : Result.Failure<int?>("Nhóm lớp không tồn tại.");
+        return group is not null
+            ? Result.Success<StudentGroup?>(group)
+            : Result.Failure<StudentGroup?>("Nhóm lớp không tồn tại.");
     }
 
     /// <summary>
@@ -716,32 +828,72 @@ public sealed class StudentService : IStudentService
         }
     }
 
-    /// <summary>Dựng DTO cho một học sinh, kèm hai con số thống kê lấy trong một truy vấn.</summary>
-    private async Task<StudentDto> BuildDtoAsync(User student, string? groupName, CancellationToken cancellationToken)
+    /// <summary>
+    /// Dựng DTO cho một học sinh, kèm hai con số thống kê lấy trong một truy vấn. <paramref name="groups"/> là các lớp của em khi
+    /// chỗ gọi không nạp kèm <c>Groups</c> (đường ghi nạp tài khoản trần).
+    /// </summary>
+    private async Task<StudentDto> BuildDtoAsync(
+        User student,
+        IReadOnlyCollection<StudentGroup>? groups,
+        CancellationToken cancellationToken)
     {
         var stats = await _unitOfWork.ExamAttempts.GetStatsByStudentsAsync([student.Id], cancellationToken);
 
-        return ToDto(student, stats, groupName);
+        return ToDto(student, stats, await VisibleGroupIdsAsync(cancellationToken), groups);
     }
 
     private StudentDto ToDto(
         User student,
-        IReadOnlyDictionary<int, (int Completed, decimal AverageScore)> stats,
-        string? groupName = null)
+        IReadOnlyDictionary<int, (int Completed, decimal AverageScore, int Started, int Assigned)> stats,
+        IReadOnlySet<int>? visibleGroupIds,
+        IReadOnlyCollection<StudentGroup>? groups = null)
     {
-        // Học sinh chưa có lượt làm bài nào có thể vắng mặt trong bảng thống kê — đó là (0, 0),
+        // Học sinh chưa có lượt làm bài nào có thể vắng mặt trong bảng thống kê — đó là (0, 0, 0),
         // không phải lỗi.
-        var (completed, averageScore) = stats.TryGetValue(student.Id, out var row) ? row : (0, 0m);
+        var (completed, averageScore, started, assigned) = stats.TryGetValue(student.Id, out var row) ? row : (0, 0m, 0, 0);
 
         // Số điện thoại do nhà trường quản lý: chỉ quản trị viên nhận trường này.
         return student.ToStudentDto(
-            completed, averageScore, groupName, includePhone: _currentUser.IsInRole(UserRole.Admin));
+            completed,
+            averageScore,
+            started,
+            groups,
+            visibleGroupIds,
+            includePhone: _currentUser.IsInRole(UserRole.Admin),
+            assignedExams: assigned);
     }
 
-    private async Task<string?> ReadGroupNameAsync(int? groupId, CancellationToken cancellationToken) =>
-        groupId is null
-            ? null
-            : (await _unitOfWork.StudentGroups.GetByIdAsync(groupId.Value, cancellationToken))?.Name;
+    /// <summary>
+    /// Các lớp giáo viên này được biết (lớp mình dạy, đã công bố); <c>null</c> với quản trị viên — không giới hạn. Lớp của một
+    /// đồng nghiệp mà em cùng học không phải chuyện giáo viên này được thấy.
+    /// </summary>
+    private async Task<IReadOnlySet<int>?> VisibleGroupIdsAsync(CancellationToken cancellationToken)
+    {
+        if (_currentUser.IsInRole(UserRole.Admin))
+        {
+            return null;
+        }
+
+        var mine = await _unitOfWork.StudentGroups.GetForTeacherAsync(
+            _currentUser.RequireUserId(),
+            search: null,
+            cancellationToken);
+
+        return mine.Select(group => group.Id).ToHashSet();
+    }
+
+    /// <summary>Dựng một dòng lịch sử của tài khoản (khoá, mở khoá, xoá, khôi phục) do quản trị viên hiện tại thực hiện.</summary>
+    private AccountChange NewChange(int studentId, AccountChangeKind kind, string? reason) =>
+        new()
+        {
+            AccountId = studentId,
+            Kind = kind,
+            Reason = reason,
+            ActorUserId = _currentUser.UserId
+        };
+
+    private async Task<IReadOnlyList<StudentGroup>> ReadGroupsAsync(int studentId, CancellationToken cancellationToken) =>
+        await _unitOfWork.StudentGroups.GetByStudentAsync(studentId, cancellationToken);
 
     /// <summary>
     /// Endpoint học sinh chỉ được nhìn thấy tài khoản học sinh. Id của giáo viên hay quản trị viên

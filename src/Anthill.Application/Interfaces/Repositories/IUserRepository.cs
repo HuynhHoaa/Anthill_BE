@@ -88,14 +88,17 @@ public interface IUserRepository : IGenericRepository<User>
     /// <summary>Chỉ trả về id thật sự tồn tại và đúng vai trò Student — dùng khi giao bài (§5).</summary>
     Task<IReadOnlyList<User>> GetStudentsByIdsAsync(IEnumerable<int> studentIds, CancellationToken cancellationToken = default);
 
-    /// <summary>Học sinh chưa thuộc nhóm này, cho màn hình thêm thành viên.</summary>
+    /// <summary>
+    /// Học sinh <b>chưa học lớp này</b>, cho màn hình thêm thành viên. Em đang học lớp khác vẫn có trong danh sách: một em
+    /// học được nhiều lớp cùng lúc.
+    /// </summary>
     Task<IReadOnlyList<User>> GetAssignableStudentsAsync(int groupId, CancellationToken cancellationToken = default);
 
     /// <summary>
     /// Sĩ số của lớp: học sinh đang hoạt động hoặc đang khoá. Tài khoản chờ xoá không được tính.
     /// </summary>
     /// <remarks>
-    /// Tài khoản chờ xoá vẫn giữ GroupId suốt 60 ngày để khôi phục là về đúng lớp cũ, nên vẫn hiện
+    /// Tài khoản chờ xoá vẫn giữ các dòng thành viên suốt 60 ngày để khôi phục là về đúng lớp cũ, nên vẫn hiện
     /// trong danh sách thành viên. Nhưng em đó đã rời trường: đếm vào sĩ số thì câu "giao bài cho
     /// 30 học sinh" sai ngay từ đầu, vì bước giao bài bỏ qua mọi tài khoản không hoạt động.
     /// </remarks>
@@ -110,15 +113,34 @@ public interface IUserRepository : IGenericRepository<User>
         CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Giáo viên có thể phân công vào lớp — trừ những người đã được phân công vào chính lớp đó.
+    /// Mọi giáo viên, theo tên — cho ô chọn giáo viên phụ trách lớp.
     /// </summary>
     /// <remarks>
     /// Bao gồm cả tài khoản đang bị khoá, và đó là chủ đích: quản trị viên cần thấy người đó trong
     /// danh sách để biết vì sao không phân công được, thay vì đi tìm một cái tên đã biến mất. Việc
     /// từ chối nằm ở tầng service, kèm lý do.
     /// </remarks>
-    Task<IReadOnlyList<User>> GetAssignableTeachersAsync(
-        int groupId,
+    Task<IReadOnlyList<User>> GetTeachersAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Danh sách giáo viên có phân trang cho màn quản lý: tìm theo tên (không dấu), email, số điện thoại; lọc theo trạng thái
+    /// và môn; sắp theo tên.
+    /// </summary>
+    Task<PagedResult<User>> GetTeachersPagedAsync(
+        string? search,
+        UserStatus? status,
+        int? subjectId,
+        PaginationParams pagination,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Mọi tài khoản đang giữ một trong các định danh này, ở <b>bất kỳ</b> cột nào trong ba cột email, tên đăng nhập, mã. Ba cột
+    /// dùng chung một không gian tên (xem <c>IsEmailTakenAsync</c>), nên một mã học sinh trong file Excel có thể đang là email
+    /// của người khác. <paramref name="identifiers"/> phải viết thường. Các dòng trả về được theo dõi để nhập liệu cập nhật tại
+    /// chỗ (xếp học sinh đã có tài khoản vào lớp).
+    /// </summary>
+    Task<IReadOnlyList<User>> FindByIdentifiersAsync(
+        IReadOnlyCollection<string> identifiers,
         CancellationToken cancellationToken = default);
 
     /// <summary>Chỉ trả về id thật sự tồn tại và đúng vai trò Teacher — dùng khi phân công theo lô.</summary>

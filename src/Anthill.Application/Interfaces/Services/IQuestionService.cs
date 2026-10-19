@@ -32,6 +32,12 @@ public interface IQuestionService
         int? subjectId = null,
         CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// Các môn học, cho quản trị viên chọn môn khi tạo câu hỏi và khi thu hẹp ngân hàng về một môn. Giáo viên không dùng:
+    /// họ bị khoá vào môn của mình.
+    /// </summary>
+    Task<Result<IReadOnlyList<SubjectDto>>> ListSubjectsAsync(CancellationToken cancellationToken = default);
+
     /// <summary>Thống kê ngân hàng. Gộp ba lời gọi mà frontend đang bắn song song (§4.5).</summary>
     Task<Result<QuestionBankSummaryDto>> GetSummaryAsync(
         int? subjectId = null,

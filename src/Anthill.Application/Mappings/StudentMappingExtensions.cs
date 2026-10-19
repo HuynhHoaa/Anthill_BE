@@ -1,4 +1,5 @@
 using Anthill.Application.Common;
+using Anthill.Application.DTOs.Accounts;
 using Anthill.Application.DTOs.Students;
 using Anthill.Domain.Entities;
 using Anthill.Domain.Enums;
@@ -16,10 +17,14 @@ public static class StudentMappingExtensions
     /// </summary>
     /// <param name="user">Tài khoản có <c>Role = Student</c>.</param>
     /// <param name="completedExams">Số lượt đã nộp hoặc đã chấm, đọc từ <c>IExamAttemptRepository</c>.</param>
-    /// <param name="averageScore">Trung bình điểm các lượt đã chấm.</param>
-    /// <param name="groupName">
-    /// Tên nhóm khi chỗ gọi không nạp kèm navigation <c>Group</c>. Bỏ trống thì đọc từ navigation;
-    /// không có cả hai thì rơi về nhãn "Chưa phân nhóm".
+    /// <param name="averageScore">Trung bình điểm thang 10 trên mọi bài đã giao (bài chưa làm tính 0).</param>
+    /// <param name="startedExams">Số lượt làm bài ở bất kỳ trạng thái nào; khác 0 là em đã bắt đầu làm bài.</param>
+    /// <param name="groups">
+    /// Các lớp của em khi chỗ gọi không nạp kèm navigation <c>Groups</c> (đường ghi nạp tài khoản trần). Bỏ trống thì đọc từ
+    /// navigation; không có cả hai thì mảng rỗng, nghĩa là "chưa có lớp nào".
+    /// </param>
+    /// <param name="visibleGroupIds">
+    /// Chỉ giữ những lớp có id trong tập này — phạm vi của giáo viên (lớp mình dạy). <c>null</c> là không giới hạn (quản trị viên).
     /// </param>
     /// <remarks>
     /// Hai con số thống kê là tham số bắt buộc chứ không có giá trị mặc định: chúng phải được lấy
@@ -30,8 +35,11 @@ public static class StudentMappingExtensions
         this User user,
         int completedExams,
         decimal averageScore,
-        string? groupName = null,
-        bool includePhone = false)
+        int startedExams,
+        IReadOnlyCollection<StudentGroup>? groups = null,
+        IReadOnlySet<int>? visibleGroupIds = null,
+        bool includePhone = false,
+        int assignedExams = 0)
     {
         ArgumentNullException.ThrowIfNull(user);
 
@@ -50,8 +58,7 @@ public static class StudentMappingExtensions
             // trang danh sách, và ô trống trên màn hình đủ để người dùng thấy có gì đó bất thường.
             Code = user.Code ?? string.Empty,
 
-            Group = StudentGroupDefaults.ToClientGroupName(groupName ?? user.Group?.Name),
-            GroupId = StudentGroupDefaults.ToClientGroupId(user.GroupId),
+            Groups = ToGroupRefs((IEnumerable<StudentGroup>?)groups ?? user.Groups, visibleGroupIds),
             Status = user.Status.ToStatusString(),
 
             // Ba trường của quy trình xoá. Vắng mặt với tài khoản bình thường nhờ cấu hình bỏ qua
@@ -63,8 +70,28 @@ public static class StudentMappingExtensions
                 : null,
             CreatedAt = user.CreatedAt.ToUtc(),
             CompletedExams = completedExams,
-            AverageScore = averageScore
+            AverageScore = averageScore,
+            AssignedExams = assignedExams,
+            HasStartedExams = startedExams > 0
         };
+    }
+
+    /// <summary>Các lớp của em theo tên, đã lọc theo phạm vi người xem nếu có.</summary>
+    private static List<StudentGroupRefDto> ToGroupRefs(
+        IEnumerable<StudentGroup> groups,
+        IReadOnlySet<int>? visibleGroupIds) =>
+        groups
+            .Where(group => visibleGroupIds is null || visibleGroupIds.Contains(group.Id))
+            .OrderBy(group => group.Name, StringComparer.CurrentCulture)
+            .Select(group => new StudentGroupRefDto { Id = group.Id, Name = group.Name, IsLocked = group.IsLocked })
+            .ToList();
+
+    /// <summary>Các lớp của một học sinh dạng tóm tắt, cho chỗ chỉ có entity lớp trong tay.</summary>
+    public static IReadOnlyList<StudentGroupRefDto> ToGroupRefDtos(this IEnumerable<StudentGroup> groups)
+    {
+        ArgumentNullException.ThrowIfNull(groups);
+
+        return ToGroupRefs(groups, visibleGroupIds: null);
     }
 
     /// <summary>
@@ -77,6 +104,27 @@ public static class StudentMappingExtensions
     /// đặt thẳng <c>deleted</c> được — tài khoản mang nhãn đã xoá trong khi họ tên, email, số điện
     /// thoại vẫn còn nguyên, vì bước ẩn danh hoá không bao giờ chạy.
     /// </remarks>
+    /// <summary>
+    /// Một dòng lịch sử. <paramref name="change"/> phải được nạp kèm <c>Actor</c> thì mới có tên người thực hiện.
+    /// </summary>
+    public static AccountChangeDto ToDto(this AccountChange change)
+    {
+        ArgumentNullException.ThrowIfNull(change);
+
+        var kind = change.Kind.ToString();
+
+        return new AccountChangeDto
+        {
+            Id = change.Id,
+            Kind = char.ToLowerInvariant(kind[0]) + kind[1..],
+            Reason = change.Reason,
+            FromGroup = change.FromGroupName,
+            ToGroup = change.ToGroupName,
+            ActorName = change.Actor?.FullName,
+            CreatedAt = change.CreatedAt.ToUtc()
+        };
+    }
+
     public static bool TryParseSettableStatus(string? value, out UserStatus status)
     {
         if (TryParseAnyStatus(value, out status) && status is UserStatus.Active or UserStatus.Locked)

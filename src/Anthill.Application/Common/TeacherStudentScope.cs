@@ -21,7 +21,7 @@ namespace Anthill.Application.Common;
 public static class TeacherStudentScope
 {
     /// <summary>
-    /// Học sinh đang ngồi trong một lớp mà giáo viên này được phân công dạy <b>và</b> lớp đã công bố.
+    /// Học sinh đang học ít nhất một lớp mà giáo viên này được phân công dạy <b>và</b> lớp đã công bố.
     /// Đây là phạm vi của <b>danh sách</b>.
     /// </summary>
     /// <remarks>
@@ -32,9 +32,8 @@ public static class TeacherStudentScope
     /// "Chưa phân nhóm" của giáo viên luôn rỗng mà không cần nhánh riêng.
     /// </remarks>
     public static Expression<Func<User, bool>> InTaughtClass(int teacherId) =>
-        student => student.Group != null
-                   && student.Group.IsPublished
-                   && student.Group.Teachers.Any(assignment => assignment.TeacherId == teacherId);
+        student => student.Groups.Any(group => group.IsPublished
+                                               && group.Teachers.Any(assignment => assignment.TeacherId == teacherId));
 
     /// <summary>
     /// Phạm vi của <b>hồ sơ một học sinh</b>: như <see cref="InTaughtClass"/>, cộng thêm mọi em đã
@@ -55,8 +54,7 @@ public static class TeacherStudentScope
     /// </para>
     /// </remarks>
     public static Expression<Func<User, bool>> CanReadProfile(int teacherId) =>
-        student => (student.Group != null
-                    && student.Group.IsPublished
-                    && student.Group.Teachers.Any(assignment => assignment.TeacherId == teacherId))
+        student => student.Groups.Any(group => group.IsPublished
+                                               && group.Teachers.Any(assignment => assignment.TeacherId == teacherId))
                    || student.Assignments.Any(assignment => assignment.Exam.CreatedByUserId == teacherId);
 }

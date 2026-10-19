@@ -1,4 +1,5 @@
 using Anthill.Application.Common;
+using Anthill.Application.DTOs.ExamAssignments;
 using Anthill.Application.DTOs.StudentGroups;
 using Anthill.Application.DTOs.Students;
 
@@ -7,8 +8,8 @@ namespace Anthill.Application.Interfaces.Services;
 /// <summary>Nhóm lớp và thành viên — §4.4. Giáo viên sở hữu, quản trị viên chỉ đọc.</summary>
 /// <remarks>
 /// Ràng buộc phải cài: chủ sở hữu lấy từ JWT, không nhận từ body (§4.4) · chỉ xoá được nhóm
-/// <b>rỗng</b>, và xoá nhóm không kéo theo tài khoản học sinh · gỡ thành viên là đặt
-/// <c>GroupId = NULL</c> · <see cref="AddMembersAsync"/> nhận <b>mảng</b> id trong một lần gọi,
+/// <b>rỗng</b>, và xoá nhóm không kéo theo tài khoản học sinh · gỡ thành viên là xoá dòng thành viên
+/// (một em học được nhiều lớp cùng lúc) · <see cref="AddMembersAsync"/> nhận <b>mảng</b> id trong một lần gọi,
 /// thay cho việc frontend gọi lặp từng em · <c>studentCount</c> luôn đếm qua JOIN, không lưu cứng ·
 /// đổi tên nhóm <b>không</b> phải lan xuống bản ghi học sinh — học sinh chỉ giữ khoá ngoại (§4.4).
 /// <para>
@@ -32,9 +33,9 @@ public interface IStudentGroupService
 
     Task<Result<StudentGroupDto>> GetAsync(int id, CancellationToken cancellationToken = default);
 
-    /// <summary>Tạo nhóm. Chủ sở hữu lấy từ JWT, không nhận từ body.</summary>
+    /// <summary>Lập lớp mới kèm giáo viên phụ trách (bắt buộc). Người lập lấy từ JWT, không nhận từ body.</summary>
     Task<Result<StudentGroupDto>> CreateAsync(
-        SaveStudentGroupRequest request,
+        CreateStudentGroupRequest request,
         CancellationToken cancellationToken = default);
 
     /// <summary>Đổi tên và mô tả. Tên mới không lan xuống bản ghi học sinh — chúng chỉ giữ khoá ngoại.</summary>
@@ -54,21 +55,24 @@ public interface IStudentGroupService
         int id,
         CancellationToken cancellationToken = default);
 
-    /// <summary>Học sinh có thể thêm vào nhóm — mọi học sinh chưa thuộc nhóm này.</summary>
+    /// <summary>Học sinh có thể thêm vào nhóm — những em chưa học lớp này (kể cả em đang học lớp khác).</summary>
     Task<Result<IReadOnlyList<StudentDto>>> ListAssignableAsync(
         int id,
         CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Thêm nhiều học sinh trong một lần gọi. Id lạ hoặc đã ở sẵn trong nhóm không làm hỏng cả mẻ;
-    /// chúng được đếm riêng trong <see cref="AddMembersResponse"/>.
+    /// Thêm nhiều học sinh <b>chưa có lớp</b> trong một lần gọi. Id lạ, em đã ở sẵn trong nhóm, em đang ở lớp
+    /// khác hay em bị khoá lớp không làm hỏng cả mẻ; chúng được đếm riêng trong <see cref="AddMembersResponse"/>.
     /// </summary>
+    /// <remarks>
+    /// Không còn đường chuyển lớp ngầm: em đang ở lớp khác bị bỏ qua, vì đổi lớp phải đi qua
+    /// <see cref="TransferMemberAsync"/> để có lý do và để luật khoá lớp được kiểm.
+    /// </remarks>
     Task<Result<AddMembersResponse>> AddMembersAsync(
         int id,
         AddMembersRequest request,
         CancellationToken cancellationToken = default);
 
-    /// <summary>Gỡ khỏi nhóm bằng cách đặt <c>GroupId = NULL</c>. Tài khoản học sinh giữ nguyên.</summary>
     /// <summary>
     /// Công bố một lớp còn ở dạng nháp.
     /// </summary>
@@ -93,26 +97,81 @@ public interface IStudentGroupService
     /// </remarks>
     Task<Result<StudentGroupDto>> UnpublishAsync(int id, CancellationToken cancellationToken = default);
 
-    /// <summary>Giáo viên có thể phân công vào lớp này — chưa được phân công sẵn.</summary>
-    Task<Result<IReadOnlyList<GroupTeacherDto>>> ListAssignableTeachersAsync(
+    /// <summary>
+    /// Khoá lớp, kèm lý do bắt buộc (10–512 ký tự, ghi vào lịch sử lớp). Lớp khoá là lớp chỉ đọc: không xếp thêm em, không giao
+    /// bài mới, không đổi giáo viên hay sửa lớp; thành viên, bài đã giao và bảng điểm giữ nguyên, và các em trong lớp vẫn học
+    /// các lớp khác bình thường. Trả <see cref="ErrorCode.Conflict"/> khi lớp đã khoá.
+    /// </summary>
+    Task<Result<StudentGroupDto>> LockAsync(
         int id,
+        LockGroupRequest request,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>Mở khoá lớp (không cần lý do; việc mở khoá được ghi vào lịch sử lớp). Trả <c>Conflict</c> khi lớp không bị khoá.</summary>
+    Task<Result<StudentGroupDto>> UnlockAsync(int id, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Mọi giáo viên, kèm trạng thái tài khoản, cho ô chọn giáo viên phụ trách khi lập lớp và khi đổi người. Chỉ quản trị
+    /// viên.
+    /// </summary>
+    Task<Result<IReadOnlyList<GroupTeacherDto>>> ListTeachersAsync(CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Đổi giáo viên phụ trách: lớp có đúng một giáo viên nên đây là <b>thay</b> chứ không thêm. Đổi sang người khác giữa
+    /// chừng thì <b>bắt buộc lý do</b> và được ghi vào lịch sử của lớp. Lớp cũ còn nhiều giáo viên thì lần đổi này dọn về một.
+    /// Tài khoản đang bị khoá không nhận được lớp (409).
+    /// </summary>
+    Task<Result<StudentGroupDto>> ChangeTeacherAsync(
+        int id,
+        ChangeTeacherRequest request,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>Lịch sử của lớp (lập lớp, đổi giáo viên kèm lý do), mới nhất trước. Chỉ quản trị viên.</summary>
+    Task<Result<IReadOnlyList<GroupChangeDto>>> ListChangesAsync(int id, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Các bài kiểm tra đã giao cho lớp, mới nhất trước, kèm số em đã làm và điểm trung bình — lịch sử học của lớp. Quản trị
+    /// viên đọc mọi lớp; giáo viên đọc lớp đã công bố mình dạy (lớp khác 404) và thấy cả đề của giáo viên trước.
+    /// </summary>
+    Task<Result<IReadOnlyList<GroupExamDto>>> ListExamsAsync(int id, CancellationToken cancellationToken = default);
+
+    /// <summary>
+    /// Từng em của lớp đã làm một bài kiểm tra ra sao (trạng thái, điểm, giờ bắt đầu và nộp, mã lượt làm bài) — chỉ những em được
+    /// giao bài <b>qua lớp này</b>. Quản trị viên đọc mọi lớp; giáo viên đọc lớp đã công bố mình dạy, <b>kể cả bài do giáo viên
+    /// trước của lớp soạn</b> (người nhận lớp cần nắm sức học cả lớp). Lớp không đọc được trả 404.
+    /// </summary>
+    Task<Result<IReadOnlyList<ExamAssignmentDto>>> ListExamResultsAsync(
+        int id,
+        int examId,
         CancellationToken cancellationToken = default);
 
     /// <summary>
-    /// Phân công giáo viên vào lớp theo lô.
+    /// Gỡ một em khỏi lớp bằng cách xoá dòng thành viên, kèm lý do bắt buộc. Tài khoản học sinh và các lớp khác của em giữ
+    /// nguyên.
     /// </summary>
     /// <remarks>
-    /// Báo cáo theo <b>từng loại bị bỏ qua</b> chứ không chỉ thành công hay thất bại: một id lạ
-    /// lẫn trong danh sách không được làm hỏng cả mẻ, và người bấm nút cần biết ai vào được, ai
-    /// không, vì lý do gì.
+    /// Gỡ được cả em đã làm bài (em nghỉ học, chuyển trường). Những bài lớp này giao mà em chưa bắt đầu và chưa hết hạn
+    /// bị thu hồi khỏi em; bài đã bắt đầu và bài đã hết hạn được giữ — xem <see cref="MemberChangeResponse"/>. Lý do, người
+    /// thực hiện và thời điểm được ghi vào lịch sử của học sinh. Lớp đã khoá thì không gỡ được (409).
     /// </remarks>
-    Task<Result<AssignTeachersResponse>> AssignTeachersAsync(
+    Task<Result<MemberChangeResponse>> RemoveMemberAsync(
         int id,
-        AssignTeachersRequest request,
+        int studentId,
+        RemoveMemberRequest request,
         CancellationToken cancellationToken = default);
 
-    /// <summary>Gỡ một giáo viên khỏi lớp.</summary>
-    Task<Result> UnassignTeacherAsync(int id, int teacherId, CancellationToken cancellationToken = default);
-
-    Task<Result> RemoveMemberAsync(int id, int studentId, CancellationToken cancellationToken = default);
+    /// <summary>
+    /// Chuyển một em từ lớp <paramref name="id"/> sang lớp khác, kèm lý do bắt buộc.
+    /// </summary>
+    /// <remarks>
+    /// Chuyển là gỡ khỏi lớp này rồi xếp vào lớp đích trong một bước; không còn khoá "đã làm bài thì không chuyển" vì em học
+    /// được nhiều lớp cùng lúc. Trả <see cref="ErrorCode.Conflict"/> khi em đã học lớp đích hoặc một trong hai lớp đã khoá.
+    /// Bài lớp cũ giao mà em chưa làm bị thu hồi như khi gỡ khỏi lớp; em không tự nhận bài đã giao cho lớp mới — giáo viên
+    /// giao lại lớp như với một em mới vào.
+    /// </remarks>
+    Task<Result<MemberChangeResponse>> TransferMemberAsync(
+        int id,
+        int studentId,
+        TransferMemberRequest request,
+        CancellationToken cancellationToken = default);
 }

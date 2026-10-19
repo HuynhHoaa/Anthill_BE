@@ -17,7 +17,7 @@ public enum AssignmentSkipReason
 
     /// <summary>Tài khoản đang chờ xoá — em đã rời trường.</summary>
     /// <remarks>
-    /// Không gồm tài khoản đã xoá hẳn: ẩn danh hoá gỡ em khỏi lớp (<c>GroupId = NULL</c>), nên em đó luôn
+    /// Không gồm tài khoản đã xoá hẳn: ẩn danh hoá gỡ em khỏi mọi lớp (xoá các dòng thành viên), nên em đó luôn
     /// dừng ở <see cref="OutOfScope"/> trước khi trạng thái được xét tới.
     /// </remarks>
     Retired
@@ -41,7 +41,7 @@ public enum AssignmentSkipReason
 /// </remarks>
 public static class AssignmentTargetFilter
 {
-    /// <param name="student">Tài khoản học sinh có thật — id lạ đã được đếm riêng trước khi tới đây.</param>
+    /// <param name="student">Tài khoản học sinh có thật, đã nạp kèm <c>Groups</c> — id lạ đã được đếm riêng trước khi tới đây.</param>
     /// <param name="teachableGroupIds">Các lớp mà giáo viên đang giao bài được phân công dạy.</param>
     public static AssignmentSkipReason Classify(User student, IReadOnlySet<int> teachableGroupIds)
     {
@@ -50,12 +50,13 @@ public static class AssignmentTargetFilter
 
         // Phạm vi đứng trước trạng thái: em của lớp khác thì trạng thái tài khoản của em không phải
         // chuyện giáo viên này được biết, kể cả qua một con số đếm.
-        if (student.GroupId is not { } groupId || !teachableGroupIds.Contains(groupId))
+        // Em học nhiều lớp: chỉ cần một lớp trong số đó do giáo viên này dạy là em thuộc phạm vi.
+        if (!student.Groups.Any(group => teachableGroupIds.Contains(group.Id)))
         {
             return AssignmentSkipReason.OutOfScope;
         }
 
-        // Tài khoản đã xoá hẳn không tới được đây: StudentAnonymizer đặt GroupId = NULL nên em đó đã dừng ở
+        // Tài khoản đã xoá hẳn không tới được đây: ẩn danh hoá gỡ em khỏi mọi lớp nên em đó đã dừng ở
         // phép kiểm phạm vi ngay trên. Vì thế không có nhánh riêng cho Deleted.
         return student.Status switch
         {
