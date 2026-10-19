@@ -239,10 +239,16 @@ expect_json   "  status = active" status active
 
 # ── /health ──────────────────────────────────────────────────────────────────────
 
-section "/health cham database"
+section "/health cham database, /health/live thi khong"
 
 expect_status "GET /health → 200" 200 "$(call GET /health "")"
 expect_json   "  database = ok" database ok
+
+# Duong dan danh cho moi thu goi deu dan suot ngay dem (Render, UptimeRobot): neu no cham database thi database mien
+# phi khong bao gio ngu. Khong co truong database trong than tra loi la dau hieu no khong hoi database.
+expect_status "GET /health/live → 200" 200 "$(call GET /health/live "")"
+expect_json   "  status = ok" status ok
+expect_status "  than tra loi khong nhac toi database" 0 "$(body | grep -c database)"
 
 # ── Thong bao: link va khung gio da dong ─────────────────────────────────────────
 
