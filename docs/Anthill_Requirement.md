@@ -387,7 +387,7 @@ Chức năng chính:
 - Student chọn đáp án cho từng câu hỏi (câu nhiều đáp án đúng cho chọn nhiều ô, bấm lại để bỏ chọn); đáp án được tự động lưu nháp lên server.
 - Student có thể chuyển qua lại giữa các câu và đánh dấu câu cần xem lại trong thời gian làm bài.
 - Student nộp bài.
-- Hệ thống tự động nộp bài nếu hết thời gian. Kể cả khi Student đã đóng trình duyệt, tiến trình nền ở server vẫn tự nộp và chấm những lượt đã quá hạn (quét khoảng 30 giây một lần).
+- Hệ thống tự động nộp bài nếu hết thời gian. Kể cả khi Student đã đóng trình duyệt, tiến trình nền ở server vẫn tự nộp và chấm những lượt đã quá hạn (quét khoảng 30 giây một lần khi có người đang dùng hệ thống; sau 10 phút không có yêu cầu đã đăng nhập nào thì tiến trình nghỉ quét để database miễn phí được ngủ, và quét lại ngay khi có người dùng trở lại. Bài quá hạn vẫn được chấm theo đúng hạn giờ của nó).
 - Câu hỏi gửi xuống cho Student trong lúc làm bài không bao giờ kèm đáp án đúng.
 
 Sau khi nộp bài:

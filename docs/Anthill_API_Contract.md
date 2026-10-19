@@ -17,7 +17,7 @@ Ngày lập: 06/09/2026 · Nguồn: 9 service, ~50 hàm · Hiện tại: **92 en
 | Base URL | `/api` · biến môi trường FE: `VITE_API_BASE_URL` |
 | Xác thực | JWT Bearer. **Mọi endpoint đều yêu cầu token trừ `POST /api/auth/login`** |
 | Đường dẫn | Tiếng Anh, số nhiều, kebab-case: `/api/exam-attempts`, `/api/student-groups` |
-| Kiểm tra sống | `GET /health` (ngoài `/api`, không cần token): **200** `{ status, database, serverTimeUtc }` khi mở được kết nối database, **503** (`status = degraded`) khi không, giới hạn 5 giây. Dùng cho reverse proxy và cho lời gọi đánh thức API ngủ |
+| Kiểm tra sống | `GET /health` (ngoài `/api`, không cần token): **200** `{ status, database, serverTimeUtc }` khi mở được kết nối database, **503** (`status = degraded`) khi không, giới hạn 5 giây. Dùng cho reverse proxy và cho lời gọi đánh thức API ngủ (chạm database nên đánh thức luôn database đang ngủ). `GET /health/live` thì chỉ trả **200** `{ status, serverTimeUtc }` và **không** chạm database: dành cho health check của Render và các dịch vụ giữ thức gọi đều đặn, vì lời gọi đều đặn mà chạm database thì database miễn phí không bao giờ ngủ |
 | Phân trang | Query `page` (1-based), `pageSize`. Trả `{ items, total, page, pageSize }` |
 | Ngày giờ | **ISO 8601 UTC** ở mọi request và response |
 | Lỗi | `{ message: string, errors?: Record<string,string[]> }` — FE đọc trường `message` |

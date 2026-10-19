@@ -25,6 +25,14 @@ public static class ApplicationBuilderExtensions
         app.UseMiddleware<RequestLoggingMiddleware>();
 
     /// <summary>
+    /// Ghi nhận mỗi yêu cầu đã xác thực là "có người đang dùng", để hai tiến trình quét database biết lúc nào nên
+    /// nghỉ. Phải đứng SAU <c>UseAuthentication</c> (cần <c>HttpContext.User</c>) — xem
+    /// <see cref="Middlewares.ApiActivityMiddleware"/>.
+    /// </summary>
+    public static IApplicationBuilder UseApiActivityTracking(this IApplicationBuilder app) =>
+        app.UseMiddleware<ApiActivityMiddleware>();
+
+    /// <summary>
     /// Chặn mọi endpoint nghiệp vụ cho tài khoản đang phải đổi mật khẩu (§5), trừ ba endpoint gắn
     /// <c>[AllowWhileMustChangePassword]</c>. Phải đứng SAU <c>UseAuthentication</c> (cần
     /// <c>HttpContext.User</c> và cờ mà <c>OnTokenValidated</c> ghi vào <c>HttpContext.Items</c>) và

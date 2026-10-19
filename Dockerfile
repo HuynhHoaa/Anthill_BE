@@ -13,7 +13,9 @@ COPY src/Anthill.Domain/Anthill.Domain.csproj src/Anthill.Domain/
 COPY src/Anthill.Application/Anthill.Application.csproj src/Anthill.Application/
 COPY src/Anthill.Infrastructure/Anthill.Infrastructure.csproj src/Anthill.Infrastructure/
 COPY src/Anthill.Api/Anthill.Api.csproj src/Anthill.Api/
-RUN dotnet restore src/Anthill.Api/Anthill.Api.csproj -r linux-musl-x64
+# PublishReadyToRun phải có mặt ngay ở bước restore: gói biên dịch ReadyToRun chỉ được tải khi restore biết trước
+# rằng sẽ publish kiểu này, nếu không `publish --no-restore` dừng với lỗi NETSDK1094.
+RUN dotnet restore src/Anthill.Api/Anthill.Api.csproj -r linux-musl-x64 -p:PublishReadyToRun=true
 
 COPY src ./src
 RUN dotnet publish src/Anthill.Api/Anthill.Api.csproj \

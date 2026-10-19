@@ -62,6 +62,10 @@ app.UseCors(CorsPolicyOptions.PolicyName);
 
 app.UseAuthentication();
 
+// Ngay sau UseAuthentication (cần biết ai đang gọi): mỗi yêu cầu đã đăng nhập báo cho hai tiến trình quét
+// database rằng có người đang dùng. Vắng người thì chúng nghỉ và database miễn phí được ngủ.
+app.UseApiActivityTracking();
+
 // Sau UseAuthentication (cần biết ai đang gọi) và trước UseAuthorization: tài khoản còn phải đổi mật
 // khẩu chỉ đi tiếp được tới ba endpoint gắn [AllowWhileMustChangePassword] (§5).
 app.UseMustChangePasswordGate();
@@ -85,8 +89,16 @@ app.MapHub<NotificationHub>(
     NotificationHub.Route,
     options => options.CloseOnAuthenticationExpiration = true);
 
-// Cho reverse proxy và dịch vụ hosting kiểm tra tiến trình còn sống; cũng là cách nhanh nhất để
-// đối chiếu đồng hồ server khi gỡ lỗi phần hạn giờ làm bài.
+// Hai đường kiểm tra, cho hai việc khác nhau.
+//
+// /health/live chỉ cho biết tiến trình còn sống và KHÔNG chạm database. Dành cho mọi thứ gọi đều đặn suốt ngày
+// đêm: kiểm tra sức khoẻ của Render, UptimeRobot, cron-job.org. Nếu những lời gọi đó chạm database thì database
+// miễn phí (Neon) không bao giờ ngủ được và hết hạn mức giờ thức giữa tháng.
+app.MapGet("/health/live", () => Results.Ok(new { status = "ok", serverTimeUtc = DateTime.UtcNow }))
+    .ExcludeFromDescription();
+
+// /health cho reverse proxy và người gỡ lỗi; cũng là cách nhanh nhất để đối chiếu đồng hồ server khi gỡ lỗi phần
+// hạn giờ làm bài. Frontend gọi nó mỗi lần tải trang để đánh thức API lẫn database đang ngủ.
 //
 // Chạm cả database: trả "ok" khi database không với tới được là báo khoẻ cho một API không làm được
 // việc gì, và lời gọi đánh thức từ frontend sẽ chỉ đánh thức API chứ không đánh thức database ngủ.
