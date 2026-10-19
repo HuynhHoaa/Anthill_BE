@@ -22,6 +22,7 @@ public class UnitOfWork : IUnitOfWork
 
     private IUserRepository? _users;
     private ISubjectRepository? _subjects;
+    private IAcademicTermRepository? _academicTerms;
     private IStudentGroupRepository? _studentGroups;
     private IQuestionRepository? _questions;
     private IExamRepository? _exams;
@@ -29,6 +30,8 @@ public class UnitOfWork : IUnitOfWork
     private IExamAttemptRepository? _examAttempts;
     private IStudentAnswerRepository? _studentAnswers;
     private INotificationRepository? _notifications;
+    private IAccountChangeRepository? _accountChanges;
+    private IGroupChangeRepository? _groupChanges;
 
     public UnitOfWork(AppDbContext context)
     {
@@ -38,6 +41,8 @@ public class UnitOfWork : IUnitOfWork
     public IUserRepository Users => _users ??= new UserRepository(_context);
 
     public ISubjectRepository Subjects => _subjects ??= new SubjectRepository(_context);
+
+    public IAcademicTermRepository AcademicTerms => _academicTerms ??= new AcademicTermRepository(_context);
 
     public IStudentGroupRepository StudentGroups => _studentGroups ??= new StudentGroupRepository(_context);
 
@@ -52,6 +57,10 @@ public class UnitOfWork : IUnitOfWork
     public IStudentAnswerRepository StudentAnswers => _studentAnswers ??= new StudentAnswerRepository(_context);
 
     public INotificationRepository Notifications => _notifications ??= new NotificationRepository(_context);
+
+    public IAccountChangeRepository AccountChanges => _accountChanges ??= new AccountChangeRepository(_context);
+
+    public IGroupChangeRepository GroupChanges => _groupChanges ??= new GroupChangeRepository(_context);
 
     /// <remarks>
     /// Bọc riêng vi phạm ràng buộc duy nhất (SQLSTATE <c>23505</c>) thành

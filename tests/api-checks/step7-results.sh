@@ -22,8 +22,8 @@ cleanup() {
   for id in "${QUESTIONS[@]}"; do [[ "$(call DELETE "/api/questions/$id" "$TEACHER")" == "200" ]] && questions=$((questions + 1)); done
   # Go khoi lop va xoa lop la viec cua quan tri vien: token giao vien nhan 403 va de sot lop thu.
   for id in "${STUDENTS[@]}"; do
-    call DELETE "/api/student-groups/$GROUP_ID/students/$id" "$ADMIN" > /dev/null
-    call PATCH "/api/students/$id/status" "$ADMIN" '{"status":"locked"}' > /dev/null
+    call DELETE "/api/student-groups/$GROUP_ID/students/$id" "$ADMIN" "$REMOVE_BODY" > /dev/null
+    call PATCH "/api/students/$id/status" "$ADMIN" "$LOCK_BODY" > /dev/null
   done
   for id in "${GROUP_IDS[@]}"; do [[ "$(call DELETE "/api/student-groups/$id" "$ADMIN")" == "200" ]] && groups=$((groups + 1)); done
   printf '  xoa %d/%d de · %d/%d cau hoi · %d/%d nhom · khoa %d hoc sinh\n' \

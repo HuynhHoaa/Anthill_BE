@@ -24,6 +24,103 @@ namespace Anthill.Infrastructure.Persistence.Migrations
             NpgsqlModelBuilderExtensions.HasPostgresExtension(modelBuilder, "unaccent");
             NpgsqlModelBuilderExtensions.UseIdentityByDefaultColumns(modelBuilder);
 
+            modelBuilder.Entity("Anthill.Domain.Entities.AcademicTerm", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<DateOnly?>("EndsOn")
+                        .HasColumnType("date");
+
+                    b.Property<bool>("IsCurrent")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(false);
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(100)
+                        .HasColumnType("character varying(100)");
+
+                    b.Property<DateOnly?>("StartsOn")
+                        .HasColumnType("date");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("IsCurrent")
+                        .IsUnique()
+                        .HasDatabaseName("IX_AcademicTerms_IsCurrent")
+                        .HasFilter("\"IsCurrent\" = TRUE");
+
+                    b.HasIndex("Name")
+                        .IsUnique()
+                        .HasDatabaseName("IX_AcademicTerms_Name");
+
+                    b.ToTable("AcademicTerms", (string)null);
+                });
+
+            modelBuilder.Entity("Anthill.Domain.Entities.AccountChange", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<int>("AccountId")
+                        .HasColumnType("integer");
+
+                    b.Property<int?>("ActorUserId")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int?>("FromGroupId")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("FromGroupName")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<string>("Kind")
+                        .IsRequired()
+                        .HasMaxLength(24)
+                        .HasColumnType("character varying(24)");
+
+                    b.Property<string>("Reason")
+                        .HasMaxLength(512)
+                        .HasColumnType("character varying(512)");
+
+                    b.Property<int?>("ToGroupId")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("ToGroupName")
+                        .HasMaxLength(200)
+                        .HasColumnType("character varying(200)");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ActorUserId");
+
+                    b.HasIndex("AccountId", "CreatedAt")
+                        .HasDatabaseName("IX_AccountChanges_AccountId_CreatedAt");
+
+                    b.ToTable("AccountChanges", (string)null);
+                });
+
             modelBuilder.Entity("Anthill.Domain.Entities.AnswerOption", b =>
                 {
                     b.Property<int>("Id")
@@ -505,6 +602,59 @@ namespace Anthill.Infrastructure.Persistence.Migrations
                     b.ToTable("ExamQuestions", (string)null);
                 });
 
+            modelBuilder.Entity("Anthill.Domain.Entities.GroupChange", b =>
+                {
+                    b.Property<int>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("integer");
+
+                    NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
+
+                    b.Property<int?>("ActorUserId")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTime>("CreatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.Property<int?>("FromTeacherId")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("FromTeacherName")
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)");
+
+                    b.Property<int>("GroupId")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("Kind")
+                        .IsRequired()
+                        .HasMaxLength(24)
+                        .HasColumnType("character varying(24)");
+
+                    b.Property<string>("Reason")
+                        .HasMaxLength(512)
+                        .HasColumnType("character varying(512)");
+
+                    b.Property<int?>("ToTeacherId")
+                        .HasColumnType("integer");
+
+                    b.Property<string>("ToTeacherName")
+                        .HasMaxLength(128)
+                        .HasColumnType("character varying(128)");
+
+                    b.Property<DateTime?>("UpdatedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("ActorUserId");
+
+                    b.HasIndex("GroupId", "CreatedAt")
+                        .HasDatabaseName("IX_GroupChanges_GroupId_CreatedAt");
+
+                    b.ToTable("GroupChanges", (string)null);
+                });
+
             modelBuilder.Entity("Anthill.Domain.Entities.Notification", b =>
                 {
                     b.Property<int>("Id")
@@ -681,6 +831,9 @@ namespace Anthill.Infrastructure.Persistence.Migrations
 
                     NpgsqlPropertyBuilderExtensions.UseIdentityByDefaultColumn(b.Property<int>("Id"));
 
+                    b.Property<int?>("AcademicTermId")
+                        .HasColumnType("integer");
+
                     b.Property<DateTime>("CreatedAt")
                         .HasColumnType("timestamp with time zone");
 
@@ -691,8 +844,16 @@ namespace Anthill.Infrastructure.Persistence.Migrations
                         .HasMaxLength(512)
                         .HasColumnType("character varying(512)");
 
+                    b.Property<bool>("IsLocked")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("boolean")
+                        .HasDefaultValue(false);
+
                     b.Property<bool>("IsPublished")
                         .HasColumnType("boolean");
+
+                    b.Property<DateTime?>("LockedAt")
+                        .HasColumnType("timestamp with time zone");
 
                     b.Property<string>("Name")
                         .IsRequired()
@@ -707,6 +868,9 @@ namespace Anthill.Infrastructure.Persistence.Migrations
 
                     b.HasKey("Id");
 
+                    b.HasIndex("AcademicTermId")
+                        .HasDatabaseName("IX_StudentGroups_AcademicTermId");
+
                     b.HasIndex("CreatedByUserId");
 
                     b.HasIndex("IsPublished")
@@ -717,6 +881,25 @@ namespace Anthill.Infrastructure.Persistence.Migrations
                         .HasDatabaseName("IX_StudentGroups_Name");
 
                     b.ToTable("StudentGroups", (string)null);
+                });
+
+            modelBuilder.Entity("Anthill.Domain.Entities.StudentGroupMember", b =>
+                {
+                    b.Property<int>("StudentGroupId")
+                        .HasColumnType("integer");
+
+                    b.Property<int>("StudentId")
+                        .HasColumnType("integer");
+
+                    b.Property<DateTime>("JoinedAt")
+                        .HasColumnType("timestamp with time zone");
+
+                    b.HasKey("StudentGroupId", "StudentId");
+
+                    b.HasIndex("StudentId")
+                        .HasDatabaseName("IX_StudentGroupMembers_StudentId");
+
+                    b.ToTable("StudentGroupMembers", (string)null);
                 });
 
             modelBuilder.Entity("Anthill.Domain.Entities.StudentGroupTeacher", b =>
@@ -818,9 +1001,6 @@ namespace Anthill.Infrastructure.Persistence.Migrations
                         .HasMaxLength(128)
                         .HasColumnType("character varying(128)");
 
-                    b.Property<int?>("GroupId")
-                        .HasColumnType("integer");
-
                     b.Property<bool>("MustChangePassword")
                         .HasColumnType("boolean");
 
@@ -882,9 +1062,6 @@ namespace Anthill.Infrastructure.Persistence.Migrations
                         .IsUnique()
                         .HasDatabaseName("IX_Users_Email");
 
-                    b.HasIndex("GroupId")
-                        .HasDatabaseName("IX_Users_GroupId");
-
                     b.HasIndex("Role")
                         .HasDatabaseName("IX_Users_Role");
 
@@ -898,6 +1075,24 @@ namespace Anthill.Infrastructure.Persistence.Migrations
                         .HasDatabaseName("IX_Users_Status_DeletionRequestedAt");
 
                     b.ToTable("Users", (string)null);
+                });
+
+            modelBuilder.Entity("Anthill.Domain.Entities.AccountChange", b =>
+                {
+                    b.HasOne("Anthill.Domain.Entities.User", "Account")
+                        .WithMany()
+                        .HasForeignKey("AccountId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.HasOne("Anthill.Domain.Entities.User", "Actor")
+                        .WithMany()
+                        .HasForeignKey("ActorUserId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.Navigation("Account");
+
+                    b.Navigation("Actor");
                 });
 
             modelBuilder.Entity("Anthill.Domain.Entities.AnswerOption", b =>
@@ -1044,6 +1239,24 @@ namespace Anthill.Infrastructure.Persistence.Migrations
                     b.Navigation("Question");
                 });
 
+            modelBuilder.Entity("Anthill.Domain.Entities.GroupChange", b =>
+                {
+                    b.HasOne("Anthill.Domain.Entities.User", "Actor")
+                        .WithMany()
+                        .HasForeignKey("ActorUserId")
+                        .OnDelete(DeleteBehavior.SetNull);
+
+                    b.HasOne("Anthill.Domain.Entities.StudentGroup", "Group")
+                        .WithMany()
+                        .HasForeignKey("GroupId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.Navigation("Actor");
+
+                    b.Navigation("Group");
+                });
+
             modelBuilder.Entity("Anthill.Domain.Entities.Notification", b =>
                 {
                     b.HasOne("Anthill.Domain.Entities.User", "Recipient")
@@ -1095,13 +1308,39 @@ namespace Anthill.Infrastructure.Persistence.Migrations
 
             modelBuilder.Entity("Anthill.Domain.Entities.StudentGroup", b =>
                 {
+                    b.HasOne("Anthill.Domain.Entities.AcademicTerm", "AcademicTerm")
+                        .WithMany("Groups")
+                        .HasForeignKey("AcademicTermId")
+                        .OnDelete(DeleteBehavior.Restrict);
+
                     b.HasOne("Anthill.Domain.Entities.User", "CreatedBy")
                         .WithMany("CreatedGroups")
                         .HasForeignKey("CreatedByUserId")
                         .OnDelete(DeleteBehavior.Restrict)
                         .IsRequired();
 
+                    b.Navigation("AcademicTerm");
+
                     b.Navigation("CreatedBy");
+                });
+
+            modelBuilder.Entity("Anthill.Domain.Entities.StudentGroupMember", b =>
+                {
+                    b.HasOne("Anthill.Domain.Entities.StudentGroup", "StudentGroup")
+                        .WithMany("Memberships")
+                        .HasForeignKey("StudentGroupId")
+                        .OnDelete(DeleteBehavior.Cascade)
+                        .IsRequired();
+
+                    b.HasOne("Anthill.Domain.Entities.User", "Student")
+                        .WithMany("GroupMemberships")
+                        .HasForeignKey("StudentId")
+                        .OnDelete(DeleteBehavior.Restrict)
+                        .IsRequired();
+
+                    b.Navigation("Student");
+
+                    b.Navigation("StudentGroup");
                 });
 
             modelBuilder.Entity("Anthill.Domain.Entities.StudentGroupTeacher", b =>
@@ -1130,19 +1369,17 @@ namespace Anthill.Infrastructure.Persistence.Migrations
                         .HasForeignKey("DeletionRequestedByUserId")
                         .OnDelete(DeleteBehavior.Restrict);
 
-                    b.HasOne("Anthill.Domain.Entities.StudentGroup", "Group")
-                        .WithMany("Students")
-                        .HasForeignKey("GroupId")
-                        .OnDelete(DeleteBehavior.SetNull);
-
                     b.HasOne("Anthill.Domain.Entities.Subject", "Subject")
                         .WithMany("Teachers")
                         .HasForeignKey("SubjectId")
                         .OnDelete(DeleteBehavior.Restrict);
 
-                    b.Navigation("Group");
-
                     b.Navigation("Subject");
+                });
+
+            modelBuilder.Entity("Anthill.Domain.Entities.AcademicTerm", b =>
+                {
+                    b.Navigation("Groups");
                 });
 
             modelBuilder.Entity("Anthill.Domain.Entities.Exam", b =>
@@ -1189,7 +1426,7 @@ namespace Anthill.Infrastructure.Persistence.Migrations
 
             modelBuilder.Entity("Anthill.Domain.Entities.StudentGroup", b =>
                 {
-                    b.Navigation("Students");
+                    b.Navigation("Memberships");
 
                     b.Navigation("Teachers");
                 });
@@ -1210,6 +1447,8 @@ namespace Anthill.Infrastructure.Persistence.Migrations
                     b.Navigation("CreatedGroups");
 
                     b.Navigation("CreatedQuestions");
+
+                    b.Navigation("GroupMemberships");
 
                     b.Navigation("Notifications");
 

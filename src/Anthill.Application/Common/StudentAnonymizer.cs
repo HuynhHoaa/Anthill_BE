@@ -92,8 +92,8 @@ public static class StudentAnonymizer
         user.PasswordHash = Guid.NewGuid().ToString("N");
         user.SecurityStamp = Guid.NewGuid().ToString("N");
 
-        // Rời khỏi lớp: sĩ số lớp phải phản ánh số em đang thật sự học ở đó.
-        user.GroupId = null;
+        // Rời khỏi mọi lớp: sĩ số lớp phải phản ánh số em đang thật sự học ở đó. Hàm này chỉ đổi cột trên dòng tài khoản; việc xoá
+        // các dòng thành viên (StudentGroupMember) do chỗ gọi làm, trong cùng transaction.
 
         user.Status = UserStatus.Deleted;
         user.StatusBeforeDeletion = null;

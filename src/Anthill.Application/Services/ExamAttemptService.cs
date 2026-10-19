@@ -120,6 +120,7 @@ public sealed class ExamAttemptService : IExamAttemptService
         var assignments = await _unitOfWork.ExamAssignments.GetForStudentAsync(CurrentStudentId, cancellationToken);
 
         var items = assignments
+            .Where(assignment => query.GroupId is null || assignment.AssignedViaGroupId == query.GroupId)
             .Select(assignment => assignment.ToStudentExamItemDto(asOf))
             .Where(item => status is null || item.Status == status.Value.ToAssignmentStatusString())
             .ToList();

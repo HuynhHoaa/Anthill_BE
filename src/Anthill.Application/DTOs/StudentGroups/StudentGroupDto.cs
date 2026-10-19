@@ -29,6 +29,15 @@ public sealed record StudentGroupDto
     public DateTime? PublishedAt { get; init; }
 
     /// <summary>
+    /// Lớp đã khoá: chỉ đọc. Không xếp thêm em, không giao bài mới, không đổi giáo viên hay sửa lớp; thành viên, lịch sử và
+    /// bảng điểm giữ nguyên, các em trong lớp vẫn học các lớp khác bình thường.
+    /// </summary>
+    public required bool IsLocked { get; init; }
+
+    /// <summary>NULL khi lớp không bị khoá.</summary>
+    public DateTime? LockedAt { get; init; }
+
+    /// <summary>
     /// Giáo viên được phân công phụ trách lớp.
     /// </summary>
     /// <remarks>
@@ -39,6 +48,12 @@ public sealed record StudentGroupDto
     public required IReadOnlyList<GroupTeacherDto> Teachers { get; init; }
 
     public required DateTime CreatedAt { get; init; }
+
+    /// <summary>Kỳ học của lớp; vắng khi lớp chưa phân kỳ.</summary>
+    public int? TermId { get; init; }
+
+    /// <summary>Tên kỳ, đi cùng <see cref="TermId"/>.</summary>
+    public string? TermName { get; init; }
 }
 
 /// <summary>Một giáo viên được phân công vào lớp.</summary>

@@ -14,15 +14,18 @@ public static class UserMappingExtensions
     /// <summary>
     /// Hồ sơ người dùng cho frontend.
     /// <para>
-    /// Tên nhóm và tên môn đọc từ navigation property; truyền
-    /// <paramref name="groupName"/>/<paramref name="subjectName"/> khi gọi từ chỗ không nạp kèm
+    /// Các lớp và tên môn đọc từ navigation property; truyền
+    /// <paramref name="groups"/>/<paramref name="subjectName"/> khi gọi từ chỗ không nạp kèm
     /// hai navigation đó, để tránh lazy loading âm thầm sinh truy vấn N+1.
     /// </para>
     /// <para>
     /// <b>PasswordHash và SecurityStamp không có mặt ở đây, và sẽ không bao giờ có.</b>
     /// </para>
     /// </summary>
-    public static UserProfileDto ToProfileDto(this User user, string? groupName = null, string? subjectName = null)
+    public static UserProfileDto ToProfileDto(
+        this User user,
+        IReadOnlyCollection<StudentGroup>? groups = null,
+        string? subjectName = null)
     {
         ArgumentNullException.ThrowIfNull(user);
 
@@ -34,8 +37,7 @@ public static class UserMappingExtensions
             Email = user.Email,
             Username = user.Username,
             Code = user.Code,
-            Group = groupName ?? user.Group?.Name,
-            GroupId = user.GroupId,
+            Groups = user.Role == UserRole.Student ? ((IEnumerable<StudentGroup>?)groups ?? user.Groups).ToGroupRefDtos() : null,
             Phone = user.Phone,
             Subject = subjectName ?? user.Subject?.Name,
             AvatarColor = user.AvatarColor,

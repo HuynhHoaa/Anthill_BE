@@ -25,10 +25,19 @@ public class ProfileEditPolicyTests
     }
 
     [Fact]
-    public void Quan_tri_vien_sua_duoc_ca_ba_truong()
+    public void Quan_tri_vien_sua_duoc_ho_ten_va_so_dien_thoai()
     {
-        Check(UserRole.Admin, fullName: "Tên khác", email: "khac@truong.edu.vn", phone: "0987654321")
-            .Should().BeEmpty();
+        Check(UserRole.Admin, fullName: "Tên khác", phone: "0987654321").Should().BeEmpty();
+        Check(UserRole.Admin, phone: null).Should().BeEmpty();
+    }
+
+    [Fact]
+    public void Quan_tri_vien_khong_doi_duoc_email()
+    {
+        Check(UserRole.Admin, email: "khac@truong.edu.vn").Should().Equal(ProfileEditPolicy.EmailField);
+
+        // Gõ khác chữ hoa vẫn là cùng một email, không tính là đổi.
+        Check(UserRole.Admin, email: "AN.NV@truong.edu.vn").Should().BeEmpty();
     }
 
     [Fact]

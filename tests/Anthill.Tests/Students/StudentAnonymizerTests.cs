@@ -18,7 +18,6 @@ public class StudentAnonymizerTests
         AvatarColor = "#6366F1",
         PasswordHash = "hash-cu",
         SecurityStamp = "stamp-cu",
-        GroupId = 7,
         Role = UserRole.Student,
         Status = UserStatus.PendingDeletion,
         DeletionReason = "Học sinh chuyển trường từ đầu học kỳ hai.",
@@ -89,17 +88,6 @@ public class StudentAnonymizerTests
         user.SecurityStamp.Should().NotBe("stamp-cu");
         user.PasswordHash.Should().NotBe("hash-cu");
         user.Status.Should().Be(UserStatus.Deleted);
-    }
-
-    /// <summary>Sĩ số lớp phải phản ánh số em đang thật sự học ở đó.</summary>
-    [Fact]
-    public void Anonymize_go_hoc_sinh_khoi_lop()
-    {
-        var user = BuildStudent();
-
-        StudentAnonymizer.Anonymize(user, DateTime.UtcNow);
-
-        user.GroupId.Should().BeNull();
     }
 
     [Fact]

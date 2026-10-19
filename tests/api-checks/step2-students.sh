@@ -23,9 +23,9 @@ cleanup() {
   local members=0 groups=0 locked=0
   for id in "${STUDENT_IDS[@]}"; do
     for gid in "${GROUP_IDS[@]}"; do
-      [[ "$(call DELETE "/api/student-groups/$gid/students/$id" "$ADMIN")" == "200" ]] && members=$((members + 1))
+      [[ "$(call DELETE "/api/student-groups/$gid/students/$id" "$ADMIN" "$REMOVE_BODY")" == "200" ]] && members=$((members + 1))
     done
-    [[ "$(call PATCH "/api/students/$id/status" "$ADMIN" '{"status":"locked"}')" == "200" ]] && locked=$((locked + 1))
+    [[ "$(call PATCH "/api/students/$id/status" "$ADMIN" "$LOCK_BODY")" == "200" ]] && locked=$((locked + 1))
   done
   for id in "${GROUP_IDS[@]}"; do
     [[ "$(call DELETE "/api/student-groups/$id" "$ADMIN")" == "200" ]] && groups=$((groups + 1))
@@ -47,7 +47,7 @@ expect_status "giao vien TAO tai khoan → 403" 403 \
 # Ly do doi nam o luoc do — User.GroupId la khoa ngoai don nen mot hoc sinh thuoc dung mot lop;
 # de giao vien so huu lop thi hai nguoi cung day mot em se gianh nhau em do.
 expect_status "quan tri vien TAO lop → 200" 200 \
-  "$(call POST /api/student-groups "$ADMIN" "{\"name\":\"Lop cua admin $STAMP\"}")"
+  "$(call POST /api/student-groups "$ADMIN" "{\"name\":\"Lop cua admin $STAMP\",\"teacherId\":$DEMO_TEACHER_ID}")"
 expect_status "giao vien TAO lop → 403" 403 \
   "$(call POST /api/student-groups "$TEACHER" "{\"name\":\"Lop cua giao vien $STAMP\"}")"
 expect_status "goi khong token → 401" 401 "$(call GET /api/students "")"
@@ -90,7 +90,7 @@ expect_status "luu lai ma khong doi email → 200" 200 \
 section "Nhom lop"
 # Ten lop duy nhat tren TOAN he thong, khong con trong pham vi tung giao vien.
 expect_status "trung ten lop tren toan he thong → 409" 409 \
-  "$(call POST /api/student-groups "$ADMIN" "{\"name\":\"KT2 $STAMP\"}")"
+  "$(call POST /api/student-groups "$ADMIN" "{\"name\":\"KT2 $STAMP\",\"teacherId\":$DEMO_TEACHER_ID}")"
 expect_status "xoa lop con nguoi → 409" 409 "$(call DELETE "/api/student-groups/$GROUP_ID" "$ADMIN")"
 expect_status "giao vien xoa lop → 403" 403 "$(call DELETE "/api/student-groups/$GROUP_ID" "$TEACHER")"
 # §4.2: nhom cua giao vien khac tra 404 chu khong 403 — 403 la xac nhan id do co that.
@@ -124,7 +124,7 @@ expect_status "loc groupId=0 → 200" 200 "$(call GET "/api/students?groupId=0" 
 section "Khoa tai khoan lam token cu chet ngay"
 VICTIM_TOKEN=$(login "kt${STAMP}b" "123456")
 expect_status "token vua cap dung duoc → 200" 200 "$(call GET /api/auth/me "$VICTIM_TOKEN")"
-expect_status "khoa tai khoan → 200" 200 "$(call PATCH "/api/students/$S2/status" "$ADMIN" '{"status":"locked"}')"
+expect_status "khoa tai khoan → 200" 200 "$(call PATCH "/api/students/$S2/status" "$ADMIN" "$LOCK_BODY")"
 # 403 chu khong 401, va day la phan biet co chu dich:
 #   - Tai khoan bi khoa  -> 403. Server BIET ban la ai, chi la ban khong duoc vao. Thong diep noi
 #     ro phai lien he quan tri vien, vi dang nhap lai cung khong giai quyet duoc gi.

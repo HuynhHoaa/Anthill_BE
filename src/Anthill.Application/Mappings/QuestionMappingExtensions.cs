@@ -62,6 +62,8 @@ public static class QuestionMappingExtensions
             // chuỗi rỗng thay vì ném lỗi, vì một cột hiển thị trống không đáng làm hỏng cả response.
             CreatedBy = question.CreatedBy?.FullName ?? string.Empty,
             CreatedByUserId = question.CreatedByUserId,
+            SubjectId = question.SubjectId,
+            Subject = question.Subject?.Name ?? string.Empty,
             Visibility = question.Visibility.ToVisibilityString(),
             CanEdit = canEdit
         };

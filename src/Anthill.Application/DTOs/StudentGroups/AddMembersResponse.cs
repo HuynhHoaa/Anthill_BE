@@ -10,14 +10,14 @@ namespace Anthill.Application.DTOs.StudentGroups;
 /// trả 200 kèm bảng phân loại dưới đây, thay vì 400 làm hỏng cả mẻ vì một id lạc.
 /// </para>
 /// <para>
-/// Ba con số tách riêng chứ không gộp thành "thất bại" vì chúng dẫn tới ba câu khác nhau trên
+/// Các con số tách riêng chứ không gộp thành "thất bại" vì chúng dẫn tới những câu khác nhau trên
 /// màn hình: em đã ở sẵn trong nhóm là chuyện bình thường, còn id không tồn tại thì danh sách
 /// giáo viên đang nhìn đã cũ và nên tải lại.
 /// </para>
 /// </remarks>
 public sealed record AddMembersResponse
 {
-    /// <summary>Số học sinh thật sự được chuyển vào nhóm ở lần gọi này.</summary>
+    /// <summary>Số học sinh thật sự được xếp thêm vào lớp ở lần gọi này.</summary>
     public required int Added { get; init; }
 
     /// <summary>Đã thuộc nhóm này từ trước — bỏ qua, không tính là lỗi.</summary>

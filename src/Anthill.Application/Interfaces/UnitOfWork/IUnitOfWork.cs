@@ -21,6 +21,8 @@ public interface IUnitOfWork
 
     ISubjectRepository Subjects { get; }
 
+    IAcademicTermRepository AcademicTerms { get; }
+
     IStudentGroupRepository StudentGroups { get; }
 
     IQuestionRepository Questions { get; }
@@ -34,6 +36,10 @@ public interface IUnitOfWork
     IStudentAnswerRepository StudentAnswers { get; }
 
     INotificationRepository Notifications { get; }
+
+    IAccountChangeRepository AccountChanges { get; }
+
+    IGroupChangeRepository GroupChanges { get; }
 
     /// <summary>Số bản ghi đã ghi xuống database.</summary>
     Task<int> SaveChangesAsync(CancellationToken cancellationToken = default);

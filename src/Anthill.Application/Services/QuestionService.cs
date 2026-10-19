@@ -10,7 +10,7 @@ using Anthill.Domain.Enums;
 namespace Anthill.Application.Services;
 
 /// <summary>
-/// Cài đặt <see cref="IQuestionService"/> — tám endpoint của §4.5.
+/// Cài đặt <see cref="IQuestionService"/> — tám endpoint của §4.5 và danh sách môn cho quản trị viên.
 /// </summary>
 /// <remarks>
 /// Bốn điều quyết định nằm ở file này:
@@ -122,9 +122,28 @@ public sealed class QuestionService : IQuestionService
             status,
             query,
             cancellationToken,
-            alreadyAssigned);
+            alreadyAssigned,
+            includePrivateOfOthers: IsAdmin);
 
         return Result.Success(page.Map(question => question.ToDto(CanEdit(question))));
+    }
+
+    /// <inheritdoc />
+    public async Task<Result<IReadOnlyList<SubjectDto>>> ListSubjectsAsync(CancellationToken cancellationToken = default)
+    {
+        // Chỉ quản trị viên cần danh sách này (chọn môn khi tạo câu hỏi, thu hẹp ngân hàng về một môn); giáo viên bị
+        // khoá vào môn của mình nên không có gì để chọn. Controller đã chặn vai trò, đây là hàng rào thứ hai.
+        if (!IsAdmin)
+        {
+            return Result.Forbidden<IReadOnlyList<SubjectDto>>("Chỉ quản trị viên xem được danh sách môn.");
+        }
+
+        var subjects = await _unitOfWork.Subjects.GetAllAsync(cancellationToken);
+
+        return Result.Success<IReadOnlyList<SubjectDto>>(subjects
+            .OrderBy(subject => subject.Name, StringComparer.CurrentCultureIgnoreCase)
+            .Select(subject => new SubjectDto { Id = subject.Id, Name = subject.Name, Code = subject.Code })
+            .ToList());
     }
 
     /// <inheritdoc />
@@ -141,7 +160,8 @@ public sealed class QuestionService : IQuestionService
         var topics = await _unitOfWork.Questions.GetTopicsAsync(
             scope.ValueOrThrow,
             CurrentUserId,
-            cancellationToken);
+            cancellationToken,
+            includePrivateOfOthers: IsAdmin);
 
         return Result.Success(topics);
     }
@@ -163,12 +183,15 @@ public sealed class QuestionService : IQuestionService
         // countByDifficulty() của frontend. Số câu dùng được để sinh đề là chuyện của bước
         // xem trước blueprint, nơi chỉ đếm câu Active.
         var byDifficulty = await _unitOfWork.Questions.CountByDifficultyAsync(
-            scopeSubjectId, CurrentUserId, topic: null, status: null, cancellationToken);
+            scopeSubjectId, CurrentUserId, topic: null, status: null, cancellationToken,
+            includePrivateOfOthers: IsAdmin);
 
         var activeByDifficulty = await _unitOfWork.Questions.CountByDifficultyAsync(
-            scopeSubjectId, CurrentUserId, topic: null, QuestionStatus.Active, cancellationToken);
+            scopeSubjectId, CurrentUserId, topic: null, QuestionStatus.Active, cancellationToken,
+            includePrivateOfOthers: IsAdmin);
 
-        var topics = await _unitOfWork.Questions.GetTopicsAsync(scopeSubjectId, CurrentUserId, cancellationToken);
+        var topics = await _unitOfWork.Questions.GetTopicsAsync(
+            scopeSubjectId, CurrentUserId, cancellationToken, includePrivateOfOthers: IsAdmin);
 
         var total = byDifficulty.Values.Sum();
         var active = activeByDifficulty.Values.Sum();
@@ -531,7 +554,9 @@ public sealed class QuestionService : IQuestionService
 
     /// <summary>Quyền ghi của §6: <c>CreatedByUserId == currentUserId || Role == Admin</c>.</summary>
     private bool CanEdit(Question question) =>
-        _currentUser.IsInRole(UserRole.Admin) || question.CreatedByUserId == CurrentUserId;
+        IsAdmin || question.CreatedByUserId == CurrentUserId;
+
+    private bool IsAdmin => _currentUser.IsInRole(UserRole.Admin);
 
     /// <summary>
     /// Dựng lại đáp án từ request. Thứ tự phần tử trong mảng chính là <c>Ordinal</c> — không nhận

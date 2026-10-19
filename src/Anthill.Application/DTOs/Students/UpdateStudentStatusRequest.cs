@@ -12,4 +12,10 @@ public sealed record UpdateStudentStatusRequest
 {
     /// <summary><c>"active"</c> hoặc <c>"locked"</c>.</summary>
     public required string Status { get; init; }
+
+    /// <summary>
+    /// Lý do khoá. <b>Bắt buộc</b> khi <see cref="Status"/> là <c>"locked"</c> (10–512 ký tự sau khi cắt khoảng
+    /// trắng); mở khoá thì không cần và nếu có gửi cũng không được lưu.
+    /// </summary>
+    public string? Reason { get; init; }
 }

@@ -27,4 +27,7 @@ public sealed class ListMyExamsQuery
     /// dịch phép suy đó thành câu SQL để đổi lấy đúng một lần quét bảng nhỏ là không đáng.
     /// </remarks>
     public string? Status { get; set; }
+
+    /// <summary>Chỉ lấy bài được giao qua lớp này (trang một lớp của học sinh). Bỏ trống là mọi lớp.</summary>
+    public int? GroupId { get; set; }
 }

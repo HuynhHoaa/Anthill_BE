@@ -1,5 +1,6 @@
 using Anthill.Application.DTOs.StudentGroups;
 using Anthill.Domain.Entities;
+using Anthill.Domain.Enums;
 
 namespace Anthill.Application.Mappings;
 
@@ -27,6 +28,8 @@ public static class StudentGroupMappingExtensions
             StudentCount = studentCount,
             IsPublished = group.IsPublished,
             PublishedAt = group.PublishedAt?.ToUtc(),
+            IsLocked = group.IsLocked,
+            LockedAt = group.LockedAt?.ToUtc(),
 
             // Mảng rỗng khi bảng phân công chưa được nạp trông hệt như "chưa có giáo viên nào" —
             // mà đó lại là tín hiệu cảnh báo trên giao diện quản trị. Nên mọi truy vấn phục vụ
@@ -37,7 +40,33 @@ public static class StudentGroupMappingExtensions
                 .OrderBy(teacher => teacher.FullName, StringComparer.CurrentCulture)
                 .ToList(),
 
-            CreatedAt = group.CreatedAt.ToUtc()
+            CreatedAt = group.CreatedAt.ToUtc(),
+            TermId = group.AcademicTermId,
+            TermName = group.AcademicTerm?.Name
+        };
+    }
+
+    /// <summary>Một dòng lịch sử của lớp; <paramref name="change"/> nạp kèm <c>Actor</c>.</summary>
+    public static GroupChangeDto ToDto(this GroupChange change)
+    {
+        ArgumentNullException.ThrowIfNull(change);
+
+        return new GroupChangeDto
+        {
+            Id = change.Id,
+            Kind = change.Kind switch
+            {
+                GroupChangeKind.Created => "created",
+                GroupChangeKind.TeacherChanged => "teacherChanged",
+                GroupChangeKind.Locked => "locked",
+                GroupChangeKind.Unlocked => "unlocked",
+                _ => throw new ArgumentOutOfRangeException(nameof(change), change.Kind, "Loại thay đổi của lớp không hợp lệ.")
+            },
+            Reason = change.Reason,
+            FromTeacher = change.FromTeacherName,
+            ToTeacher = change.ToTeacherName,
+            ActorName = change.Actor?.FullName,
+            CreatedAt = change.CreatedAt.ToUtc()
         };
     }
 

@@ -71,6 +71,28 @@ public class TeacherStudentScopeTests
         CanOpen(student).Should().BeFalse();
     }
 
+    /// <summary>
+    /// Một em học được nhiều lớp cùng lúc: chỉ cần một lớp (đã công bố) do giáo viên này dạy là em nằm trong danh sách, và lớp
+    /// của đồng nghiệp mà em cùng học không làm em biến mất.
+    /// </summary>
+    [Fact]
+    public void Em_hoc_hai_lop_thi_chi_can_mot_lop_cua_minh_la_thay()
+    {
+        var student = StudentIn(Class(published: true, OtherTeacherId), Class(published: true, TeacherId));
+
+        InList(student).Should().BeTrue();
+        CanOpen(student).Should().BeTrue();
+    }
+
+    [Fact]
+    public void Em_hoc_hai_lop_ma_lop_cua_minh_con_la_ban_nhap_thi_khong_thay()
+    {
+        var student = StudentIn(Class(published: true, OtherTeacherId), Class(published: false, TeacherId));
+
+        InList(student).Should().BeFalse();
+        CanOpen(student).Should().BeFalse();
+    }
+
     [Fact]
     public void Lop_nhieu_giao_vien_thi_ai_duoc_phan_cong_cung_thay()
     {
@@ -134,9 +156,19 @@ public class TeacherStudentScopeTests
         SecurityStamp = "x",
         AvatarColor = "#6366F1",
         Role = UserRole.Student,
-        Group = group,
-        GroupId = group is null ? null : 1
+        Groups = group is null ? new List<StudentGroup>() : new List<StudentGroup> { group }
     };
+
+    private static User StudentIn(params StudentGroup[] groups)
+    {
+        var student = StudentIn(group: null);
+        foreach (var group in groups)
+        {
+            student.Groups.Add(group);
+        }
+
+        return student;
+    }
 
     private static ExamAssignment AssignmentOfExamBy(int teacherId) => new()
     {

@@ -23,13 +23,13 @@ cleanup() {
   # Dem va in ma loi: buoc don nay tung im lang nuot 403, nen lop thu nam lai ma khong ai hay.
   local members=0 groups=0 code
   for id in "${STUDENTS[@]}"; do
-    code=$(call DELETE "/api/student-groups/$GROUP_ID/students/$id" "$ADMIN")
+    code=$(call DELETE "/api/student-groups/$GROUP_ID/students/$id" "$ADMIN" "$REMOVE_BODY")
     if [[ "$code" == "200" ]]; then
       members=$((members + 1))
     else
       printf '  khong go duoc hoc sinh %s khoi lop: HTTP %s — %s\n' "$id" "$code" "$(body | head -c 160)"
     fi
-    call PATCH "/api/students/$id/status" "$ADMIN" '{"status":"locked"}' > /dev/null
+    call PATCH "/api/students/$id/status" "$ADMIN" "$LOCK_BODY" > /dev/null
   done
   for id in "${GROUP_IDS[@]}"; do
     code=$(call DELETE "/api/student-groups/$id" "$ADMIN")

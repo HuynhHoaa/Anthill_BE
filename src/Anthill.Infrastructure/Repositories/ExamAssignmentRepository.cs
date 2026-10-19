@@ -21,13 +21,25 @@ public class ExamAssignmentRepository : GenericRepository<ExamAssignment>, IExam
             .AsNoTrackingWithIdentityResolution()
             .Include(a => a.Exam)
             .Include(a => a.Student)
-                .ThenInclude(s => s.Group)
+            .Include(a => a.AssignedViaGroup)
             .Include(a => a.Attempt)
             // Chỉ hàng bản đề (không nạp câu hỏi): để biết mã đề của từng em khi đề được chia thành nhiều đề.
             .Include(a => a.Paper)
             .Where(a => a.ExamId == examId)
             .OrderBy(a => a.Student.Code)
             .ThenBy(a => a.Id)
+            .ToListAsync(cancellationToken);
+
+    public async Task<IReadOnlyList<ExamAssignment>> GetByGroupAsync(
+        int groupId,
+        CancellationToken cancellationToken = default) =>
+        await DbSet
+            // Nhiều dòng cùng một đề: giữ một thể hiện Exam chung thay vì chép ra N bản.
+            .AsNoTrackingWithIdentityResolution()
+            .Include(a => a.Exam)
+                .ThenInclude(e => e.CreatedBy)
+            .Include(a => a.Attempt)
+            .Where(a => a.AssignedViaGroupId == groupId)
             .ToListAsync(cancellationToken);
 
     public async Task<ExamAssignment?> GetByExamAndStudentAsync(
@@ -195,6 +207,9 @@ public class ExamAssignmentRepository : GenericRepository<ExamAssignment>, IExam
             .Include(a => a.Exam)
                 .ThenInclude(e => e.CreatedBy)
             .Include(a => a.Attempt)
+            // Tên lớp đã giao bài: học sinh không đọc nó, nhưng danh sách bài của một em mà quản trị viên xem cần
+            // cho biết bài đến từ lớp nào.
+            .Include(a => a.AssignedViaGroup)
             .Where(a => a.StudentId == studentId)
             .OrderByDescending(a => a.AssignedAt)
             .ThenByDescending(a => a.Id)
@@ -229,6 +244,34 @@ public class ExamAssignmentRepository : GenericRepository<ExamAssignment>, IExam
         await DbSet
             .FromSql($"""SELECT * FROM "ExamAssignments" WHERE "ExamId" = {examId} ORDER BY "Id" FOR UPDATE""")
             .ToListAsync(cancellationToken);
+
+    /// <remarks>
+    /// Khoá trước, nạp đề và lượt làm bài sau: hai phép nạp dưới đây là câu lệnh mới, nên ở READ COMMITTED
+    /// chúng thấy lượt làm bài mà một em vừa commit trong lúc lệnh này còn xếp hàng chờ khoá. EF tự nối đề và
+    /// lượt làm bài vào đúng dòng giao bài vì cả ba đều đang được theo dõi. Cùng lý do với
+    /// <see cref="LockByExamAsync"/> về thứ tự khoá và việc không nối thêm toán tử LINQ vào câu lệnh khoá.
+    /// </remarks>
+    public async Task<IReadOnlyList<ExamAssignment>> LockByStudentAsync(
+        int studentId,
+        CancellationToken cancellationToken = default)
+    {
+        var rows = await DbSet
+            .FromSql($"""SELECT * FROM "ExamAssignments" WHERE "StudentId" = {studentId} ORDER BY "Id" FOR UPDATE""")
+            .ToListAsync(cancellationToken);
+
+        if (rows.Count == 0)
+        {
+            return rows;
+        }
+
+        var assignmentIds = rows.Select(assignment => assignment.Id).ToList();
+        var examIds = rows.Select(assignment => assignment.ExamId).Distinct().ToList();
+
+        await Context.Exams.Where(exam => examIds.Contains(exam.Id)).LoadAsync(cancellationToken);
+        await Context.ExamAttempts.Where(attempt => assignmentIds.Contains(attempt.AssignmentId)).LoadAsync(cancellationToken);
+
+        return rows;
+    }
 
     /// <inheritdoc />
     public async Task<ExamAssignment?> LockForStartAsync(
@@ -311,11 +354,6 @@ public class ExamAssignmentRepository : GenericRepository<ExamAssignment>, IExam
         await entry.Reference(a => a.Attempt).LoadAsync(cancellationToken);
         await entry.Reference(a => a.AssignedViaGroup).LoadAsync(cancellationToken);
         await entry.Reference(a => a.Student).LoadAsync(cancellationToken);
-
-        if (assignment.Student is not null)
-        {
-            await Context.Entry(assignment.Student).Reference(s => s.Group).LoadAsync(cancellationToken);
-        }
 
         return assignment;
     }

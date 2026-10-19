@@ -4,12 +4,14 @@
 
 Anthill là hệ thống kiểm tra trắc nghiệm trực tuyến dành cho một tổ chức giáo dục — trường học hoặc trung tâm dạy thêm. Toàn bộ việc kiểm tra của đơn vị diễn ra trên cùng một hệ thống; tài khoản, lớp học và quyền hạn thuộc về tổ chức chứ không thuộc về từng người dùng. Hệ thống phục vụ 3 nhóm người dùng: **Admin**, **Teacher** và **Student**.
 
-Admin là hiệu trưởng hoặc giám đốc trung tâm: lập lớp học, xếp học sinh vào lớp, phân công giáo viên phụ trách lớp và quản lý tài khoản học sinh. Teacher chỉ làm việc với những lớp đã công bố và được phân công cho mình: soạn ngân hàng câu hỏi theo môn, phân loại câu hỏi theo mức độ khó, tạo bài kiểm tra theo tỷ lệ câu dễ / trung bình / khó, giao bài cho lớp hoặc từng Student (mỗi lớp có thể có khung giờ làm bài riêng) và theo dõi kết quả. Student đăng nhập bằng tài khoản do Admin cấp để xem bài kiểm tra được giao, làm bài và xem kết quả sau khi nộp.
+Admin là hiệu trưởng hoặc giám đốc trung tâm: lập lớp học, xếp học sinh vào lớp, chọn giáo viên phụ trách lớp (mỗi lớp đúng một giáo viên), quản lý tài khoản học sinh và giáo viên, và nhập danh sách học sinh, giáo viên, lớp từ file Excel. Teacher chỉ làm việc với những lớp đã công bố và được phân công cho mình: soạn ngân hàng câu hỏi theo môn, phân loại câu hỏi theo mức độ khó, tạo bài kiểm tra theo tỷ lệ câu dễ / trung bình / khó, giao bài cho lớp hoặc từng Student (mỗi lớp có thể có khung giờ làm bài riêng), theo dõi kết quả và xuất bảng điểm lớp ra Excel. Student đăng nhập bằng tài khoản do Admin cấp để xem bài kiểm tra được giao, làm bài, xem kết quả sau khi nộp và xuất bảng điểm của chính mình ra Excel.
 
 Phạm vi hệ thống không tập trung vào quản lý khóa học hay bài học. Trọng tâm chính là:
 
-- Quản lý lớp học và phân công giáo viên.
-- Quản lý tài khoản Student.
+- Quản lý lớp học và giáo viên phụ trách lớp.
+- Quản lý tài khoản Student và Teacher.
+- Nhập hàng loạt từ file Excel, ưu tiên **một file duy nhất cho cả trường** (giáo viên chủ nhiệm, lớp và học sinh), ngoài ra nhập riêng từng thứ.
+- Xuất bảng điểm ra Excel: Student xuất bảng điểm của mình, Teacher xuất bảng điểm của lớp mình dạy.
 - Quản lý ngân hàng câu hỏi.
 - Tạo bài kiểm tra từ ngân hàng câu hỏi.
 - Giao bài kiểm tra cho lớp hoặc Student, với lịch làm bài riêng cho từng lớp.
@@ -29,7 +31,7 @@ Các role chính:
 
 | Role | Mô tả |
 |---|---|
-| Admin | Hiệu trưởng / giám đốc trung tâm. Lập và công bố lớp, xếp Student vào lớp, phân công Teacher, quản lý tài khoản Student |
+| Admin | Hiệu trưởng / giám đốc trung tâm. Lập và công bố lớp, xếp Student vào lớp, chọn Teacher phụ trách lớp, quản lý tài khoản Student và Teacher, nhập danh sách từ Excel, quản lý ngân hàng câu hỏi của mọi môn, xem hồ sơ và bài làm của Student (chỉ đọc) |
 | Teacher | Tạo câu hỏi, tạo bài kiểm tra, giao bài cho lớp được phân công, xem kết quả |
 | Student | Xem bài kiểm tra được giao, làm bài, nộp bài, xem kết quả |
 
@@ -40,11 +42,11 @@ Chức năng chính:
 - Trang đăng nhập có lựa chọn vai trò; server đối chiếu với vai trò lưu trong database và từ chối nếu không khớp.
 - Tài khoản bị khóa, đang chờ xóa hoặc đã xóa không đăng nhập được.
 - Hệ thống điều hướng dashboard theo role.
-- Người dùng xem được hồ sơ của mình và đổi mật khẩu (phải nhập đúng mật khẩu hiện tại). Thông tin liên hệ do nhà trường (Admin) quản lý: Teacher chỉ tự sửa được họ tên, còn email, số điện thoại và môn giảng dạy do Admin đổi; Student không tự sửa trường nào (họ tên, email, số điện thoại, mã học sinh, lớp đều do Admin giữ — Stage 2). Giao diện hiện các trường đó ở dạng chỉ xem kèm dòng giải thích, và server từ chối giá trị khác đi.
+- Người dùng xem được hồ sơ của mình và đổi mật khẩu (phải nhập đúng mật khẩu hiện tại). **Email không ai tự đổi được, kể cả Admin** (Admin tự sửa được họ tên và số điện thoại của mình). Thông tin liên hệ do nhà trường (Admin) quản lý: Teacher chỉ tự sửa được họ tên, còn email, số điện thoại và môn giảng dạy do Admin đổi; Student không tự sửa trường nào (họ tên, email, số điện thoại, mã học sinh, lớp đều do Admin giữ — Stage 2). Giao diện hiện các trường đó ở dạng chỉ xem kèm dòng giải thích, và server từ chối giá trị khác đi.
 - Hệ thống kiểm tra quyền truy cập theo role ở server; giao diện chỉ làm nhiệm vụ điều hướng.
 - Khóa tài khoản, đổi mật khẩu hoặc Admin cấp lại mật khẩu làm mọi phiên đăng nhập đang mở của tài khoản đó mất hiệu lực ngay; giao diện đưa người dùng về trang đăng nhập.
 
-Tài khoản Teacher và danh mục môn học hiện được tạo sẵn trong dữ liệu khởi tạo; hệ thống chưa có chức năng quản lý tài khoản Teacher (nên cũng chưa có màn hình để Admin đổi email, số điện thoại hay môn của Teacher).
+Tài khoản Teacher do Admin tạo và quản lý (xem Stage 3); danh mục môn học được tạo sẵn trong dữ liệu khởi tạo.
 
 ---
 
@@ -57,8 +59,9 @@ Chức năng chính:
 - Admin tạo tài khoản Student kèm mật khẩu ban đầu.
 - Admin xem danh sách Student, có phân trang, lọc theo lớp và trạng thái tài khoản.
 - Admin tìm kiếm Student theo họ tên, email, username hoặc mã học sinh (không phân biệt dấu và chữ hoa/thường).
-- Admin chỉnh sửa thông tin Student (họ tên, email, số điện thoại không bắt buộc, tên đăng nhập, mã học sinh) và xếp Student vào lớp. Số điện thoại của Student chỉ Admin thấy và sửa; Teacher không nhận trường này.
-- Admin khóa hoặc mở khóa tài khoản Student.
+- Admin chỉnh sửa thông tin Student (họ tên, email, số điện thoại không bắt buộc, tên đăng nhập, mã học sinh). Đổi lớp và khóa tài khoản không nằm trong form sửa mà là thao tác riêng, đều bắt buộc lý do (xem bên dưới và Stage 3). Số điện thoại của Student chỉ Admin thấy và sửa; Teacher không nhận trường này.
+- Admin khóa tài khoản Student và **bắt buộc** nhập lý do (10–512 ký tự); mở khóa thì không cần lý do.
+- Admin mở hồ sơ một Student để xem thông tin, **mọi bài kiểm tra đã giao cho em** (kể cả bài em chưa làm hoặc đã hết hạn mà không làm), điểm, bài làm của em (chỉ đọc) và lịch sử thay đổi của em. Em nghỉ học mà không ai gỡ khỏi lớp thì những bài sau của lớp vẫn hiện ở đây với trạng thái chưa làm hoặc hết hạn, để người quản lý thấy em vắng.
 - Admin cấp lại mật khẩu cho Student quên mật khẩu. Mật khẩu mới chỉ hiển thị đúng một lần.
 - Admin xóa tài khoản Student theo cơ chế xóa mềm mô tả bên dưới.
 - Email, username và mã học sinh không được trùng với tài khoản khác.
@@ -69,6 +72,11 @@ Xóa tài khoản Student:
 - Tài khoản chờ xóa không đăng nhập được, phiên đang mở bị hủy ngay, và không còn xuất hiện ở các danh sách vận hành như xếp lớp hay giao bài.
 - Trong vòng **60 ngày** kể từ ngày yêu cầu xóa, Admin có thể khôi phục tài khoản. Danh sách hiển thị hạn khôi phục của từng tài khoản.
 - Hết 60 ngày, tiến trình nền tự động xóa dữ liệu cá nhân (họ tên, email, username, mã học sinh, số điện thoại) và gỡ tài khoản khỏi lớp. Lượt làm bài và điểm số được **giữ nguyên**, hiển thị dưới tên "Học sinh đã xoá", để bảng điểm của lớp không bị thiếu dòng. Lý do xóa được giữ lại. Sau bước này tài khoản không khôi phục được nữa.
+
+Lịch sử thay đổi của Student:
+
+- Mỗi lần khóa, mở khóa, yêu cầu xóa, khôi phục, xếp lớp, gỡ khỏi lớp hoặc chuyển lớp đều được ghi lại: ai làm, lúc nào, lý do, lớp cũ và lớp mới (tên lớp ghi đúng như lúc xảy ra, kể cả khi lớp sau này đổi tên hay bị xóa).
+- Lịch sử chỉ thêm, không sửa, không xóa; được ghi cùng lúc với thay đổi nên không có thay đổi nào thiếu dấu vết. Cũng như lý do xóa tài khoản, lịch sử được giữ lại sau khi dữ liệu cá nhân bị xóa.
 
 Thông tin Student gồm:
 
@@ -93,24 +101,55 @@ Trạng thái tài khoản:
 
 ### Stage 3: Class Management & Teacher Assignment
 
-Lớp học là đơn vị hành chính của tổ chức, do Admin lập. Mỗi Student thuộc tối đa một lớp.
+Lớp học là đơn vị hành chính của tổ chức, do Admin lập. **Một Student học được nhiều lớp cùng lúc** (ví dụ lớp chính khoá và lớp bồi dưỡng): các lớp độc lập nhau, vào hay rời lớp này không đụng tới lớp kia. Lớp không có trạng thái "kết thúc"; lớp hết dùng thì Admin **khóa** để lớp chỉ còn xem được.
 
 Chức năng chính:
 
-- Admin tạo lớp, đổi tên và mô tả lớp. Tên lớp không được trùng trong toàn hệ thống.
-- Lớp mới tạo ở trạng thái nháp (Draft). Admin công bố lớp (Publish) khi đã sẵn sàng, và có thể đưa lớp đã công bố trở lại nháp (Unpublish). Giao diện cảnh báo khi công bố một lớp chưa có Student hoặc chưa có Teacher, nhưng không cấm.
-- Admin thêm nhiều Student vào lớp trong một lần. Thêm Student đang thuộc lớp khác nghĩa là chuyển lớp.
-- Admin gỡ Student khỏi lớp; tài khoản Student giữ nguyên.
-- Admin phân công một hoặc nhiều Teacher phụ trách lớp, và gỡ phân công. Tài khoản Teacher đang bị khóa không phân công được. Gỡ Teacher khỏi lớp không ảnh hưởng tới bài đã giao.
+- Admin tạo lớp, đổi tên và mô tả lớp. Tên lớp không được trùng trong toàn hệ thống. Lúc tạo lớp Admin **chọn luôn Teacher phụ trách**: mỗi lớp có **đúng một** Teacher, không có lớp "chưa ai dạy".
+- Lớp mới tạo ở trạng thái nháp (Draft). Admin công bố lớp (Publish) khi đã sẵn sàng, và có thể đưa lớp đã công bố trở lại nháp (Unpublish). Công bố một lớp chưa có Teacher bị từ chối; giao diện chỉ cảnh báo khi lớp chưa có Student, nhưng không cấm.
+- Admin thêm nhiều Student vào lớp trong một lần, không cần lý do. Student đang học lớp khác vẫn thêm được: thêm vào đây không kéo em ra khỏi lớp nào; chỉ Student đã học lớp này rồi hay tài khoản đang chờ xóa bị bỏ qua.
+- Admin chuyển Student từ lớp này sang lớp khác (gỡ khỏi lớp cũ rồi xếp vào lớp mới trong một bước) và **bắt buộc** nhập lý do (10–512 ký tự). Làm được kể cả khi Student đã làm bài; không chuyển vào lớp Student đã học rồi (muốn rời lớp thì gỡ).
+- Admin gỡ Student khỏi **một** lớp và **bắt buộc** nhập lý do; các lớp khác và tài khoản Student giữ nguyên.
+- Admin quản lý danh mục **kỳ học** (học kỳ ở đại học, hay cấp lớp ở phổ thông: "Lớp 11", "Lớp 12") và gán kỳ cho từng lớp, không bắt buộc. Một kỳ được đánh dấu "kỳ hiện tại" (tối đa một). Kỳ chỉ để gom lớp và lọc: không đổi nghiệp vụ nào của lớp hay của Teacher; không xoá được kỳ còn lớp. Lớp chưa gán kỳ vẫn dùng bình thường.
+- Admin **khóa lớp** và **bắt buộc** nhập lý do (10–512 ký tự, lưu vào lịch sử của lớp); mở khóa thì không cần lý do. Lớp khóa là lớp chỉ đọc: không thêm, gỡ hay chuyển Student vào ra lớp, không giao bài mới, không sửa lớp, không đổi Teacher, không đưa về nháp. Thành viên, bài đã giao và bảng điểm giữ nguyên; các em trong lớp vẫn học các lớp khác và vẫn làm nốt những bài đã giao. Lớp khóa vẫn xuất được bảng điểm. Lớp khóa không còn Student thì xóa được như lớp thường.
+- Admin đổi Teacher phụ trách giữa chừng và **bắt buộc** nhập lý do (10–512 ký tự); lý do được lưu vào lịch sử của lớp cùng tên Teacher cũ, Teacher mới và người thực hiện. Lớp chưa có Teacher (lớp cũ) hay chọn lại đúng người đang phụ trách thì không cần lý do. Tài khoản Teacher đang bị khóa không được giao lớp. Đổi Teacher không ảnh hưởng tới bài đã giao.
 - Admin chỉ xóa được lớp không còn Student. Xóa lớp không xóa tài khoản Student.
-- Teacher chỉ thấy những lớp **đã công bố và được phân công cho mình**, ở chế độ chỉ đọc (thông tin lớp và danh sách Student). Lớp nháp hoặc lớp không được phân công không hiển thị với Teacher và không giao bài được.
+- Teacher chỉ thấy những lớp **đã công bố và được phân công cho mình**, ở chế độ chỉ đọc (thông tin lớp và danh sách Student), có thêm tab **"Bài kiểm tra trong lớp"** liệt kê các bài đã giao cho lớp (tên bài, người soạn, khung giờ của lớp, số em đã nộp trên số em được giao, điểm trung bình, trạng thái; **mọi điểm trung bình trong ứng dụng (hồ sơ Student, đầu trang lớp, tab này) tính 0 điểm cho bài đã giao mà chưa làm**, giống bảng điểm Excel) để biết lớp đã được giao bao nhiêu bài, và xuất được bảng điểm của lớp (xem Stage 8). Lớp nháp hoặc lớp không được phân công không hiển thị với Teacher và không giao bài được.
+- Danh sách lớp của Admin chỉ để xem và lập lớp mới. Sửa, công bố và xóa lớp làm ở trang quản lý của lớp (bấm vào dòng hoặc nút Quản lý), để một cú bấm nhầm trên danh sách không xóa hay công bố nhầm cả một lớp. Trang quản lý của lớp có ba phần: học sinh (kèm điểm trung bình và số bài đã làm của từng em, mở hồ sơ từng em), bài kiểm tra đã giao cho lớp (kể cả đề cũ; mở từng đề để xem kết quả từng em) và thiết lập lớp (Teacher phụ trách và lịch sử lớp, sửa, công bố, khóa và mở khóa, xóa).
+
+Quy tắc khi học sinh rời lớp:
+
+- Student đã làm bài vẫn chuyển lớp, gỡ khỏi lớp và xếp vào lớp nào cũng được (kèm lý do khi chuyển và gỡ). Kết quả bài đã làm giữ nguyên.
+- Gỡ khỏi lớp hay chuyển lớp **thu hồi** những bài **giao qua lớp rời đi** mà em chưa bắt đầu và chưa hết hạn; bài giao qua các lớp khác của em không bị đụng tới. Bài em đã bắt đầu và bài đã hết hạn mà em không làm được giữ nguyên (kết quả đã có, và bằng chứng em vắng mặt). Em không tự nhận những bài đã giao cho lớp mới; Teacher giao lại cho lớp nếu muốn em làm.
+- Khóa tài khoản, yêu cầu xóa tài khoản, gỡ khỏi lớp, chuyển lớp, khóa lớp và đổi Teacher phụ trách đều bắt buộc lý do; hộp nhập lý do không cho xác nhận khi lý do còn ngắn và nói rõ còn thiếu bao nhiêu ký tự.
+
+Tài khoản Teacher:
+
+- Admin tạo tài khoản Teacher kèm mật khẩu ban đầu, **số điện thoại** và **môn giảng dạy** (cả hai bắt buộc; nhà trường cần liên lạc được với giáo viên). Email là tên đăng nhập; email không được trùng với bất kỳ định danh nào đang có (email, username, mã học sinh). Teacher bị ép đổi mật khẩu ở lần đăng nhập đầu.
+- Admin xem danh sách Teacher (phân trang, tìm theo họ tên không dấu, email, số điện thoại; lọc theo trạng thái và môn), mở hồ sơ để xem các lớp đang phụ trách và lịch sử khóa.
+- Admin sửa họ tên, email, số điện thoại và môn của Teacher (số điện thoại không được để trống; Teacher cũ chưa có số thì nhập số ở lần sửa kế tiếp). Đổi môn bị chặn khi Teacher đã soạn câu hỏi hoặc đề, vì ngân hàng câu hỏi và việc sinh đề chia theo môn của người soạn.
+- Admin khóa Teacher và **bắt buộc** nhập lý do (10–512 ký tự); mở khóa thì không cần lý do. Khóa làm mọi phiên đang mở của Teacher mất hiệu lực ngay. Lịch sử khóa và mở khóa được ghi lại như với Student.
+- Admin cấp lại mật khẩu cho Teacher quên mật khẩu; mật khẩu mới chỉ hiển thị đúng một lần.
+- Không có xóa Teacher: Teacher sở hữu câu hỏi, đề và lịch sử giao bài. Teacher nghỉ việc thì khóa tài khoản rồi đổi Teacher phụ trách của các lớp họ đang dạy.
+
+Nhập từ Excel:
+
+- **Nhập danh sách trường từ một file** (đường chính): trường thường giữ một danh sách duy nhất, nên Admin tải **một** file mẫu, mỗi dòng là một Student kèm lớp và giáo viên chủ nhiệm của lớp đó (mã, họ tên, lớp, tên giáo viên chủ nhiệm, email và số điện thoại giáo viên; email, số điện thoại và tên đăng nhập của Student không bắt buộc). Một lần tải lên tạo Teacher, tạo lớp (kèm Teacher chủ nhiệm) và tạo Student, xếp Student vào lớp; sau đó mỗi thứ được quản lý ở trang riêng. Lớp và Teacher suy ra từ chính các dòng: cùng tên lớp là một lớp, cùng email là một Teacher; thông tin Teacher chỉ cần điền một lần cho mỗi lớp, hai Teacher khác nhau ở cùng một lớp thì dòng sau bị báo lỗi. Lớp mới ở trạng thái nháp, trừ khi Admin chọn công bố ngay. Một mật khẩu ban đầu dùng chung cho mọi tài khoản mới. File được đọc như trường vẫn soạn: ô gộp (merge) cho lớp và giáo viên cả nhóm dòng vẫn hiểu đúng. Môn của Teacher đọc từ chính file (không có ô chọn môn riêng khi nhập); môn chưa có trong hệ thống được tạo mới và bước xem trước liệt kê để Admin soát chính tả.
+- Lỗi ở Teacher hay lớp thì các Student của lớp đó chưa được xếp (nguyên nhân gốc báo một lần, các dòng còn lại trỏ về dòng gốc); các dòng khác vẫn nhập. Xem trước chạy đúng như nhập thật rồi hoàn tác, nên con số xem trước là con số sẽ xảy ra, và Admin còn thấy danh sách từng lớp để soát trước khi nhập: mỗi lớp một tab, đầu tab ghi Teacher phụ trách và môn, thân tab là danh sách Student của lớp (cuộn trong khung, có ô tìm trong mọi lớp, ai đã có sẵn thì có nhãn), đủ dùng với file hàng chục nghìn dòng.
+- Mỗi kỳ có vài nghìn Student nên Admin không phải nhập tay: Admin tải file mẫu, điền rồi nhập cả Student, Teacher và lớp bằng file Excel (.xlsx; tối đa 5000 dòng Student, 1000 Teacher, 500 lớp mỗi lần, hoặc 20000 dòng khi nhập cả trường bằng một file; file không quá 5 MB).
+- Nhập hai bước trong một hộp thoại: kiểm tra file và xem trước (bao nhiêu tài khoản mới, bao nhiêu em được xếp lớp, bao nhiêu dòng đã có, bao nhiêu dòng lỗi), rồi mới nhập. Dòng lỗi không chặn cả mẻ: các dòng hợp lệ vẫn được nhập, dòng lỗi được liệt kê kèm số dòng trong file và lý do; Admin có thể tải danh sách lỗi, sửa file rồi nhập lại nguyên file (dòng đã nhập được nhận ra, không báo trùng).
+- File chỉ cần mã học sinh và họ tên; email, số điện thoại, tên đăng nhập và lớp có thể để trống. Tên đăng nhập để trống thì dùng mã học sinh; email để trống thì hệ thống cấp một email tạm. Mật khẩu ban đầu dùng chung cho cả đợt, nhập một lần; mỗi tài khoản mới bị ép đổi mật khẩu ở lần đăng nhập đầu.
+- Học sinh có mã đã tồn tại không bị sửa hồ sơ; em được xếp **thêm** vào lớp ghi trong file nếu chưa học lớp đó (không rời lớp nào đang học). Lớp đã khóa không nhận thêm em: dòng ghi lớp đó báo lỗi, các dòng khác vẫn nhập. Chuyển hay gỡ khỏi lớp không làm bằng file: làm ở hồ sơ và phải ghi lý do.
+- Nhập lớp: mỗi dòng có tên lớp và email của đúng một Teacher đang hoạt động; lớp mới ở trạng thái nháp. Lớp đã có mà khác Teacher thì báo lỗi (đổi Teacher phải ghi lý do ở trang lớp).
 
 Trạng thái lớp:
 
 | Status | Ý nghĩa |
 |---|---|
 | Draft | Admin đang dựng lớp, Teacher chưa thấy |
-| Published | Đã công bố, Teacher được phân công thấy và giao bài được |
+| Published | Đã công bố, Teacher phụ trách thấy và giao bài được |
+
+Khóa là một cờ riêng, độc lập với Draft / Published: lớp Published bị khóa vẫn hiện với Teacher (xem được danh sách và bảng điểm) nhưng không giao bài mới được.
 
 ---
 
@@ -134,10 +173,11 @@ Chức năng chính:
 - Teacher có thể thêm hình ảnh vào câu hỏi.
 - Teacher có thể thêm hình ảnh vào đáp án nếu cần.
 - Teacher tìm kiếm và lọc câu hỏi theo từ khóa, chủ đề, mức độ khó, trạng thái.
+- Admin quản lý ngân hàng của **mọi môn** trong cùng một màn hình: xem cả câu Private của Teacher, lọc thêm theo môn, thấy người soạn từng câu; tạo câu hỏi mới (phải chọn môn, môn không đổi được sau đó); sửa, ẩn hoặc xóa câu của bất kỳ ai. Hộp xác nhận ẩn và xóa nói rõ câu của Teacher nào.
 
 Quy tắc:
 
-- Câu hỏi đã nằm trong một đề đã sinh thì không xóa được, chỉ ẩn được.
+- Câu hỏi đã nằm trong một đề đã sinh thì không xóa được, chỉ ẩn được — kể cả khi người xóa là Admin. Giao diện Teacher không có nút xóa (ẩn đã đủ); giao diện Admin có.
 - Ẩn câu hỏi chỉ loại câu đó khỏi các lần sinh đề sau; đề đã sinh không thay đổi.
 - Sửa câu hỏi không làm thay đổi điểm của các bài đã chấm, vì bài làm được chấm theo bản chụp của đề đã sinh.
 - Hình ảnh phải được tải lên server trước qua API upload (PNG, JPEG, GIF, WebP); câu hỏi và đáp án chỉ lưu đường dẫn ảnh, server không nhận ảnh nhúng dạng data URI. Ảnh được tải lên ngay khi Teacher chọn; trong lúc ảnh còn đang tải, câu hỏi chưa lưu được.
@@ -334,7 +374,9 @@ Student có thể xem danh sách bài kiểm tra được giao và thực hiện
 
 Chức năng chính:
 
-- Student xem danh sách bài kiểm tra được giao cho chính mình, chia theo nhóm: đang mở, sắp tới, đã xong, hết hạn.
+- **"Lớp học của tôi"**: Student vào xem các lớp mình đang học (lớp đã công bố; lớp đã khoá vẫn xem lại được), **lọc theo kỳ học** (mở sẵn kỳ hiện tại; chọn "Tất cả các kỳ" hay kỳ khác; lớp chưa phân kỳ nằm ở mục "Chưa phân kỳ"; Student chỉ có một kỳ thì không có ô lọc). Mỗi lớp ghi giáo viên, môn, sĩ số và tiến độ làm bài. Bấm vào một lớp thì thấy thông tin lớp và **mọi bài kiểm tra của mình ở lớp đó**, kể cả bài đã làm và bài hết hạn, chia theo nhóm: đang mở, sắp tới, đã xong, hết hạn. Bài đã nộp có nút xem lại kết quả và đáp án (khi Teacher cho xem) để tự học lại; thẻ bài và bảng điểm luôn ghi rõ bài của lớp nào.
+- **Đang trong giờ làm bài thì không rời trang làm bài được**: nút Back của trình duyệt và các liên kết bị chặn kèm một thông báo nhắc nộp bài; chuyển giữa các câu trong bài vẫn bình thường. Chỉ nộp bài (hoặc hết giờ tự nộp) mới đi tiếp. Đóng tab hay tải lại không chặn được từ trang web, chỉ hỏi lại bằng hộp của trình duyệt.
+- Giao diện học sinh có vài hoạt ảnh nhỏ cho vui mắt (thẻ lớp nổi lên khi rê chuột, thanh tiến độ mọc ra, điểm trung bình đếm lên, sao lấp lánh khi điểm từ 8), tắt hẳn khi hệ điều hành đặt "giảm chuyển động".
 - Student xem thông tin bài kiểm tra: tên bài, thời gian làm, giờ mở và hạn nộp theo khung giờ của mình.
 - Student bắt đầu làm bài. Được bắt đầu hay không do server quyết định theo khung giờ của Student đó.
 - Mỗi Student chỉ có một lượt làm bài cho mỗi bài được giao (chưa hỗ trợ làm lại).
@@ -370,7 +412,8 @@ Teacher có thể xem kết quả làm bài của Student.
 
 Chức năng chính:
 
-- Teacher xem kết quả của những bài kiểm tra do chính mình tạo.
+- **"Bảng điểm" của Student** (thay trang "Kết quả của tôi"), **theo kỳ học** như "Lớp học của tôi" (điểm trung bình môn và điểm chung tính trong kỳ đang chọn, nút xuất Excel cũng theo kỳ đó): mở lên thấy các môn học của mình kèm điểm trung bình từng môn và các bài làm nên con số đó; bấm một bài để xem lại bài làm. Môn của một bài là môn của Teacher ra đề. Điểm trung bình môn tính các bài đã nộp và được xem điểm, cộng bài hết hạn mà Student không làm (0 điểm); bài còn làm được và bài chưa công bố điểm chưa được tính. Có nút xuất bảng điểm ra Excel.
+- Teacher xem kết quả của những bài kiểm tra do chính mình tạo, và bài làm của các em trong lớp mình đang dạy ở mọi bài đã giao cho lớp (kể cả bài của Teacher phụ trách lớp trước đây).
 - Teacher xem danh sách bài làm theo từng bài kiểm tra: mở bài kiểm tra, thấy các lớp đã làm bài, chọn một lớp để xem học sinh của lớp đó.
 - Teacher xem trạng thái từng Student.
 - Teacher xem điểm số của từng Student.
@@ -379,6 +422,7 @@ Chức năng chính:
 - Teacher xem chi tiết đáp án Student đã chọn, kể cả những câu bỏ trống. Câu nhiều đáp án đúng hiện đủ các ô đã chọn và các ô đúng, để thấy chọn thiếu hay thừa ô nào.
 - Không có trang bảng kết quả chung. Teacher đi tới bài làm của một học sinh theo hai lối: (1) Nhóm lớp → lớp → học sinh → bài làm của học sinh đó; (2) Bài kiểm tra → mở bài kiểm tra → lớp đã làm bài → học sinh → bài làm. Lớp đang xem ở lối (2) nằm trên URL nên quay lại từ trang bài làm vẫn đứng đúng lớp đó.
 - Teacher có dashboard tổng quan: số liệu về Student trong lớp mình, câu hỏi, bài kiểm tra và các bài gần đây.
+- **Teacher xuất bảng điểm lớp ra Excel** từ trang chi tiết lớp mình dạy (lớp đã công bố; lớp khóa vẫn xuất được; Admin không xuất). Mỗi Student một dòng, mỗi bài kiểm tra đã giao cho lớp một cột; điểm quy về thang 10; **bài được giao mà em không làm là 0 điểm và vẫn tính vào điểm trung bình**, dấu — là em vào lớp sau khi bài đã giao nên không có bài đó (không tính); có cột điểm trung bình của từng em (trung bình mọi bài em được giao) và một dòng cuối là trung bình lớp. Tiêu đề cột chỉ là tên bài kiểm tra (không kèm thông tin đề lớn, đề nhỏ), và file không đếm số bài đã làm. **Bảng điểm là của lớp, nên có cả bài kiểm tra do Teacher phụ trách lớp trước đây đã giao**: lớp đổi Teacher giữa chừng thì người mới cần thấy điểm và sức học của cả lớp. Đây là ngoại lệ có chủ đích của quy tắc "chỉ xem kết quả bài do chính mình tạo" ở các màn hình kết quả khác; từ tab "Bài kiểm tra trong lớp", Teacher đang dạy lớp cũng xem được kết quả từng em và mở lại bài làm (đáp án em đã chọn) ở những bài đó.
 
 Student có thể xem:
 
@@ -388,8 +432,9 @@ Student có thể xem:
 - Thời gian nộp bài.
 - Chi tiết đáp án theo quy tắc ở Stage 7.
 - Dashboard tổng quan: bài đang mở, bài sắp tới, kết quả gần nhất. Điểm trung bình chỉ tính trên những bài Student được xem điểm.
+- **Xuất bảng điểm của mình ra Excel** từ trang Kết quả: mỗi bài đã nộp một dòng (tên bài, chủ đề, lớp, lúc nộp, số câu đúng, điểm, điểm tối đa, điểm thang 10, xếp loại) và điểm trung bình ở cuối. Bài mà Teacher chưa cho xem điểm ghi "Chưa công bố" và **không có con số nào** trong file, cũng không tính vào trung bình: xuất file không phải đường vòng để đọc điểm sớm.
 
-Admin có dashboard riêng về tài khoản Student: tổng số Student, số đang hoạt động, số đang khóa, số lớp, số tài khoản đang chờ xóa và các tài khoản mới tạo. Admin không xem bảng kết quả làm bài.
+Admin không có trang tổng quan riêng: đăng nhập là vào thẳng danh sách lớp, và các con số cần theo dõi nằm ở phụ đề của từng danh sách. Admin không có bảng kết quả chung như Teacher; Admin xem điểm và bài làm của từng Student qua hồ sơ của em, ở chế độ chỉ đọc, thấy đầy đủ đáp án đúng như Teacher sở hữu đề.
 
 ---
 
@@ -478,7 +523,10 @@ Các bảng chính:
 - User (dùng chung cho Admin, Teacher, Student).
 - Subject.
 - StudentGroup.
-- StudentGroupTeacher.
+- AcademicTerm (kỳ học; lớp tham chiếu tuỳ chọn).
+- StudentGroupTeacher (mỗi lớp giữ đúng một dòng).
+- AccountChange (lịch sử khóa, xóa, xếp, gỡ, chuyển lớp của Student; khóa của Teacher).
+- GroupChange (lịch sử lập lớp và đổi Teacher phụ trách).
 - Question.
 - AnswerOption.
 - Exam.
@@ -496,7 +544,7 @@ Nên triển khai theo từng giai đoạn:
 
 1. Authentication và phân quyền.
 2. Quản lý tài khoản Student.
-3. Quản lý lớp học và phân công Teacher.
+3. Quản lý lớp học, Teacher phụ trách và tài khoản Teacher.
 4. Quản lý ngân hàng câu hỏi.
 5. Tạo Exam Blueprint.
 6. Giao bài kiểm tra cho lớp / Student, lịch riêng từng lớp.
@@ -535,11 +583,12 @@ Sản phẩm kỳ vọng gồm:
 
 - Website quản lý bài kiểm tra trực tuyến cho trường học / trung tâm.
 - Trang đăng nhập.
-- Dashboard cho Admin.
 - Dashboard cho Teacher.
 - Dashboard cho Student.
 - Trang quản lý tài khoản Student (tạo, sửa, khóa, cấp lại mật khẩu, xóa mềm và khôi phục).
-- Trang quản lý lớp học: xếp Student, phân công Teacher, công bố lớp.
+- Trang quản lý tài khoản Teacher (tạo, sửa, khóa, cấp lại mật khẩu).
+- Trang quản lý lớp học: xếp Student, đổi Teacher phụ trách, xem bài đã giao, công bố lớp.
+- Nhập Student, Teacher và lớp từ file Excel.
 - Trang lớp học chỉ đọc cho Teacher.
 - Trang ngân hàng câu hỏi.
 - Form tạo câu hỏi có hỗ trợ hình ảnh.

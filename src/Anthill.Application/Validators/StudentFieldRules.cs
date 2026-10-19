@@ -117,6 +117,21 @@ internal static class StudentFieldRules
             .When(request => !string.IsNullOrWhiteSpace(selector(request)));
     }
 
+    /// <summary>Số điện thoại bắt buộc (tài khoản giáo viên): không được trống và phải đúng định dạng.</summary>
+    public static void ApplyRequiredPhone<T>(AbstractValidator<T> validator, Func<T, string?> selector)
+    {
+        validator.RuleFor(request => selector(request))
+            .Must(value => !string.IsNullOrWhiteSpace(value))
+            .WithName(StudentFieldNames.Phone)
+            .WithMessage("Hãy nhập số điện thoại.");
+
+        validator.RuleFor(request => selector(request))
+            .Must(value => ValidationPatterns.Phone.IsMatch(value!.Trim()))
+            .WithName(StudentFieldNames.Phone)
+            .WithMessage("Số điện thoại không hợp lệ.")
+            .When(request => !string.IsNullOrWhiteSpace(selector(request)));
+    }
+
     public static void ApplyOptionalStatus<T>(AbstractValidator<T> validator, Func<T, string?> selector)
     {
         validator.RuleFor(request => selector(request))

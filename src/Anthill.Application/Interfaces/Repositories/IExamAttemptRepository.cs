@@ -72,15 +72,34 @@ public interface IExamAttemptRepository : IGenericRepository<ExamAttempt>
         PaginationParams pagination,
         CancellationToken cancellationToken = default);
 
+    /// <summary>
+    /// <b>Toàn bộ</b> lượt đã nộp hoặc đã chấm của một học sinh, mới nộp trước, không phân trang — để xuất bảng điểm.
+    /// </summary>
+    /// <remarks>
+    /// Cùng điều kiện với <see cref="GetMyResultsPagedAsync"/> nên file xuất ra khớp từng dòng với trang Kết quả của em. Một em
+    /// học vài năm cũng chỉ có vài trăm lượt, nên đọc một lần là đủ; không dùng cho danh sách có thể lớn hơn thế.
+    /// </remarks>
+    Task<IReadOnlyList<ExamAttempt>> GetFinishedByStudentAsync(int studentId, CancellationToken cancellationToken = default);
+
     /// <summary><c>Student.completedExams</c> — số lượt ở trạng thái submitted hoặc graded (§5).</summary>
     Task<int> CountCompletedByStudentAsync(int studentId, CancellationToken cancellationToken = default);
 
     /// <summary><c>Student.averageScore</c> — trung bình điểm trên các lượt đã chấm, làm tròn 1 chữ số (§5).</summary>
     Task<decimal> GetAverageScoreByStudentAsync(int studentId, CancellationToken cancellationToken = default);
 
-    /// <summary>Hai con số dẫn xuất cho nhiều học sinh cùng lúc, tránh N+1 ở màn hình danh sách học sinh.</summary>
-    Task<IReadOnlyDictionary<int, (int Completed, decimal AverageScore)>> GetStatsByStudentsAsync(
+    /// <summary>
+    /// Bốn con số dẫn xuất cho nhiều học sinh cùng lúc, tránh N+1 ở màn hình danh sách học sinh.
+    /// </summary>
+    /// <remarks>
+    /// <c>AverageScore</c> chia tổng điểm (thang 10) các bài đã chấm cho <c>Assigned</c> — số bài ĐÃ GIAO cho em, nên bài chưa làm tính
+    /// 0 điểm, đúng như bảng điểm xuất ra Excel. <c>Assigned = 0</c> nghĩa là em chưa được giao bài nào (chưa có điểm trung bình).
+    /// <paramref name="scope"/> bỏ trống là mọi bài của em (quản trị viên); với giáo viên là chỉ bài giao qua lớp họ dạy hoặc do họ soạn.
+    /// <c>Started</c> đếm mọi lượt làm bài ở bất kỳ trạng thái nào, kể cả đang làm dở hay đã hết giờ: một em
+    /// đã bước vào phòng thi một lần là em đã bắt đầu làm bài, và đó là điều kiện khoá chuyển lớp.
+    /// </remarks>
+    Task<IReadOnlyDictionary<int, (int Completed, decimal AverageScore, int Started, int Assigned)>> GetStatsByStudentsAsync(
         IEnumerable<int> studentIds,
+        StudentStatsScope? scope = null,
         CancellationToken cancellationToken = default);
 
     /// <summary>

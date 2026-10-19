@@ -23,11 +23,16 @@ public class AppDbContext : DbContext
 
     public DbSet<Subject> Subjects => Set<Subject>();
 
+    public DbSet<AcademicTerm> AcademicTerms => Set<AcademicTerm>();
+
     public DbSet<User> Users => Set<User>();
 
     public DbSet<StudentGroup> StudentGroups => Set<StudentGroup>();
 
     public DbSet<StudentGroupTeacher> StudentGroupTeachers => Set<StudentGroupTeacher>();
+
+    public DbSet<AccountChange> AccountChanges => Set<AccountChange>();
+    public DbSet<GroupChange> GroupChanges => Set<GroupChange>();
 
     public DbSet<Question> Questions => Set<Question>();
 

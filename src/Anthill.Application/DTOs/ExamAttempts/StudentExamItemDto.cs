@@ -98,4 +98,10 @@ public sealed record StudentExamItemDto
     public int? CorrectCount { get; init; }
 
     public required DateTime AssignedAt { get; init; }
+
+    /// <summary>Lớp mà bài này được giao qua đó; NULL với bài giao lẻ cũ. Một em học nhiều lớp nên thẻ bài phải ghi rõ bài của lớp nào.</summary>
+    public int? GroupId { get; init; }
+
+    /// <summary>Tên lớp, đi cùng <see cref="GroupId"/>. Có thể vắng khi chỗ gọi không nạp kèm lớp (màn giới thiệu một bài).</summary>
+    public string? GroupName { get; init; }
 }

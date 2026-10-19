@@ -66,12 +66,47 @@ public interface IStudentGroupRepository : IGenericRepository<StudentGroup>
     /// <summary>Các giáo viên đang được phân công vào lớp.</summary>
     Task<IReadOnlyList<User>> GetAssignedTeachersAsync(int groupId, CancellationToken cancellationToken = default);
 
+    /// <summary>Mọi lớp giáo viên đang phụ trách, kể cả bản nháp, theo tên — cho màn quản lý giáo viên.</summary>
+    Task<IReadOnlyList<StudentGroup>> GetByTeacherAsync(int teacherId, CancellationToken cancellationToken = default);
+
+    /// <summary>Số lớp mỗi giáo viên đang phụ trách (kể cả bản nháp). Giáo viên không có lớp vắng mặt trong kết quả.</summary>
+    Task<IReadOnlyDictionary<int, int>> CountByTeacherAsync(
+        IEnumerable<int> teacherIds,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>Các lớp một học sinh đang học, theo tên (kể cả lớp nháp và lớp đã khoá).</summary>
+    Task<IReadOnlyList<StudentGroup>> GetByStudentAsync(int studentId, CancellationToken cancellationToken = default);
+
+    /// <summary>Sĩ số (số học sinh còn là thành viên) của từng lớp trong danh sách; lớp không có ai vẫn có mặt với 0.</summary>
+    Task<IReadOnlyDictionary<int, int>> CountMembersAsync(IEnumerable<int> groupIds, CancellationToken cancellationToken = default);
+
+    /// <summary>Trong các học sinh đã cho, những em đang là thành viên của lớp.</summary>
+    Task<IReadOnlySet<int>> GetMemberIdsAsync(
+        int groupId,
+        IEnumerable<int> studentIds,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>Dòng thành viên (được theo dõi, để xoá). <c>null</c> khi em không học lớp đó.</summary>
+    Task<StudentGroupMember?> GetMemberAsync(int groupId, int studentId, CancellationToken cancellationToken = default);
+
+    /// <summary>Mọi dòng thành viên của một học sinh (được theo dõi) — để gỡ em khỏi mọi lớp khi ẩn danh hoá.</summary>
+    Task<IReadOnlyList<StudentGroupMember>> GetMembershipsOfStudentAsync(
+        int studentId,
+        CancellationToken cancellationToken = default);
+
+    void AddMember(StudentGroupMember member);
+
+    void RemoveMember(StudentGroupMember member);
+
+    void RemoveMembers(IEnumerable<StudentGroupMember> members);
+
     void AddTeacher(StudentGroupTeacher assignment);
 
     void RemoveTeacher(StudentGroupTeacher assignment);
 
-    Task<StudentGroupTeacher?> FindAssignmentAsync(
-        int groupId,
-        int teacherId,
-        CancellationToken cancellationToken = default);
+    /// <summary>
+    /// Khoá dòng lớp tới hết transaction, để hai quản trị viên cùng đổi giáo viên của một lớp phải xếp hàng. Trả
+    /// <c>false</c> khi lớp không tồn tại.
+    /// </summary>
+    Task<bool> LockForUpdateAsync(int groupId, CancellationToken cancellationToken = default);
 }

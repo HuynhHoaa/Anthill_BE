@@ -33,8 +33,8 @@ cleanup() {
   # Gỡ khỏi lớp và xoá lớp dùng token QUẢN TRỊ VIÊN: lớp do quản trị viên lập, giáo viên gọi hai thao
   # tác này thì nhận 403 và mỗi lần chạy lại để sót một lớp thử.
   for id in "${STUDENTS[@]}"; do
-    [[ "$(call DELETE "/api/student-groups/$GROUP_ID/students/$id" "$ADMIN")" == "200" ]] && members=$((members + 1))
-    [[ "$(call PATCH "/api/students/$id/status" "$ADMIN" '{"status":"locked"}')" == "200" ]] && locked=$((locked + 1))
+    [[ "$(call DELETE "/api/student-groups/$GROUP_ID/students/$id" "$ADMIN" "$REMOVE_BODY")" == "200" ]] && members=$((members + 1))
+    [[ "$(call PATCH "/api/students/$id/status" "$ADMIN" "$LOCK_BODY")" == "200" ]] && locked=$((locked + 1))
   done
 
   for id in "${GROUP_IDS[@]}"; do
@@ -83,7 +83,7 @@ new_student "${STAMP}c" "$GROUP_ID"; S3=$NEW_STUDENT_ID
 new_student "${STAMP}x" ""; OUTSIDER=$NEW_STUDENT_ID          # không thuộc nhóm nào → ngoài phạm vi
 new_student "${STAMP}l" "$GROUP_ID"; LOCKED=$NEW_STUDENT_ID   # thuộc nhóm nhưng sẽ bị khoá
 
-code=$(call PATCH "/api/students/$LOCKED/status" "$ADMIN" '{"status":"locked"}')
+code=$(call PATCH "/api/students/$LOCKED/status" "$ADMIN" "$LOCK_BODY")
 [[ "$code" != "200" ]] && fail_fast "khoa tai khoan: HTTP $code — $(body)"
 
 # 4 Dễ, 3 Trung bình, 2 Khó — vừa đủ cho một đề 9 câu theo tỷ lệ 45/33/22.

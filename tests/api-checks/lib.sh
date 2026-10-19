@@ -117,6 +117,11 @@ login_and_clear_must_change() {
   login "$username" "$new_password"
 }
 
+# Khoa tai khoan va go khoi lop deu BAT BUOC co ly do (10-512 ky tu). Cac buoc don dep cua bo kiem dung chung hai than
+# request nay de khong phai lap lai ly do o tung script.
+LOCK_BODY='{"status":"locked","reason":"Don dep du lieu kiem thu tu dong"}'
+REMOVE_BODY='{"reason":"Don dep du lieu kiem thu tu dong"}'
+
 section() { printf '\n\033[1m%s\033[0m\n' "$1"; }
 
 summary() {
@@ -134,35 +139,30 @@ summary() {
 #
 #   $1 admin token, $2 teacher token, $3 ten lop, $4 (tuy chon) mo ta
 #
-# Ba buoc, vi lop khong con la thu giao vien tu tao:
-#   1. Quan tri vien lap lop  -> lop ra doi o dang NHAP
-#   2. Phan cong giao vien    -> nguoi day moi nhin thay va giao bai duoc
-#   3. Cong bo                -> truoc buoc nay giao vien khong thay gi ca
+# Hai buoc, vi lop khong con la thu giao vien tu tao:
+#   1. Quan tri vien lap lop KEM giao vien phu trach (moi lop co dung mot giao vien, chon ngay luc lap) -> lop ra doi
+#      o dang NHAP
+#   2. Cong bo                -> truoc buoc nay giao vien khong thay gi ca
 #
-# Bo bat ky buoc nao thi giao vien nhan 403 hoac danh sach rong, va script goi no se hong o mot
-# cho khac han nguyen nhan that su.
+# Bo buoc nao thi giao vien nhan 403 hoac danh sach rong, va script goi no se hong o mot cho khac han nguyen nhan
+# that su.
 new_class() {
   local admin="$1" teacher="$2" name="$3" description="${4:-}"
 
+  # Danh tinh giao vien lay tu chinh token cua ho, khong hard-code.
+  local teacher_id
+  call GET /api/auth/me "$teacher" > /dev/null
+  teacher_id=$(json_field id)
+
   local code
-  code=$(call POST /api/student-groups "$admin" "{\"name\":\"$name\",\"description\":\"$description\"}")
+  code=$(call POST /api/student-groups "$admin" "{\"name\":\"$name\",\"description\":\"$description\",\"teacherId\":$teacher_id}")
   if [[ "$code" != "200" ]]; then
     echo "  new_class: tao lop that bai HTTP $code — $(body)" >&2
     return 1
   fi
 
-  local group_id teacher_id
+  local group_id
   group_id=$(json_field id)
-
-  # Danh tinh giao vien lay tu chinh token cua ho, khong hard-code.
-  call GET /api/auth/me "$teacher" > /dev/null
-  teacher_id=$(json_field id)
-
-  code=$(call POST "/api/student-groups/$group_id/teachers" "$admin" "{\"teacherIds\":[$teacher_id]}")
-  if [[ "$code" != "200" ]]; then
-    echo "  new_class: phan cong giao vien that bai HTTP $code — $(body)" >&2
-    return 1
-  fi
 
   code=$(call POST "/api/student-groups/$group_id/publish" "$admin")
   if [[ "$code" != "200" ]]; then
@@ -171,4 +171,40 @@ new_class() {
   fi
 
   echo "$group_id"
+}
+
+# Id cua giao vien demo (an.nv). Moi lop co dung mot giao vien, chon ngay luc lap lop, nen moi script lap lop truc tiep
+# deu can no. Doc mot lan luc nap thu vien (khong trong $( ) cua tung phep kiem) de khoi dang nhap lai moi lan.
+_demo_teacher_id() {
+  local token
+  token=$(curl -s -X POST "$HOST/api/auth/login" -H 'Content-Type: application/json' \
+    -d '{"username":"an.nv@anthill.edu.vn","password":"123456"}' \
+    | python -c 'import json,sys;print(json.load(sys.stdin)["accessToken"])') || return 1
+  curl -s "$HOST/api/auth/me" -H "Authorization: Bearer $token" \
+    | python -c 'import json,sys;print(json.load(sys.stdin)["id"])'
+}
+DEMO_TEACHER_ID=$(_demo_teacher_id 2>/dev/null || true)
+
+# Tao mot giao vien MOI bang API (khong can psql), cung mon voi giao vien demo. In "id|email". Mat khau tam la 123456 va
+# phai doi o lan dang nhap dau — dung login_and_clear_must_change neu can token dung duoc.
+#
+#   $1 admin token, $2 hau to duy nhat (vd "${STAMP}a")
+#
+# Giao vien khong xoa duoc (so huu cau hoi, de), nen script dung xong thi goi retire_teacher de khoa.
+new_teacher() {
+  local admin="$1" suffix="$2" code subject
+  call GET "/api/teachers/$DEMO_TEACHER_ID" "$admin" > /dev/null
+  subject=$(json_field subjectId)
+  code=$(call POST /api/teachers "$admin" \
+    "{\"fullName\":\"GV kiem thu $suffix\",\"email\":\"gv$suffix@kiemthu.vn\",\"phone\":\"0912345678\",\"subjectId\":$subject,\"password\":\"123456\"}")
+  if [[ "$code" != "200" ]]; then
+    echo "  new_teacher: HTTP $code — $(body)" >&2
+    return 1
+  fi
+  echo "$(json_field id)|gv$suffix@kiemthu.vn"
+}
+
+# Khoa mot giao vien do new_teacher tao ra (kem ly do) — don dep toi da co the vi khong co API xoa giao vien.
+retire_teacher() {
+  call PATCH "/api/teachers/$2/status" "$1" '{"status":"locked","reason":"Don dep du lieu kiem thu tu dong"}' > /dev/null
 }

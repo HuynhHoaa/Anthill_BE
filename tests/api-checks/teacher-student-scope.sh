@@ -19,18 +19,20 @@ TEACHER=$(login "an.nv@anthill.edu.vn" "123456")
 
 # Co ca ngay trong nam: tai khoan cua lan chay truoc con nam lai (khong xoa cung duoc).
 STAMP=$(date +%j%H%M%S)
-MINE=""; FOREIGN=""; DRAFT=""; EID=""
+MINE=""; FOREIGN=""; DRAFT=""; EID=""; OTHER_ID=""
 STUDENT_IDS=()
 
 cleanup() {
   section "Don du lieu"
   [[ -n "$EID" ]] && call DELETE "/api/exams/$EID" "$TEACHER" > /dev/null
   for id in "${STUDENT_IDS[@]}"; do
-    for gid in $MINE $FOREIGN $DRAFT; do call DELETE "/api/student-groups/$gid/students/$id" "$ADMIN" > /dev/null; done
-    call PATCH "/api/students/$id/status" "$ADMIN" '{"status":"locked"}' > /dev/null
+    for gid in $MINE $FOREIGN $DRAFT; do call DELETE "/api/student-groups/$gid/students/$id" "$ADMIN" "$REMOVE_BODY" > /dev/null; done
+    call PATCH "/api/students/$id/status" "$ADMIN" "$LOCK_BODY" > /dev/null
   done
   for gid in $MINE $FOREIGN $DRAFT; do call DELETE "/api/student-groups/$gid" "$ADMIN" > /dev/null; done
-  printf '  da don %d hoc sinh (khoa, khong xoa duoc — dung thiet ke), 3 lop\n' "${#STUDENT_IDS[@]}"
+  # Giao vien thu hai khong xoa duoc (so huu lop va de): khoa lai, kem ly do.
+  [[ -n "$OTHER_ID" ]] && retire_teacher "$ADMIN" "$OTHER_ID"
+  printf '  da don %d hoc sinh (khoa, khong xoa duoc — dung thiet ke), 3 lop, 1 giao vien thu hai (khoa)\n' "${#STUDENT_IDS[@]}"
 }
 
 fail_fast() { echo "  Dung du lieu nen that bai: $1" >&2; exit 1; }
@@ -68,19 +70,20 @@ new_student() {
 section "Dung du lieu nen"
 # Lop cua giao vien: lap → phan cong → cong bo.
 MINE=$(new_class "$ADMIN" "$TEACHER" "Pham vi cua toi $STAMP") || fail_fast "tao lop cua giao vien"
-# Lop khong lien quan: da cong bo nhung giao vien nay khong duoc phan cong.
-code=$(call POST /api/student-groups "$ADMIN" "{\"name\":\"Pham vi lop khac $STAMP\"}")
+# Lop khong lien quan: da cong bo nhung do MOT GIAO VIEN KHAC phu trach (moi lop co dung mot giao vien, nen "khong duoc
+# phan cong" nghia la lop cua nguoi khac).
+OTHER=$(new_teacher "$ADMIN" "$STAMP") || fail_fast "tao giao vien thu hai"
+OTHER_ID=${OTHER%%|*}
+code=$(call POST /api/student-groups "$ADMIN" "{\"name\":\"Pham vi lop khac $STAMP\",\"teacherId\":$OTHER_ID}")
 [[ "$code" != "200" ]] && fail_fast "tao lop khac: HTTP $code — $(body)"
 FOREIGN=$(json_field id)
 code=$(call POST "/api/student-groups/$FOREIGN/publish" "$ADMIN")
 [[ "$code" != "200" ]] && fail_fast "cong bo lop khac: HTTP $code — $(body)"
-# Lop nhap: giao vien DA duoc phan cong nhung lop chua cong bo.
-code=$(call POST /api/student-groups "$ADMIN" "{\"name\":\"Pham vi lop nhap $STAMP\"}")
+# Lop nhap: giao vien nay phu trach nhung lop chua cong bo.
+call GET /api/auth/me "$TEACHER" > /dev/null; TEACHER_ID=$(json_field id)
+code=$(call POST /api/student-groups "$ADMIN" "{\"name\":\"Pham vi lop nhap $STAMP\",\"teacherId\":$TEACHER_ID}")
 [[ "$code" != "200" ]] && fail_fast "tao lop nhap: HTTP $code — $(body)"
 DRAFT=$(json_field id)
-call GET /api/auth/me "$TEACHER" > /dev/null; TEACHER_ID=$(json_field id)
-code=$(call POST "/api/student-groups/$DRAFT/teachers" "$ADMIN" "{\"teacherIds\":[$TEACHER_ID]}")
-[[ "$code" != "200" ]] && fail_fast "phan cong lop nhap: HTTP $code — $(body)"
 
 new_student "${STAMP}a" "$MINE";    S_MINE=$NEW_ID
 new_student "${STAMP}b" "$MINE";    S_MOVER=$NEW_ID
@@ -111,9 +114,9 @@ expect_status "groupId cua lop minh → 200" 200 "$(call GET "/api/students?grou
 expect_json   "  total = 2" total 2
 
 section "Loc trang thai va tu khoa van chay trong pham vi"
-code=$(call PATCH "/api/students/$S_FOREIGN/status" "$ADMIN" '{"status":"locked"}')
+code=$(call PATCH "/api/students/$S_FOREIGN/status" "$ADMIN" "$LOCK_BODY")
 [[ "$code" != "200" ]] && fail_fast "khoa em lop khac: HTTP $code"
-code=$(call PATCH "/api/students/$S_MINE/status" "$ADMIN" '{"status":"locked"}')
+code=$(call PATCH "/api/students/$S_MINE/status" "$ADMIN" "$LOCK_BODY")
 [[ "$code" != "200" ]] && fail_fast "khoa em lop minh: HTTP $code"
 expect_status "loc status=locked → 200" 200 "$(call GET "$LIST&status=locked" "$TEACHER")"
 expect_status "  co em bi khoa o lop minh"             yes "$(contains_id "$S_MINE")"
@@ -149,14 +152,19 @@ JSON
 )")
 [[ "$code" != "200" ]] && fail_fast "tao de: HTTP $code — $(body)"
 EID=$(json_field id)
-expect_status "giao bai cho lop minh → 200" 200 \
-  "$(call POST "/api/exams/$EID/assignments" "$TEACHER" "{\"studentIds\":[],\"groupIds\":[$MINE],\"notify\":false}")"
+# Khung gio cua lop da dong tu 4 gio truoc: em chua lam bai nao nen bai hien la "het han", va chuyen lop KHONG thu hoi
+# no (chi thu hoi bai chua bat dau va chua het han). Bai het han van la bai em da nhan tu giao vien nay, nen ho so em van
+# mo duoc sau khi em chuyen di. Bai con mo thi chuyen lop se thu hoi, giao vien khong con duoc thay em — xem class-membership.sh.
+OPEN_PAST=$(date -u -d '-4 hours' +%Y-%m-%dT%H:%M:%SZ); CLOSE_PAST=$(date -u -d '-2 hours' +%Y-%m-%dT%H:%M:%SZ)
+expect_status "giao bai cho lop minh (khung da dong) → 200" 200 \
+  "$(call POST "/api/exams/$EID/assignments" "$TEACHER" "{\"studentIds\":[],\"classes\":[{\"groupId\":$MINE,\"openAt\":\"$OPEN_PAST\",\"closeAt\":\"$CLOSE_PAST\"}],\"notify\":false}")"
 expect_json   "  giao cho em dang hoat dong" assignedCount 1
-expect_status "quan tri vien chuyen em sang lop khac → 200" 200 \
-  "$(call PUT "/api/students/$S_MOVER" "$ADMIN" "{\"fullName\":\"HS pham vi ${STAMP}b\",\"email\":\"sc${STAMP}b@kiemthu.vn\",\"username\":\"sc${STAMP}b\",\"code\":\"SC${STAMP}b\",\"groupId\":$FOREIGN}")"
-expect_json   "  da o lop khac" groupId "$FOREIGN"
+expect_status "quan tri vien chuyen em sang lop khac (co ly do) → 200" 200 \
+  "$(call POST "/api/student-groups/$MINE/students/$S_MOVER/transfer" "$ADMIN" "{\"targetGroupId\":$FOREIGN,\"reason\":\"Xep nham lop tu dau nam hoc\"}")"
+expect_status "  da o lop khac" "$FOREIGN" "$(call GET "/api/students/$S_MOVER" "$ADMIN" > /dev/null; json_field groups.0.id)"
 expect_status "giao vien van mo duoc ho so em do → 200" 200 "$(call GET "/api/students/$S_MOVER" "$TEACHER")"
-expect_json   "  ho so cho thay lop moi" groupId "$FOREIGN"
+# Giao vien chi thay nhung lop CUA MINH trong danh sach lop cua em; lop moi la lop cua dong nghiep nen khong hien ra.
+expect_json   "  ho so khong lo lop cua dong nghiep" groups "[]"
 expect_status "danh sach cua giao vien → 200" 200 "$(call GET "$LIST" "$TEACHER")"
 expect_status "  em da chuyen di khong con trong danh sach" no "$(contains_id "$S_MOVER")"
 # Luat giao bai chi mo ho so, khong mo lop: loc theo lop moi cua em van rong.
@@ -174,5 +182,17 @@ expect_status "loc groupId = 0 → 200" 200 "$(call GET "$LIST&groupId=0" "$ADMI
 expect_status "  co em chua phan lop" yes "$(contains_id "$S_NONE")"
 expect_status "ho so em lop khac → 200" 200 "$(call GET "/api/students/$S_FOREIGN" "$ADMIN")"
 expect_status "ho so em lop nhap → 200" 200 "$(call GET "/api/students/$S_DRAFT" "$ADMIN")"
+
+# Mot em hoc nhieu lop: bo loc theo lop cua dong nghiep khong con giao voi tap rong tu nhien, nen no phai tu gioi han o lop minh day,
+# neu khong giao vien do duoc em nao dang hoc lop cua nguoi khac.
+section "Em hoc ca lop minh lan lop dong nghiep: loc theo lop dong nghiep khong de lo ai"
+expect_status "xep em chua phan lop vao lop cua giao vien → 200" 200 "$(call POST "/api/student-groups/$MINE/students" "$ADMIN" "{\"studentIds\":[$S_NONE]}")"
+expect_status "xep em do vao ca lop cua dong nghiep → 200" 200 "$(call POST "/api/student-groups/$FOREIGN/students" "$ADMIN" "{\"studentIds\":[$S_NONE]}")"
+expect_status "giao vien loc theo lop cua dong nghiep → 200" 200 "$(call GET "$LIST&groupId=$FOREIGN" "$TEACHER")"
+expect_json   "  total = 0 (khong do duoc em nao dang hoc lop cua dong nghiep)" total 0
+expect_status "giao vien loc theo lop minh → 200" 200 "$(call GET "$LIST&groupId=$MINE" "$TEACHER")"
+expect_status "  van thay em hoc ca hai lop" yes "$(contains_id "$S_NONE")"
+expect_status "quan tri vien loc theo lop dong nghiep van thay em → 200" 200 "$(call GET "$LIST&groupId=$FOREIGN" "$ADMIN")"
+expect_status "  co em hoc ca hai lop" yes "$(contains_id "$S_NONE")"
 
 summary

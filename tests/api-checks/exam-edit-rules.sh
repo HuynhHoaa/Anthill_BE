@@ -171,9 +171,9 @@ cleanup() {
   for id in "${QUESTION_IDS[@]}"; do call DELETE "/api/questions/$id" "$TEACHER" > /dev/null; done
   # Go hoc sinh khoi lop truoc: lop con thanh vien thi khong xoa duoc (409).
   for member in "${MEMBERS[@]}"; do
-    call DELETE "/api/student-groups/${member%/*}/students/${member#*/}" "$ADMIN" > /dev/null
+    call DELETE "/api/student-groups/${member%/*}/students/${member#*/}" "$ADMIN" "$REMOVE_BODY" > /dev/null
   done
-  for id in "${STUDENT_IDS[@]}"; do call PATCH "/api/students/$id/status" "$ADMIN" '{"status":"locked"}' > /dev/null; done
+  for id in "${STUDENT_IDS[@]}"; do call PATCH "/api/students/$id/status" "$ADMIN" "$LOCK_BODY" > /dev/null; done
   for id in "${GROUP_IDS[@]}";   do call DELETE "/api/student-groups/$id" "$ADMIN" > /dev/null; done
   # Hai giao vien nay khong con de, cau hoi hay lop nao nen khong khoa ngoai RESTRICT nao giu dong cua
   # ho; thong bao (neu co) di theo nho CASCADE.
@@ -243,7 +243,7 @@ start_exam() {
 section "Dung du lieu nen"
 TEACHER_ID=$(call GET /api/auth/me "$TEACHER" > /dev/null; json_field id)
 
-code=$(call POST /api/student-groups "$ADMIN" "{\"name\":\"Lop sua de $STAMP\"}")
+code=$(call POST /api/student-groups "$ADMIN" "{\"name\":\"Lop sua de $STAMP\",\"teacherId\":$TEACHER_ID}")
 [[ "$code" != "200" ]] && fail_fast "tao lop: HTTP $code — $(body)"
 GID=$(json_field id); GROUP_IDS+=("$GID")
 for suffix in a b; do
@@ -251,7 +251,6 @@ for suffix in a b; do
   [[ "$code" != "200" ]] && fail_fast "tao hoc sinh $suffix: HTTP $code — $(body)"
   SID=$(json_field id); STUDENT_IDS+=("$SID"); MEMBERS+=("$GID/$SID")
 done
-call POST "/api/student-groups/$GID/teachers" "$ADMIN" "{\"teacherIds\":[$TEACHER_ID]}" > /dev/null
 call POST "/api/student-groups/$GID/publish" "$ADMIN" > /dev/null
 # Tai khoan vua tao mang MustChangePassword=true (Sec.5) — doi ngay sang mat khau rieng truoc khi
 # dung token cho nghiep vu.

@@ -35,7 +35,7 @@ cleanup() {
     fi
   done
   for id in "${STUDENTS[@]}"; do
-    [[ "$(call PATCH "/api/students/$id/status" "$ADMIN" '{"status":"locked"}')" == "200" ]] && locked=$((locked + 1))
+    [[ "$(call PATCH "/api/students/$id/status" "$ADMIN" "$LOCK_BODY")" == "200" ]] && locked=$((locked + 1))
   done
   for id in "${GROUP_IDS[@]}"; do
     if [[ "$(call DELETE "/api/student-groups/$id" "$ADMIN")" == "200" ]]; then

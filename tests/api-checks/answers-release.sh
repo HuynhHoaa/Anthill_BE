@@ -33,8 +33,8 @@ cleanup() {
     [[ "$(call DELETE "/api/questions/$id" "$TEACHER")" == "200" ]] && questions=$((questions + 1))
   done
   for id in "${STUDENTS[@]}"; do
-    [[ -n "$GROUP_ID" ]] && call DELETE "/api/student-groups/$GROUP_ID/students/$id" "$ADMIN" > /dev/null
-    [[ "$(call PATCH "/api/students/$id/status" "$ADMIN" '{"status":"locked"}')" == "200" ]] && locked=$((locked + 1))
+    [[ -n "$GROUP_ID" ]] && call DELETE "/api/student-groups/$GROUP_ID/students/$id" "$ADMIN" "$REMOVE_BODY" > /dev/null
+    [[ "$(call PATCH "/api/students/$id/status" "$ADMIN" "$LOCK_BODY")" == "200" ]] && locked=$((locked + 1))
   done
   for id in "${GROUP_IDS[@]}"; do
     [[ "$(call DELETE "/api/student-groups/$id" "$ADMIN")" == "200" ]] && groups=$((groups + 1))

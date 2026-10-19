@@ -26,8 +26,8 @@ cleanup() {
     [[ "$(call DELETE "/api/questions/$id" "$TEACHER")" == "200" ]] && questions=$((questions + 1))
   done
   for id in "${STUDENTS[@]}"; do
-    [[ -n "$GROUP_ID" ]] && call DELETE "/api/student-groups/$GROUP_ID/students/$id" "$ADMIN" > /dev/null
-    call PATCH "/api/students/$id/status" "$ADMIN" '{"status":"locked"}' > /dev/null
+    [[ -n "$GROUP_ID" ]] && call DELETE "/api/student-groups/$GROUP_ID/students/$id" "$ADMIN" "$REMOVE_BODY" > /dev/null
+    call PATCH "/api/students/$id/status" "$ADMIN" "$LOCK_BODY" > /dev/null
   done
   for id in "${GROUP_IDS[@]}"; do
     [[ "$(call DELETE "/api/student-groups/$id" "$ADMIN")" == "200" ]] && groups=$((groups + 1))
@@ -140,7 +140,7 @@ section "Ky tu NUL: 400, khong phai 500"
 expect_status "ten dang nhap co NUL → 400" 400 \
   "$(call POST /api/auth/login "" '{"username":"an.nv\u0000@anthill.edu.vn","password":"123456"}')"
 expect_status "ten nhom co NUL → 400" 400 \
-  "$(call POST /api/student-groups "$ADMIN" '{"name":"Lop\u0000Nul","description":""}')"
+  "$(call POST /api/student-groups "$ADMIN" "{\"name\":\"Lop\\u0000Nul\",\"description\":\"\",\"teacherId\":$DEMO_TEACHER_ID}")"
 expect_status "o tim kiem hoc sinh co NUL → 400" 400 "$(call GET "/api/students?search=%00" "$ADMIN")"
 expect_status "o tim kiem hoc sinh binh thuong van → 200" 200 "$(call GET "/api/students?search=hs$STAMP" "$ADMIN")"
 
@@ -223,7 +223,7 @@ expect_status "  phone bi xoa" "" "$(json_field phone)"
 
 section "Khoi phuc tai khoan giu nguyen trang thai khoa"
 
-expect_status "khoa hoc sinh → 200" 200 "$(call PATCH "/api/students/$STUDENT_C_ID/status" "$ADMIN" '{"status":"locked"}')"
+expect_status "khoa hoc sinh → 200" 200 "$(call PATCH "/api/students/$STUDENT_C_ID/status" "$ADMIN" "$LOCK_BODY")"
 expect_status "dua vao dien xoa → 200" 200 \
   "$(call POST "/api/students/$STUDENT_C_ID/request-deletion" "$ADMIN" '{"reason":"Kiem thu: khoi phuc phai tra ve trang thai khoa."}')"
 expect_json   "  status = pendingDeletion" status pendingDeletion
