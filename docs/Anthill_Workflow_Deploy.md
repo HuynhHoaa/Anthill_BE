@@ -100,12 +100,13 @@ Xử lý theo **4 tầng, làm đủ cả 4**:
 
 ### Tầng 1 — Giữ server luôn thức (quan trọng nhất)
 
-Ping định kỳ endpoint `/health` để container không bao giờ ngủ.
+Ping định kỳ endpoint `/health/live` để container không bao giờ ngủ.
 
-- **UptimeRobot** gọi `/health` mỗi 5 phút — miễn phí, không chiếm tài nguyên của repo, và báo luôn khi service ngừng trả lời.
+- **UptimeRobot** gọi `/health/live` mỗi 5 phút — miễn phí, không chiếm tài nguyên của repo, và báo luôn khi service ngừng trả lời.
 - **cron-job.org** làm lớp dự phòng, cũng 5 phút một lần.
 - **Không dùng GitHub Actions cron cho việc này** khi repo để private: gói Free chỉ có 2.000 phút mỗi tháng và mỗi lần chạy bị làm tròn lên 1 phút, nên ping 10 phút một lần (khoảng 4.300 lần/tháng) vượt hạn mức. Cron của Actions cũng không chạy đúng giờ (có thể trễ 5–15 phút khi runner bận).
-- **`/health` phải chạm database** (một câu `SELECT 1`) → giữ ấm cả backend lẫn Neon cùng lúc.
+- **`/health/live` KHÔNG được chạm database.** Neon free tính theo giờ database thức (100 CU-giờ mỗi project mỗi tháng, cỡ 400 giờ ở cỡ nhỏ nhất) và chỉ ngủ khi 5 phút liền không có truy vấn nào. Một lời gọi giữ thức mà chạm database sẽ giữ Neon thức 24/7: hết hạn mức khoảng ngày 17, từ đó cả hệ thống không đăng nhập được tới đầu tháng sau. Render cũng gọi `healthCheckPath` liên tục cả lúc đang chạy, nên đường đó cũng phải là `/health/live`.
+- **Hai tiến trình quét định kỳ phải biết nghỉ.** Tự nộp bài và nhắc sắp hết giờ quét database mỗi 30 giây; để chúng chạy suốt thì Neon vẫn không bao giờ ngủ dù ping đã đúng. Chúng chỉ quét khi có yêu cầu đã đăng nhập trong khoảng `BackgroundJobs__IdleAfterSeconds` gần nhất (mặc định 600 giây, 0 = không bao giờ nghỉ) và quét ngay khi có người dùng trở lại.
 - Quota Render free là 750 giờ/tháng, một tháng có 720–744 giờ → chạy 24/7 một service vẫn nằm trong hạn mức. Chỉ đủ cho **một** service, đừng tạo thêm.
 
 ### Tầng 2 — Rút ngắn thời gian boot
@@ -122,7 +123,7 @@ Ping định kỳ endpoint `/health` để container không bao giờ ngủ.
 
 Vercel trả FE từ CDN trong ~100ms, luôn nhanh bất kể BE. Tận dụng khoảng thời gian đó:
 
-- Ngay khi app khởi động (kể cả ở trang đăng nhập), bắn `fetch(API_BASE + '/health')` kiểu fire-and-forget, không chờ kết quả.
+- Ngay khi app khởi động (kể cả ở trang đăng nhập), bắn `fetch(API_BASE + '/health')` kiểu fire-and-forget, không chờ kết quả. Đây là đường chạm database nên đánh thức luôn Neon đang ngủ; các dịch vụ giữ thức thì dùng `/health/live`.
 - Người dùng mất 5–10 giây để đọc trang và gõ thông tin đăng nhập — đủ để BE thức dậy trước khi họ bấm nút. Cold start bị che hoàn toàn.
 
 ### Tầng 4 — Che độ trễ bằng UX
@@ -146,6 +147,8 @@ Khuyến nghị: **làm Render trước cho có demo chạy sớm**, khi rảnh 
 
 - [ ] **Disk là ephemeral.** Render/Azure free xoá sạch file khi restart. Ảnh câu hỏi lưu vào `wwwroot/uploads` sẽ **mất hết** sau mỗi lần deploy. Bắt buộc đẩy lên Cloudinary/R2, DB chỉ lưu URL. Thiết kế ngay từ đầu, đừng để sau.
 - [ ] **Connection pooling với Neon.** EF Core mặc định mở pool lớn, Neon free giới hạn connection. Dùng **pooled connection string** (endpoint có `-pooler`) và set `Maximum Pool Size=10`.
+- [ ] **Neon free tính theo giờ database thức.** 100 CU-giờ mỗi project mỗi tháng, database tự ngủ sau 5 phút không có truy vấn. Mọi thứ chạy đều đặn (ping giữ thức, health check của Render, tiến trình nền) phải để database ngủ được, xem Tầng 1. Hết hạn mức thì compute bị treo tới đầu kỳ sau.
+- [ ] **Vùng của Render không đổi được sau khi tạo dịch vụ.** `render.yaml` khai `region: singapore`, cùng vùng với Neon; bỏ trống thì Render chọn Oregon và mỗi truy vấn tốn thêm cỡ 170 ms.
 - [ ] **CORS cross-domain.** FE ở `*.vercel.app`, BE ở `*.onrender.com` là hai domain khác nhau. JWT để trong header thì ổn. Nếu dùng refresh token qua cookie phải set `SameSite=None; Secure`.
 - [ ] **Khai địa chỉ frontend bằng `Cors__AllowedOrigins__0`.** `appsettings.json` cố ý không có địa chỉ mặc định nào, và ở Production mà danh sách rỗng thì API **dừng ngay lúc khởi động** kèm thông điệp nói rõ phải đặt biến nào. Nhiều địa chỉ thì thêm `Cors__AllowedOrigins__1`, `__2`... Đặt đúng origin, không có dấu gạch chéo cuối.
 - [ ] **SignalR cần `AllowCredentials()`** + khai báo origin cụ thể, **không dùng được `AllowAnyOrigin()`** chung với credentials.

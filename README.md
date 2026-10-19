@@ -77,7 +77,8 @@ kèm `answersVisibleAt` để giao diện báo giờ mở. (`AssignmentSchedule`
 
 **Hạn giờ theo đồng hồ server, tự nộp khi hết giờ.** `AttemptDeadline` tính hạn nộp lúc bắt đầu và kẹp
 vào giờ đóng có hiệu lực của lượt giao (giờ riêng của lớp nếu có, không thì giờ đóng đề); đồng hồ máy
-học sinh chỉ để vẽ đếm ngược. `AutoSubmitExpiredAttemptsService` quét mỗi 30 giây, tối đa 50 bài một
+học sinh chỉ để vẽ đếm ngược. `AutoSubmitExpiredAttemptsService` quét mỗi 30 giây khi có người đang dùng hệ thống (vắng người quá
+`BackgroundJobs:IdleAfterSeconds`, mặc định 10 phút, thì nghỉ để database miễn phí được ngủ), tối đa 50 bài một
 lượt, chấm theo `ExpiresAt` trong database nên quét trễ không làm sai điểm, và mỗi vòng tự bắt lỗi để
 một lần mất kết nối không làm chết cả tiến trình.
 
@@ -171,6 +172,7 @@ khác. Đăng nhập bằng một tài khoản demo bên dưới.
 | `http://localhost:5002/api/...` | API |
 | `http://localhost:5002/swagger` | Swagger UI, chỉ có ở Development |
 | `http://localhost:5002/health` | tiến trình còn sống, database với tới được (503 khi không) + giờ server UTC |
+| `http://localhost:5002/health/live` | chỉ cho biết tiến trình còn sống, không chạm database: dành cho health check của Render và các dịch vụ giữ thức |
 | `http://localhost:5002/hubs/notifications` | SignalR |
 
 `launchSettings.json` còn có profile `https` (thêm `https://localhost:7153`), `http-no-autosubmit` (tắt
@@ -195,8 +197,9 @@ mật khẩu `123456`; ô đăng nhập nhận email, username hoặc mã học 
 | Học sinh | `lan.tt` hoặc mã `HS1001` | Trần Thị Lan |
 
 Seed còn tạo môn Khoa học tự nhiên (môn của giáo viên demo) và lớp "Lớp 8A" đã công bố, có giáo viên
-và học sinh demo. Seed chỉ chạy ở Development nên database production không có ba tài khoản này. Nếu
-từng chạy môi trường Development trên database thật thì phải xoá chúng.
+và học sinh demo. Seed chỉ chạy ở Development, hoặc ở môi trường khác khi đặt `Seed__DemoData=true` (bản
+demo công khai trên Render làm vậy); database production thật không có ba tài khoản này. Nếu từng chạy
+môi trường Development trên database thật thì phải xoá chúng.
 
 ## Cấu hình
 
@@ -207,6 +210,8 @@ từng chạy môi trường Development trên database thật thì phải xoá 
 | `Jwt:Issuer`, `Jwt:Audience`, `Jwt:ExpiryMinutes` | `Jwt__*` | `Anthill`, `Anthill.Client`, 480 phút (tối thiểu 330) |
 | `Cors:AllowedOrigins` | `Cors__AllowedOrigins__0`, `__1`, ... | không có mặc định; **bắt buộc** ở Production, thiếu thì API dừng lúc khởi động |
 | `AutoSubmit:Enabled`, `IntervalSeconds`, `BatchSize` | `AutoSubmit__*` | `true`, 30, 50 |
+| `BackgroundJobs:IdleAfterSeconds` | `BackgroundJobs__IdleAfterSeconds` | 600. Sau chừng này giây không có yêu cầu đã đăng nhập, hai tiến trình quét (tự nộp bài, nhắc sắp hết giờ) nghỉ để database miễn phí được ngủ; 0 = không bao giờ nghỉ |
+| `Seed:DemoData` | `Seed__DemoData` | `false`. `true` thì nạp ba tài khoản demo ở mọi môi trường (`render.yaml` đặt sẵn) |
 | `FileStorage:MaxBytes` | `FileStorage__MaxBytes` | 4 MB |
 
 `DATABASE_URL` (dạng `postgresql://user:pass@host/db`) chỉ được đọc khi `ConnectionStrings:DefaultConnection`
