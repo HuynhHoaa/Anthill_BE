@@ -10,8 +10,10 @@ services:
     # Cùng vùng với database Neon (Singapore). Bỏ trống thì Render chọn Oregon, API và database nằm hai bên Thái Bình
     # Dương và mỗi truy vấn tốn thêm cỡ 170 ms; vùng không đổi được sau khi dịch vụ đã tạo.
     region: singapore
-    # /health chạm database nên giữ ấm cả API lẫn Neon; Render cũng dùng nó để biết bản mới đã sống.
-    healthCheckPath: /health
+    # Render gọi đường này liên tục, cả lúc triển khai lẫn khi đang chạy, nên phải là /health/live (không chạm
+    # database). Dùng /health thì Neon nhận một truy vấn mỗi vài giây, không bao giờ ngủ được, và hết hạn mức giờ
+    # thức của gói miễn phí (100 CU-giờ mỗi tháng) khoảng ngày 17.
+    healthCheckPath: /health/live
     autoDeploy: true
     envVars:
       # Chuỗi kết nối dạng URI của Neon (dùng endpoint có -pooler). API tự đổi sang dạng Npgsql, bật SSL và đặt
@@ -38,3 +40,8 @@ services:
       # này khi không còn là bản demo.
       - key: Seed__DemoData
         value: "true"
+      # Sau chừng này giây không có ai đăng nhập dùng, hai tiến trình quét database (tự nộp bài, nhắc sắp hết giờ)
+      # nghỉ để Neon được ngủ; có người dùng trở lại là quét ngay. 0 = không bao giờ nghỉ, chỉ nên dùng khi database
+      # không tính theo giờ thức.
+      - key: BackgroundJobs__IdleAfterSeconds
+        value: "600"

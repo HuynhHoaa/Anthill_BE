@@ -17,20 +17,28 @@ namespace Anthill.Api.BackgroundJobs;
 /// trình, mỗi em một transaction dưới khoá dòng nên nhiều instance cùng chạy vẫn chỉ nhắc một lần, và mỗi
 /// vòng mở một scope mới thay vì giữ một DbContext sống nhiều ngày.
 /// </para>
+/// <para>
+/// Cũng nghỉ quét khi không ai dùng hệ thống, để database miễn phí được ngủ (xem <see cref="IdlePacedLoop"/>). Lời
+/// nhắc là thông báo trong ứng dụng nên chỉ có người nhìn thấy khi đang dùng ứng dụng; em mở lại ứng dụng thì lượt
+/// quét chạy ngay và lời nhắc (nếu còn kịp) hiện ra trong vài giây.
+/// </para>
 /// </remarks>
 public sealed class NotifyDeadlineSoonService : BackgroundService
 {
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly IOptions<DeadlineReminderOptions> _options;
+    private readonly ApiActivityTracker _activity;
     private readonly ILogger<NotifyDeadlineSoonService> _logger;
 
     public NotifyDeadlineSoonService(
         IServiceScopeFactory scopeFactory,
         IOptions<DeadlineReminderOptions> options,
+        ApiActivityTracker activity,
         ILogger<NotifyDeadlineSoonService> logger)
     {
         _scopeFactory = scopeFactory;
         _options = options;
+        _activity = activity;
         _logger = logger;
     }
 
@@ -47,19 +55,22 @@ public sealed class NotifyDeadlineSoonService : BackgroundService
         var interval = TimeSpan.FromSeconds(Math.Max(5, options.IntervalSeconds));
 
         _logger.LogInformation(
-            "Tiến trình nhắc sắp hết giờ đã khởi động: quét mỗi {Interval} giây, biên {Margin} phút.",
+            "Tiến trình nhắc sắp hết giờ đã khởi động: quét mỗi {Interval} giây khi có người dùng "
+            + "(nghỉ sau {Idle} giây vắng), biên {Margin} phút.",
             interval.TotalSeconds,
+            _activity.IdleAfter.TotalSeconds,
             options.MarginMinutes);
 
-        using var timer = new PeriodicTimer(interval);
-
-        // Quét ngay một lần trước khi vào nhịp: khởi động lại giữa buổi thi thì những em đã tới lúc nhắc
-        // trong lúc dừng phải được nhắc ngay, không chờ hết một chu kỳ.
-        do
-        {
-            await RunOnceAsync(options, stoppingToken);
-        }
-        while (await WaitForNextTickAsync(timer, stoppingToken));
+        // Quét ngay một lần khi khởi động rồi mới vào nhịp: khởi động lại giữa buổi thi thì những em đã
+        // tới lúc nhắc trong lúc dừng phải được nhắc ngay. Sau đó chỉ quét khi có người đang dùng hệ
+        // thống: xem IdlePacedLoop.
+        await IdlePacedLoop.RunAsync(
+            "Tiến trình nhắc sắp hết giờ",
+            interval,
+            () => _activity.IsActive,
+            token => RunOnceAsync(options, token),
+            _logger,
+            stoppingToken);
 
         _logger.LogInformation("Tiến trình nhắc sắp hết giờ đã dừng.");
     }
@@ -96,18 +107,6 @@ public sealed class NotifyDeadlineSoonService : BackgroundService
             // Bắt Exception trần có chủ đích: ngoại lệ thoát ra khỏi ExecuteAsync chấm dứt service vĩnh viễn
             // trong khi ứng dụng vẫn chạy, và từ lúc đó không em nào được nhắc nữa mà không ai nhận ra.
             _logger.LogError(exception, "Lượt quét nhắc sắp hết giờ gặp lỗi ngoài dự kiến, sẽ thử lại ở vòng sau.");
-        }
-    }
-
-    private static async Task<bool> WaitForNextTickAsync(PeriodicTimer timer, CancellationToken stoppingToken)
-    {
-        try
-        {
-            return await timer.WaitForNextTickAsync(stoppingToken);
-        }
-        catch (OperationCanceledException)
-        {
-            return false;
         }
     }
 }

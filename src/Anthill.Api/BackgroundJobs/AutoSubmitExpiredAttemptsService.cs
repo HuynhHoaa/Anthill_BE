@@ -13,7 +13,7 @@ namespace Anthill.Api.BackgroundJobs;
 /// thái đang làm, không có điểm, và giáo viên không biết em đã làm tới đâu.
 /// </para>
 /// <para>
-/// Ba điều quyết định ở đây:
+/// Bốn điều quyết định ở đây:
 /// </para>
 /// <list type="number">
 /// <item><b>Một lần quét lỗi không được giết cả tiến trình.</b> Ngoại lệ thoát ra khỏi
@@ -25,21 +25,28 @@ namespace Anthill.Api.BackgroundJobs;
 /// tiến trình cùng bắt được một bài thì người đến sau thấy nó đã <c>graded</c> và bỏ qua.</item>
 /// <item><b>Hạn giờ đọc từ database, không từ đồng hồ của vòng lặp.</b> Quét trễ vài chục giây
 /// không làm sai điểm: bài vẫn được chấm theo đúng <c>ExpiresAt</c> của nó.</item>
+/// <item><b>Nghỉ quét khi không ai dùng hệ thống.</b> Database miễn phí chỉ ngủ khi vài phút liền không có
+/// truy vấn, mà một lượt quét mỗi 30 giây khiến nó thức suốt. Vì hạn giờ đọc từ database nên nghỉ không làm
+/// sai điểm: bài bỏ dở được chấm theo đúng <c>ExpiresAt</c> ngay khi có người dùng trở lại. Xem
+/// <see cref="IdlePacedLoop"/> và <see cref="JobIdleOptions"/>.</item>
 /// </list>
 /// </remarks>
 public sealed class AutoSubmitExpiredAttemptsService : BackgroundService
 {
     private readonly IServiceScopeFactory _scopeFactory;
     private readonly IOptions<AutoSubmitOptions> _options;
+    private readonly ApiActivityTracker _activity;
     private readonly ILogger<AutoSubmitExpiredAttemptsService> _logger;
 
     public AutoSubmitExpiredAttemptsService(
         IServiceScopeFactory scopeFactory,
         IOptions<AutoSubmitOptions> options,
+        ApiActivityTracker activity,
         ILogger<AutoSubmitExpiredAttemptsService> logger)
     {
         _scopeFactory = scopeFactory;
         _options = options;
+        _activity = activity;
         _logger = logger;
     }
 
@@ -56,19 +63,22 @@ public sealed class AutoSubmitExpiredAttemptsService : BackgroundService
         var interval = TimeSpan.FromSeconds(Math.Max(5, options.IntervalSeconds));
 
         _logger.LogInformation(
-            "Tiến trình tự nộp bài đã khởi động: quét mỗi {Interval} giây, tối đa {BatchSize} bài mỗi lượt.",
+            "Tiến trình tự nộp bài đã khởi động: quét mỗi {Interval} giây khi có người dùng (nghỉ sau {Idle} giây vắng), "
+            + "tối đa {BatchSize} bài mỗi lượt.",
             interval.TotalSeconds,
+            _activity.IdleAfter.TotalSeconds,
             options.BatchSize);
 
-        using var timer = new PeriodicTimer(interval);
-
-        // Quét ngay một lần trước khi vào nhịp: khởi động lại sau một lần triển khai giữa giờ thi
-        // thì những bài đã quá hạn trong lúc dừng phải được xử lý ngay, không chờ hết một chu kỳ.
-        do
-        {
-            await RunOnceAsync(options.BatchSize, stoppingToken);
-        }
-        while (await WaitForNextTickAsync(timer, stoppingToken));
+        // Quét ngay một lần khi khởi động rồi mới vào nhịp: khởi động lại sau một lần triển khai giữa
+        // giờ thi thì những bài đã quá hạn trong lúc dừng phải được xử lý ngay. Sau đó chỉ quét khi có
+        // người đang dùng hệ thống, để database miễn phí được ngủ: xem IdlePacedLoop.
+        await IdlePacedLoop.RunAsync(
+            "Tiến trình tự nộp bài",
+            interval,
+            () => _activity.IsActive,
+            token => RunOnceAsync(options.BatchSize, token),
+            _logger,
+            stoppingToken);
 
         _logger.LogInformation("Tiến trình tự nộp bài đã dừng.");
     }
@@ -107,19 +117,6 @@ public sealed class AutoSubmitExpiredAttemptsService : BackgroundService
             // chấm dứt service vĩnh viễn trong khi ứng dụng vẫn chạy bình thường. Một lần mất kết
             // nối database không được phép làm im lặng cả cơ chế tự nộp bài.
             _logger.LogError(exception, "Lượt quét tự nộp bài gặp lỗi ngoài dự kiến, sẽ thử lại ở vòng sau.");
-        }
-    }
-
-    /// <summary>Chờ nhịp kế tiếp, trả về false khi ứng dụng đang tắt.</summary>
-    private static async Task<bool> WaitForNextTickAsync(PeriodicTimer timer, CancellationToken stoppingToken)
-    {
-        try
-        {
-            return await timer.WaitForNextTickAsync(stoppingToken);
-        }
-        catch (OperationCanceledException)
-        {
-            return false;
         }
     }
 }

@@ -310,6 +310,12 @@ public static class ServiceCollectionExtensions
 
     private static IServiceCollection AddRealtime(this IServiceCollection services)
     {
+        // Hai tiến trình quét database định kỳ ngay dưới đây chỉ quét khi có người đang dùng hệ thống, để
+        // database miễn phí (chỉ ngủ khi vài phút liền không có truy vấn) được ngủ lúc vắng. Một sổ cho cả
+        // tiến trình: middleware ghi vào, hai tiến trình nền đọc ra.
+        services.AddOptions<JobIdleOptions>().BindConfiguration(JobIdleOptions.SectionName);
+        services.AddSingleton<ApiActivityTracker>();
+
         // Tiến trình nền tự nộp bài quá hạn. Bắt buộc phải có: học sinh tắt trình duyệt giữa giờ
         // thi thì không còn ai gọi submit, và bài đó nằm mãi ở trạng thái đang làm mà không có điểm.
         // BindConfiguration thay vì Configure(configuration.GetSection(...)): hàm này không nhận
