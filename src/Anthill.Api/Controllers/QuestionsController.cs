@@ -9,7 +9,7 @@ using Microsoft.AspNetCore.Mvc;
 namespace Anthill.Api.Controllers;
 
 /// <summary>
-/// Tám endpoint quản lý ngân hàng câu hỏi của §4.5.
+/// Chín endpoint quản lý ngân hàng câu hỏi của §4.5 (tám endpoint gốc, thêm danh sách môn cho quản trị viên).
 /// </summary>
 /// <remarks>
 /// <para>
@@ -59,6 +59,18 @@ public sealed class QuestionsController : ApiControllerBase
         [FromQuery] int? subjectId,
         CancellationToken cancellationToken)
         => FromResult(await _questionService.ListTopicsAsync(subjectId, cancellationToken));
+
+    /// <summary>Các môn học — cho quản trị viên chọn môn khi tạo câu hỏi và khi thu hẹp ngân hàng.</summary>
+    /// <remarks>
+    /// Chỉ quản trị viên: giáo viên bị khoá vào môn của mình nên không có gì để chọn. Khai báo trước
+    /// <c>GET /{id}</c> cùng lý do với <c>topics</c>.
+    /// </remarks>
+    [HttpGet("subjects")]
+    [Authorize(Roles = SystemRoles.Admin)]
+    [ProducesResponseType<IReadOnlyList<SubjectDto>>(StatusCodes.Status200OK)]
+    [ProducesResponseType<ApiErrorResponse>(StatusCodes.Status403Forbidden)]
+    public async Task<IActionResult> ListSubjects(CancellationToken cancellationToken)
+        => FromResult(await _questionService.ListSubjectsAsync(cancellationToken));
 
     /// <summary>Thống kê ngân hàng câu hỏi.</summary>
     /// <remarks>

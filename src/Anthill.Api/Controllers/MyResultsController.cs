@@ -16,11 +16,15 @@ namespace Anthill.Api.Controllers;
 [Route("api/my/results")]
 public sealed class MyResultsController : ApiControllerBase
 {
-    private readonly IResultService _resultService;
+    private const string XlsxContentType = "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet";
 
-    public MyResultsController(IResultService resultService)
+    private readonly IResultService _resultService;
+    private readonly IGradeSheetService _gradeSheets;
+
+    public MyResultsController(IResultService resultService, IGradeSheetService gradeSheets)
     {
         _resultService = resultService;
+        _gradeSheets = gradeSheets;
     }
 
     /// <summary>Các bài đã làm của chính mình. Điểm chỉ có mặt khi giáo viên cho xem.</summary>
@@ -32,4 +36,22 @@ public sealed class MyResultsController : ApiControllerBase
         [FromQuery] ListMyResultsQuery query,
         CancellationToken cancellationToken)
         => FromResult(await _resultService.ListMyResultsAsync(query, cancellationToken));
+
+    /// <summary>Bảng điểm của chính mình (.xlsx): mọi bài đã nộp, mỗi bài một dòng.</summary>
+    /// <remarks>
+    /// Đi qua đúng cổng xem điểm của <c>GET /api/my/results</c>: bài giáo viên chưa cho xem điểm ghi "Chưa công bố" và không có số
+    /// nào trong file. Danh tính lấy từ token; <c>termId</c> (tuỳ chọn) lọc theo kỳ như bảng điểm: <c>0</c> là lớp chưa phân kỳ.
+    /// </remarks>
+    [HttpGet("export")]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType<ApiErrorResponse>(StatusCodes.Status401Unauthorized)]
+    [ProducesResponseType<ApiErrorResponse>(StatusCodes.Status403Forbidden)]
+    public async Task<IActionResult> Export([FromQuery] int? termId, CancellationToken cancellationToken)
+    {
+        var result = await _gradeSheets.ExportMyResultsAsync(termId, cancellationToken);
+
+        return result.IsSuccess
+            ? File(result.ValueOrThrow.Content, XlsxContentType, result.ValueOrThrow.FileName)
+            : FromFailure(result);
+    }
 }

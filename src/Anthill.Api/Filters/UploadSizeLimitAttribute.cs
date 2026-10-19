@@ -9,7 +9,7 @@ namespace Anthill.Api.Filters;
 
 /// <summary>
 /// Chặn file upload quá lớn <b>trước</b> khi ASP.NET Core đọc form, theo đúng trần
-/// <c>FileStorage:MaxBytes</c>.
+/// <c>FileStorage:MaxBytes</c> (ảnh) hoặc trần riêng của action (file Excel nhập liệu).
 /// </summary>
 /// <remarks>
 /// <para>
@@ -40,26 +40,54 @@ namespace Anthill.Api.Filters;
 [AttributeUsage(AttributeTargets.Method)]
 public sealed class UploadSizeLimitAttribute : Attribute, IFilterFactory
 {
+    private readonly long? _maxRequestBytes;
+    private readonly string? _tooLargeMessage;
+
+    /// <summary>Trần của ảnh câu hỏi, theo <c>FileStorage:MaxBytes</c>.</summary>
+    public UploadSizeLimitAttribute()
+    {
+    }
+
+    /// <summary>
+    /// Trần riêng cho action không phải ảnh, ví dụ file Excel nhập liệu. <paramref name="maxRequestBytes"/> là trần cả thân
+    /// request (đã tính vỏ multipart).
+    /// </summary>
+    public UploadSizeLimitAttribute(long maxRequestBytes, string tooLargeMessage)
+    {
+        _maxRequestBytes = maxRequestBytes;
+        _tooLargeMessage = tooLargeMessage;
+    }
+
     /// <summary>Cấu hình đọc một lần lúc khởi động, nên một thể hiện filter dùng chung là đủ.</summary>
     public bool IsReusable => true;
 
-    public IFilterMetadata CreateInstance(IServiceProvider serviceProvider) =>
-        new UploadSizeLimitFilter(serviceProvider.GetRequiredService<IOptions<FileStorageOptions>>().Value);
+    public IFilterMetadata CreateInstance(IServiceProvider serviceProvider)
+    {
+        if (_maxRequestBytes is { } limit && _tooLargeMessage is { } message)
+        {
+            return new UploadSizeLimitFilter(limit, message);
+        }
+
+        var options = serviceProvider.GetRequiredService<IOptions<FileStorageOptions>>().Value;
+        return new UploadSizeLimitFilter(options.MaxRequestBytes, options.TooLargeMessage);
+    }
 
     private sealed class UploadSizeLimitFilter : IAsyncResourceFilter
     {
-        private readonly FileStorageOptions _options;
+        private readonly long _limit;
+        private readonly string _tooLargeMessage;
 
-        public UploadSizeLimitFilter(FileStorageOptions options)
+        public UploadSizeLimitFilter(long limit, string tooLargeMessage)
         {
-            _options = options;
+            _limit = limit;
+            _tooLargeMessage = tooLargeMessage;
         }
 
         public async Task OnResourceExecutionAsync(ResourceExecutingContext context, ResourceExecutionDelegate next)
         {
             var httpContext = context.HttpContext;
             var request = httpContext.Request;
-            var limit = _options.MaxRequestBytes;
+            var limit = _limit;
 
             if (request.ContentLength > limit)
             {
@@ -107,6 +135,6 @@ public sealed class UploadSizeLimitAttribute : Attribute, IFilterFactory
             await next();
         }
 
-        private BadRequestObjectResult TooLarge() => new(ApiErrorResponse.Of(_options.TooLargeMessage));
+        private BadRequestObjectResult TooLarge() => new(ApiErrorResponse.Of(_tooLargeMessage));
     }
 }

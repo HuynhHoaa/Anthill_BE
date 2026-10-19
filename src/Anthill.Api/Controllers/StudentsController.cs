@@ -1,4 +1,5 @@
 using Anthill.Application.Common;
+using Anthill.Application.DTOs.Accounts;
 using Anthill.Application.DTOs.Students;
 using Anthill.Application.Interfaces.Services;
 using Anthill.Application.Mappings;
@@ -131,8 +132,31 @@ public sealed class StudentsController : ApiControllerBase
             return FromFailure(Result.Failure("Trạng thái tài khoản chỉ nhận giá trị 'active' hoặc 'locked'."));
         }
 
-        return FromResult(await _studentService.SetStatusAsync(id, status, cancellationToken));
+        return FromResult(await _studentService.SetStatusAsync(id, status, request.Reason, cancellationToken));
     }
+
+    /// <summary>Lịch sử khoá, xoá, gỡ khỏi lớp và chuyển lớp của một học sinh, kèm lý do.</summary>
+    /// <remarks>Chỉ quản trị viên đọc: lý do là ghi chú nội bộ của nhà trường, không phải thứ giáo viên cần.</remarks>
+    [Authorize(Roles = SystemRoles.Admin)]
+    [HttpGet("{id:int}/history")]
+    [ProducesResponseType<IReadOnlyList<AccountChangeDto>>(StatusCodes.Status200OK)]
+    [ProducesResponseType<ApiErrorResponse>(StatusCodes.Status403Forbidden)]
+    [ProducesResponseType<ApiErrorResponse>(StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> ListHistory(int id, CancellationToken cancellationToken)
+        => FromResult(await _studentService.ListChangesAsync(id, cancellationToken));
+
+    /// <summary>Mọi bài đã giao cho một học sinh, kể cả bài em chưa làm hay đã bỏ lỡ.</summary>
+    /// <remarks>
+    /// Chỉ quản trị viên đọc. Em nghỉ học mà chưa bị gỡ khỏi lớp thì các bài sau của lớp vẫn hiện ra ở đây với trạng
+    /// thái "chưa làm" hoặc "hết hạn".
+    /// </remarks>
+    [Authorize(Roles = SystemRoles.Admin)]
+    [HttpGet("{id:int}/exams")]
+    [ProducesResponseType<IReadOnlyList<StudentExamDto>>(StatusCodes.Status200OK)]
+    [ProducesResponseType<ApiErrorResponse>(StatusCodes.Status403Forbidden)]
+    [ProducesResponseType<ApiErrorResponse>(StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> ListExams(int id, CancellationToken cancellationToken)
+        => FromResult(await _studentService.ListExamsAsync(id, cancellationToken));
 
     /// <summary>Cấp lại mật khẩu cho học sinh quên mật khẩu.</summary>
     /// <remarks>

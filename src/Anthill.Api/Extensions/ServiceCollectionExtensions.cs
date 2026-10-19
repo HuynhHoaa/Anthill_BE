@@ -58,6 +58,11 @@ public static class ServiceCollectionExtensions
         // IFileService của bước 3 đăng ký ở AddInfrastructure, vì nó chạm tới đĩa.
         services.AddScoped<IAuthService, AuthService>();
         services.AddScoped<IStudentService, StudentService>();
+        services.AddScoped<ITeacherService, TeacherService>();
+        services.AddScoped<IStudentImportService, StudentImportService>();
+        services.AddScoped<ITeacherImportService, TeacherImportService>();
+        services.AddScoped<IGroupImportService, GroupImportService>();
+        services.AddScoped<ISchoolImportService, SchoolImportService>();
         services.AddScoped<IStudentGroupService, StudentGroupService>();
         services.AddScoped<IQuestionService, QuestionService>();
         services.AddScoped<IExamService, ExamService>();
@@ -66,8 +71,11 @@ public static class ServiceCollectionExtensions
         services.AddScoped<IExamScheduleNotifier, ExamScheduleNotifier>();
         services.AddScoped<IDeadlineReminderService, DeadlineReminderService>();
         services.AddScoped<IResultService, ResultService>();
+        services.AddScoped<IGradeSheetService, GradeSheetService>();
         services.AddScoped<IDashboardService, DashboardService>();
         services.AddScoped<IExamAttemptService, ExamAttemptService>();
+        services.AddScoped<IMyLearningService, MyLearningService>();
+        services.AddScoped<ITermService, TermService>();
         services.AddScoped<INotificationService, NotificationService>();
 
         // Cài đặt SignalR nằm ở tầng Api chứ không ở Infrastructure: hub là thành phần của
