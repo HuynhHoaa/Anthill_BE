@@ -7,6 +7,9 @@ services:
     runtime: docker
     dockerfilePath: ./Dockerfile
     plan: free
+    # Cùng vùng với database Neon (Singapore). Bỏ trống thì Render chọn Oregon, API và database nằm hai bên Thái Bình
+    # Dương và mỗi truy vấn tốn thêm cỡ 170 ms; vùng không đổi được sau khi dịch vụ đã tạo.
+    region: singapore
     # /health chạm database nên giữ ấm cả API lẫn Neon; Render cũng dùng nó để biết bản mới đã sống.
     healthCheckPath: /health
     autoDeploy: true
